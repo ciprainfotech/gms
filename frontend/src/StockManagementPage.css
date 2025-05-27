@@ -1,0 +1,203 @@
+/* StockManagementPage.css */
+
+/* --- Assume variables like --app-bg, --primary-color etc. exist in App.css --- */
+
+.stock-management-page .page-header-row .page-title {
+    font-weight: 700;
+    color: var(--app-text, #1F2937); /* Use app variable */
+    margin-bottom: 0 !important;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1.6rem; /* Slightly smaller title */
+}
+.stock-management-page .page-header-row .page-title svg {
+    color: var(--primary-color, #3B82F6);
+}
+.stock-management-page .add-item-btn {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+/* --- Tabs --- */
+.stock-nav-tabs .nav-link {
+    font-weight: 500;
+    color: var(--app-text-muted, #6b7280);
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 0.8rem 1rem;
+    font-size: 0.95rem;
+}
+.stock-nav-tabs .nav-link.active {
+    color: var(--primary-color, #3B82F6);
+    border-bottom-color: var(--primary-color, #3B82F6);
+    background-color: transparent; /* No background */
+}
+.stock-nav-tabs .nav-link svg {
+    margin-right: 0.4rem;
+    vertical-align: middle;
+    margin-bottom: 2px; /* Align icon better */
+}
+.stock-nav-tabs .nav-link .badge {
+    font-size: 0.7em; /* Smaller badge in tab */
+    vertical-align: middle;
+}
+
+/* --- Inventory Card & Controls --- */
+.inventory-card, .low-stock-card {
+    border: 1px solid var(--app-border, #e5e7eb);
+    border-radius: var(--border-radius-lg, 0.75rem);
+    background-color: var(--app-bg-alt, #fff);
+}
+.inventory-controls {
+    background-color: var(--app-bg, #f3f4f6); /* Lighter header bg */
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid var(--app-border, #e5e7eb);
+}
+.inventory-controls .input-group-text {
+     background-color: var(--app-bg-alt, #fff); /* White inside search */
+     border-color: var(--app-border-alt, #d1d5db);
+}
+.inventory-controls .form-control,
+.inventory-controls .form-select {
+    font-size: 0.85rem; /* Smaller controls */
+    border-color: var(--app-border-alt, #d1d5db);
+}
+.inventory-controls .input-group-text svg {
+    color: var(--app-text-muted, #6b7280);
+}
+
+/* --- Inventory Table --- */
+.inventory-table-wrapper {
+    max-height: calc(100vh - var(--header-height, 70px) - 220px); /* Adjust height based on header/tabs/controls */
+    overflow-y: auto;
+}
+.inventory-table thead.inventory-table-header {
+    background-color: var(--app-bg-alt, #fff) !important; /* Ensure header background */
+    z-index: 5; /* Keep above rows */
+}
+.inventory-table thead th {
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: var(--app-text-muted, #6b7280);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom-width: 2px !important;
+    border-color: var(--app-border-alt, #d1d5db) !important;
+    padding: 0.7rem 1rem;
+    vertical-align: middle;
+}
+.inventory-table tbody td {
+    padding: 0.6rem 1rem;
+    font-size: 0.88rem;
+    vertical-align: middle;
+    color: var(--app-text-muted, #6b7280);
+}
+.inventory-table tbody tr:hover {
+    background-color: var(--app-hover-bg, rgba(59, 130, 246, 0.04));
+}
+.inventory-table .item-partno {
+    font-family: monospace;
+    font-size: 0.85em;
+    color: var(--grey-500, #6b7280);
+    display: block;
+}
+.inventory-table .item-name {
+    font-weight: 500;
+    color: var(--app-text, #1F2937);
+    margin-bottom: 0.1rem;
+}
+.inventory-table .item-type-badge {
+    font-size: 0.7em !important;
+    padding: 0.25em 0.5em !important;
+    font-weight: 600;
+    opacity: 0.8;
+}
+.inventory-table .item-type-badge svg {
+    margin-right: 3px;
+    font-size: 0.9em;
+}
+.inventory-table .text-end {
+    font-family: monospace; /* Align numbers */
+    color: var(--app-text, #1F2937);
+}
+
+/* Stock Badges */
+.stock-badge {
+    font-size: 0.8em !important;
+    padding: 0.35em 0.6em !important;
+    min-width: 30px; /* Ensure some width */
+    text-align: center;
+    font-weight: 700 !important;
+    display: inline-block;
+}
+.stock-badge.na { background-color: var(--grey-200, #e5e7eb) !important; color: var(--grey-500, #6b7280) !important; font-weight: normal !important;}
+.stock-badge.out { background-color: var(--danger-color, #EF4444) !important; color: white !important; }
+.stock-badge.low { background-color: var(--warning-color, #F59E0B) !important; color: var(--app-text, #1F2937) !important; }
+.stock-badge.ok { background-color: var(--success-color, #10B981) !important; color: white !important; }
+
+/* Table Actions */
+.action-toggle-table {
+    color: var(--app-text-muted, #6b7280);
+    padding: 0.1rem 0.3rem;
+    line-height: 1;
+    text-decoration: none;
+    background: none;
+    border: none;
+    border-radius: 50%;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+.inventory-table tbody tr:hover .action-toggle-table {
+    opacity: 1;
+}
+.action-toggle-table:hover, .action-toggle-table:focus {
+    color: var(--primary-color, #3B82F6);
+    background-color: var(--app-hover-bg, rgba(59, 130, 246, 0.1));
+}
+.action-toggle-table svg { font-size: 0.9em; } /* Smaller icon */
+
+/* --- Low Stock Tab --- */
+.low-stock-card .low-stock-header {
+    background-color: var(--bs-warning-bg-subtle); /* Bootstrap warning subtle */
+    color: var(--bs-warning-text-emphasis);
+    font-weight: 600;
+    border-bottom: 1px solid var(--bs-warning-border-subtle);
+    display: flex;
+    align-items: center;
+    font-size: 0.95rem;
+}
+.low-stock-table-wrapper {
+     max-height: calc(100vh - var(--header-height, 70px) - 180px); /* Adjust height */
+     overflow-y: auto;
+}
+.low-stock-table thead { background-color: var(--app-bg, #f3f4f6); }
+.low-stock-table thead th {
+    font-weight: 600;
+    font-size: 0.75rem;
+    color: var(--app-text-muted, #6b7280);
+    text-transform: uppercase;
+    padding: 0.6rem 0.8rem;
+}
+.low-stock-table tbody td {
+    padding: 0.6rem 0.8rem;
+    font-size: 0.88rem;
+    vertical-align: middle;
+}
+.low-stock-table .text-danger { color: var(--danger-color, #EF4444) !important; }
+
+/* --- Modals --- */
+.modal-body { max-height: 70vh; overflow-y: auto; }
+.modal-footer { background-color: var(--app-bg, #f3f4f6); }
+.modal-body .form-label { font-size: 0.8rem; margin-bottom: 0.2rem; font-weight: 500; }
+.modal-body .form-control-sm, .modal-body .form-select-sm { font-size: 0.85rem; padding: 0.4rem 0.7rem; }
+
+/* --- Responsive --- */
+@media (max-width: 767.98px) {
+    .stock-management-page .page-header-row { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+    .inventory-controls .row > * { flex-basis: 100%; } /* Stack controls */
+    .inventory-table-wrapper, .low-stock-table-wrapper { max-height: 60vh; } /* Adjust scroll height */
+    .inventory-table th, .inventory-table td,
+    .low-stock-table th, .low-stock-table td { padding: 0.5rem; font-size: 0.8rem; }
+    .stock-badge { font-size: 0.7em !important; padding: 0.3em 0.5em !important; }
+}
