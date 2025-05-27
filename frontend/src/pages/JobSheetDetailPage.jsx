@@ -9,7 +9,7 @@ import {
     FaMapMarkerAlt, FaPhone, FaEnvelope, FaCalendarAlt, FaTachometerAlt, FaStickyNote, FaBarcode, FaHashtag // Added more icons
 } from 'react-icons/fa';
 import {
-    initialMasterItems,vi
+    initialMasterItems,
     findJobSheetById,
     updateJobSheet,
     findMasterItemById,
