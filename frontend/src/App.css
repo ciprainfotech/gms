@@ -421,92 +421,147 @@ h4 { font-size: 1.25rem; }
 /* ================================== */
 /* =         PRINT STYLES           = */
 /* ================================== */
+/* ✅ UPDATED CSS FOR PRINT FIX */
 @media print {
   body {
-    background-color: #fff !important; margin: 0; padding: 0; font-size: 9pt;
-    -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+    background-color: #fff !important;
+    margin: 0;
+    padding: 0;
+    font-size: 9pt;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
     color: #000 !important;
   }
-  /* Hide non-printable elements globally */
-  .no-print, .d-print-none, .sidebar, .header, .action-buttons, .status-alert, .invoice-view-wrapper /* Hide screen wrapper */ {
+
+  /* Hide elements that should not appear in print */
+  .no-print,
+  .d-print-none,
+  .sidebar,
+  .header,
+  .action-buttons,
+  .status-alert {
     display: none !important;
   }
-  /* Ensure printable sections are visible */
-  .printable-section, body * { visibility: hidden; }
-  .printable-section, .printable-section * { visibility: visible; }
-  .printable-section { position: static; left: auto; top: auto; width: auto; } /* Reset absolute positioning for flow */
 
-  /* General Print Resets */
-  .container, .container-fluid { padding: 0 !important; margin: 0 !important; max-width: 100% !important; }
-  .card { box-shadow: none !important; border: 1px solid #ccc !important;}
-  .table { --bs-table-striped-bg: transparent !important; }
-
-  /* --- INVOICE PRINT STYLES --- */
-  @page { size: A4; margin: var(--print-margin); }
-
-  /* Target the specific invoice paper element for print */
-  .invoice-paper.printable-section, /* If you add .printable-section */
-  .invoice-paper { /* If no .printable-section added */
+  /* Make sure printable elements are visible */
+  .invoice-view-wrapper,
+  .invoice-paper {
+    display: block !important;
     visibility: visible !important;
-    max-width: 100% !important; width: 100% !important; min-height: auto !important;
-    margin: 0 !important; padding: 0 !important; /* USE @page margin */
-    border: none !important; box-shadow: none !important;
-    font-size: 9pt !important; /* Override base print size for invoice */
+    position: static !important;
     color: #000 !important;
     background-color: #fff !important;
-    position: static !important; /* Override any absolute positioning */
-  }
-  .invoice-paper *, /* Ensure children are visible */
-  .invoice-paper.printable-section * {
-      visibility: visible !important;
-      color: #000 !important;
-      background-color: transparent !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
   }
 
-  .invoice-paper .table-responsive { overflow: visible !important; border: none !important; }
-  .invoice-paper .invoice-items-table {
-      font-size: 8pt !important;
-      border-collapse: collapse !important;
-      table-layout: fixed !important; /* Crucial for print layout */
-      width: 100% !important;
+  .invoice-view-wrapper *,
+  .invoice-paper * {
+    visibility: visible !important;
+    color: #000 !important;
+    background-color: transparent !important;
   }
+
+  .container,
+  .container-fluid {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .card {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+  }
+
+  .table {
+    --bs-table-striped-bg: transparent !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 1cm;
+  }
+
+  .invoice-paper .table-responsive {
+    overflow: visible !important;
+    border: none !important;
+  }
+
+  .invoice-paper .invoice-items-table {
+    font-size: 8pt !important;
+    border-collapse: collapse !important;
+    table-layout: fixed !important;
+    width: 100% !important;
+  }
+
   .invoice-paper .invoice-items-table th,
   .invoice-paper .invoice-items-table td {
-      border: 1px solid #aaa !important;
-      padding: 4pt 5pt !important;
-      word-wrap: break-word !important;
-      vertical-align: top !important;
+    border: 1px solid #aaa !important;
+    padding: 4pt 5pt !important;
+    word-wrap: break-word !important;
+    vertical-align: top !important;
   }
-  /* Invoice Column Widths (Already defined in main styles, enforced by table-layout:fixed) */
 
-  .invoice-paper .invoice-items-table thead th { background-color: #f2f2f2 !important; color: #333 !important; }
-  .invoice-paper .invoice-items-table tfoot .grand-total-row td { background-color: #f2f2f2 !important; }
-  .invoice-paper .invoice-items-table tfoot .value-cell { font-family: inherit !important; }
+  .invoice-paper .invoice-items-table thead th {
+    background-color: #f2f2f2 !important;
+    color: #333 !important;
+  }
 
-  /* Empty/Filler Rows in Print */
+  .invoice-paper .invoice-items-table tfoot .grand-total-row td {
+    background-color: #f2f2f2 !important;
+  }
+
   .invoice-paper .invoice-items-table .empty-row td,
   .invoice-paper .invoice-items-table .filler-row td {
-      border: none !important;
-      border-left: 1px solid #aaa !important;
-      border-right: 1px solid #aaa !important;
-      height: 1.5em;
-      padding: 0 !important;
+    border: none !important;
+    border-left: 1px solid #aaa !important;
+    border-right: 1px solid #aaa !important;
+    height: 1.5em;
+    padding: 0 !important;
   }
+
   .invoice-paper .invoice-items-table .empty-row td:first-child,
-  .invoice-paper .invoice-items-table .filler-row td:first-child { border-left: 1px solid #aaa !important; }
+  .invoice-paper .invoice-items-table .filler-row td:first-child {
+    border-left: 1px solid #aaa !important;
+  }
+
   .invoice-paper .invoice-items-table .empty-row td:last-child,
-  .invoice-paper .invoice-items-table .filler-row td:last-child { border-right: 1px solid #aaa !important; }
+  .invoice-paper .invoice-items-table .filler-row td:last-child {
+    border-right: 1px solid #aaa !important;
+  }
 
-  /* Print Page Breaks */
-  .invoice-paper .invoice-header, .invoice-paper .invoice-meta-section, .invoice-paper .invoice-items-table tfoot tr, .invoice-paper .invoice-footer { page-break-inside: avoid; }
-  .invoice-paper .invoice-items-table { page-break-inside: auto; }
-  .invoice-paper .invoice-items-table tbody tr { page-break-inside: avoid; }
-  .invoice-paper .invoice-items-table thead, .invoice-paper .invoice-items-table tfoot { display: table-row-group; }
+  .invoice-paper .invoice-header,
+  .invoice-paper .invoice-meta-section,
+  .invoice-paper .invoice-items-table tfoot tr,
+  .invoice-paper .invoice-footer {
+    page-break-inside: avoid;
+  }
 
-  .invoice-paper .invoice-footer { margin-top: 1cm; font-size: 8pt; }
-  .invoice-paper .signature-line { margin-top: 1.5cm !important; }
+  .invoice-paper .invoice-items-table tbody tr {
+    page-break-inside: avoid;
+  }
 
-} /* End @media print */
+  .invoice-paper .invoice-items-table thead,
+  .invoice-paper .invoice-items-table tfoot {
+    display: table-row-group;
+  }
+
+  .invoice-paper .invoice-footer {
+    margin-top: 1cm;
+    font-size: 8pt;
+  }
+
+  .invoice-paper .signature-line {
+    margin-top: 1.5cm !important;
+  }
+}
+
+/* No changes needed in screen responsive styles unless specified */
+
 
 
 /* === RESPONSIVE ADJUSTMENTS === */
