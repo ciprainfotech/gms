@@ -11,7 +11,8 @@ import {
     faReceipt,        // Invoices List
     faUsers,          // Customers & Vehicles
     faBoxOpen,        // Low Stock Report
-    faChartPie        // Analytics & Reports (New)
+    faChartPie,        // Analytics & Reports (New)
+    faPaperPlane
 } from "@fortawesome/free-solid-svg-icons";
 import logo from "../assets/saman-logo.png"; // Make sure path is correct
 // Removed App.css import here, it should be imported in App.jsx or index.js
@@ -65,6 +66,16 @@ const Sidebar = () => {
                         <FontAwesomeIcon icon={faReceipt} className="fa-fw me-2" /> Invoices
                     </NavLink>
                 </li>
+                <li className="nav-item">
+                    <NavLink to="/accounts" className={navLinkClass}>
+                        <FontAwesomeIcon icon={faFileInvoiceDollar} className="fa-fw me-2" /> Accounts
+                    </NavLink>
+                </li>
+                <li className="nav-item">
+                        <NavLink to="/reminders" className={navLinkClass}>
+                            <FontAwesomeIcon icon={faPaperPlane} className="fa-fw" /> Reminders
+                        </NavLink>
+                    </li>
                  <li className="nav-item">
                     <NavLink to="/customers-vehicles" className={navLinkClass}>
                         <FontAwesomeIcon icon={faUsers} className="fa-fw me-2" /> Customers & Vehicles

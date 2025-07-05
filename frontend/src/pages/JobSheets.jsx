@@ -1,15 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Container, Card, Table, Badge, Button, InputGroup, Form, Row, Col } from 'react-bootstrap';
-import { FaEye, FaSearch, FaFileInvoiceDollar, FaFileInvoice } from 'react-icons/fa'; // Changed FaReceipt to FaFileInvoice
+import { FaEye, FaSearch, FaFileInvoiceDollar, FaFileInvoice, FaArchive } from 'react-icons/fa';
 import {
     initialJobSheets,
-    initialInvoices, // Need invoices to find the link
-    findCustomerById, // Need helpers to display names
+    initialInvoices,
+    findCustomerById,
     findVehicleById
-} from '../data/staticData'; // Load historical data and helpers
-
-// Component to display the historical Job Sheet Archive
+} from '../data/staticData';
 
 const JobSheets = () => {
     // State for the full list of historical job sheets (loaded once)
@@ -55,7 +53,6 @@ const JobSheets = () => {
 
 
     // --- Filtering Logic ---
-    // Use useMemo to recalculate only when dependencies change
     const filteredJobSheets = useMemo(() => {
         return allHistoricalSheets.filter(js => {
             const lowerSearch = searchTerm.toLowerCase();
@@ -71,7 +68,7 @@ const JobSheets = () => {
 
             return matchesSearch && matchesStatus;
         });
-    }, [allHistoricalSheets, searchTerm, statusFilter]); // Recalculate when these change
+    }, [allHistoricalSheets, searchTerm, statusFilter]);
 
 
     // --- Status Badge Helper ---
@@ -84,114 +81,115 @@ const JobSheets = () => {
         }
     };
 
-    // --- Render ---
     return (
-        <Container fluid className="py-4 px-md-4">
-             <h2 className="fw-bold text-primary mb-4">📂 Job Sheets Archive</h2>
+        <Container fluid className="py-4">
+            <div className="page-header-row">
+                <h2 className="page-title-active mb-0">
+                    <FaArchive />
+                    Job Sheets Archive
+                </h2>
+                <div className="actions">
+                    {/* Placeholder for future action buttons */}
+                </div>
+            </div>
 
-             {/* Filter Controls */}
-             <Card className="mb-4 shadow-sm border-light">
-                 <Card.Header className="bg-light fw-bold">Filter Records</Card.Header>
-                <Card.Body>
-                    <Row className="g-3 align-items-center">
-                        <Col md={6} lg={5}>
-                            <InputGroup>
-                                <Form.Control
-                                     placeholder="Search by Job#, Vehicle#, Customer..."
-                                     value={searchTerm}
-                                     onChange={e => setSearchTerm(e.target.value)}
-                                />
-                                <Button variant="outline-secondary" id="button-addon2">
-                                    <FaSearch />
-                                </Button>
-                            </InputGroup>
-                        </Col>
-                        <Col md={4} lg={3}>
-                             <Form.Label htmlFor="statusFilterSelect" className="visually-hidden">Status Filter</Form.Label>
-                            <Form.Select
-                                id="statusFilterSelect"
-                                value={statusFilter}
-                                onChange={e => setStatusFilter(e.target.value)}
-                            >
-                                <option value="">All Statuses</option>
-                                <option value="Completed">Completed</option>
-                                <option value="Invoiced">Invoiced</option>
-                                <option value="Cancelled">Cancelled</option>
-                            </Form.Select>
-                        </Col>
-                         {/* Potential Date Range Filter Components Here */}
-                         <Col md={2} lg={2} className="text-md-end">
-                             <Button variant='secondary' size="sm">Apply Filters</Button>
-                         </Col>
-                    </Row>
-                </Card.Body>
-             </Card>
+            <div className="main-content pt-0">
+                 {/* Filter Controls */}
+                 <Card className="mb-4 shadow-sm border-light">
+                     <Card.Header className="bg-light fw-bold">Filter Records</Card.Header>
+                    <Card.Body>
+                        <Row className="g-3 align-items-center">
+                            <Col md={6} lg={5}>
+                                <InputGroup>
+                                    <Form.Control
+                                         placeholder="Search by Job#, Vehicle#, Customer..."
+                                         value={searchTerm}
+                                         onChange={e => setSearchTerm(e.target.value)}
+                                    />
+                                    <Button variant="outline-secondary" id="button-addon2">
+                                        <FaSearch />
+                                    </Button>
+                                </InputGroup>
+                            </Col>
+                            <Col md={4} lg={3}>
+                                 <Form.Label htmlFor="statusFilterSelect" className="visually-hidden">Status Filter</Form.Label>
+                                <Form.Select
+                                    id="statusFilterSelect"
+                                    value={statusFilter}
+                                    onChange={e => setStatusFilter(e.target.value)}
+                                >
+                                    <option value="">All Statuses</option>
+                                    <option value="Completed">Completed</option>
+                                    <option value="Invoiced">Invoiced</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                </Form.Select>
+                            </Col>
+                             <Col md={2} lg={2} className="text-md-end">
+                                 <Button variant='secondary' size="sm">Apply Filters</Button>
+                             </Col>
+                        </Row>
+                    </Card.Body>
+                 </Card>
 
-            {/* Job Sheet Table */}
-            <Card className="shadow-sm border-light">
-                <Card.Header className="bg-light fw-bold">Historical Records ({filteredJobSheets.length} found)</Card.Header>
-                <Card.Body className="p-0">
-                     <div className="table-responsive">
-                        <Table hover striped className="mb-0 align-middle">
-                            <thead className="table-light">
-                                 <tr>
-                                     <th className="py-3 px-3">Job Sheet #</th>
-                                     <th className="py-3 px-3">Date Completed</th>
-                                     <th className="py-3 px-3">Vehicle No.</th>
-                                     <th className="py-3 px-3">Customer</th>
-                                     {/* <th className="py-3 px-3">Vehicle Model</th> */}
-                                     <th className="py-3 px-3 text-end">Amount</th>
-                                     <th className="py-3 px-3">Status</th>
-                                     <th className="py-3 px-3 text-center">Actions</th>
-                                 </tr>
-                            </thead>
-                            <tbody>
-                                 {filteredJobSheets.length === 0 ? (
-                                    <tr><td colSpan="8" className="text-center text-muted py-5">No matching job sheets found for the selected criteria.</td></tr>
-                                ) : (
-                                    filteredJobSheets.map((js) => {
-                                        const linkedInvoiceId = invoiceLinks[js.id]; // Find linked invoice ID
-                                        return (
-                                            <tr key={js.id}>
-                                                <td className="px-3 fw-medium">{js.jobSheetNumber}</td>
-                                                <td className="px-3">{js.dateCompleted || js.dateCreated}</td>
-                                                <td className="px-3">{js.vehicleNumber}</td>
-                                                <td className="px-3">{js.customerName}</td>
-                                                {/* <td className="px-3">{js.vehicleModel}</td> */}
-                                                <td className="px-3 text-end">{js.grandTotal?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) || 'N/A'}</td>
-                                                <td className="px-3">{getStatusBadge(js.status)}</td>
-                                                <td className="px-3 text-center">
-                                                    {/* Link to detail page (read-only view) */}
-                                                    <Link to={`/jobsheet/${js.id}`} className="btn btn-outline-secondary btn-sm me-1" title="View Job Sheet Details">
-                                                        <FaEye />
-                                                    </Link>
-                                                    {/* Link to invoice view if invoiced */}
-                                                    {js.status === 'Invoiced' && linkedInvoiceId && (
-                                                        <Link to={`/invoice/${linkedInvoiceId}/view`} className="btn btn-outline-info btn-sm" title="View Invoice">
-                                                            <FaFileInvoice />
+                {/* Job Sheet Table */}
+                <Card className="shadow-sm border-light">
+                    <Card.Header className="bg-light fw-bold">Historical Records ({filteredJobSheets.length} found)</Card.Header>
+                    <Card.Body className="p-0">
+                         <div className="table-responsive">
+                            <Table hover striped className="mb-0 align-middle">
+                                <thead className="table-light">
+                                     <tr>
+                                         <th className="py-3 px-3">Job Sheet #</th>
+                                         <th className="py-3 px-3">Date Completed</th>
+                                         <th className="py-3 px-3">Vehicle No.</th>
+                                         <th className="py-3 px-3">Customer</th>
+                                         <th className="py-3 px-3 text-end">Amount</th>
+                                         <th className="py-3 px-3">Status</th>
+                                         <th className="py-3 px-3 text-center">Actions</th>
+                                     </tr>
+                                </thead>
+                                <tbody>
+                                     {filteredJobSheets.length === 0 ? (
+                                        <tr><td colSpan="8" className="text-center text-muted py-5">No matching job sheets found for the selected criteria.</td></tr>
+                                    ) : (
+                                        filteredJobSheets.map((js) => {
+                                            const linkedInvoiceId = invoiceLinks[js.id];
+                                            return (
+                                                <tr key={js.id}>
+                                                    <td className="px-3 fw-medium">{js.jobSheetNumber}</td>
+                                                    <td className="px-3">{js.dateCompleted || js.dateCreated}</td>
+                                                    <td className="px-3">{js.vehicleNumber}</td>
+                                                    <td className="px-3">{js.customerName}</td>
+                                                    <td className="px-3 text-end">{js.grandTotal?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) || 'N/A'}</td>
+                                                    <td className="px-3">{getStatusBadge(js.status)}</td>
+                                                    <td className="px-3 text-center">
+                                                        <Link to={`/jobsheet/${js.id}`} className="btn btn-outline-secondary btn-sm me-1" title="View Job Sheet Details">
+                                                            <FaEye />
                                                         </Link>
-                                                    )}
-                                                    {/* If status is 'Completed', maybe show a 'Create Invoice' button? */}
-                                                    {js.status === 'Completed' && !linkedInvoiceId && (
-                                                        <Link to="/create-invoice" state={{ finalizedJobSheet: js }} className="btn btn-outline-primary btn-sm" title="Create Invoice from this Job Sheet">
-                                                            <FaFileInvoiceDollar /> {/* Assuming you imported this */}
-                                                        </Link>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })
-                                )}
-                            </tbody>
-                        </Table>
-                    </div>
-                </Card.Body>
-                 {/* Simple Footer Info */}
-                <Card.Footer className="text-muted text-end py-2 px-3">
-                     Total Records: {allHistoricalSheets.length} | Displaying: {filteredJobSheets.length}
-                 </Card.Footer>
-            </Card>
-             {/* Add Pagination component here if dealing with large datasets */}
+                                                        {js.status === 'Invoiced' && linkedInvoiceId && (
+                                                            <Link to={`/invoice/${linkedInvoiceId}/view`} className="btn btn-outline-info btn-sm" title="View Invoice">
+                                                                <FaFileInvoice />
+                                                            </Link>
+                                                        )}
+                                                        {js.status === 'Completed' && !linkedInvoiceId && (
+                                                            <Link to="/create-invoice" state={{ finalizedJobSheet: js }} className="btn btn-outline-primary btn-sm" title="Create Invoice from this Job Sheet">
+                                                                <FaFileInvoiceDollar />
+                                                            </Link>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </Table>
+                        </div>
+                    </Card.Body>
+                    <Card.Footer className="text-muted text-end py-2 px-3">
+                         Total Records: {allHistoricalSheets.length} | Displaying: {filteredJobSheets.length}
+                     </Card.Footer>
+                </Card>
+            </div>
         </Container>
     );
 };

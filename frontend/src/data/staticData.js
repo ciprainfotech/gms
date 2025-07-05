@@ -343,7 +343,17 @@ export const findSupplierById = (id) => { // New finder
 export let initialJobSheets = [
     // Job Sheet for Invoice 1
     {
-        id: 'JS101', jobSheetNumber: 'JS-00101', vehicleId: 'V2001', customerId: 'C1001', dateCreated: '2024-02-15', dateCompleted: '2024-02-16', kmReading: '25000', status: 'Invoiced', notes: 'Engine light check, oil change.', nextServiceKm: "35000",
+        id: 'JS101',
+        jobSheetNumber: 'JS-00101',
+        vehicleId: 'V2001',
+        customerId: 'C1001',
+        dateCreated: '2024-02-15',
+        dateCompleted: '2024-02-16',
+        kmReading: '25000',
+        status: 'Invoiced',
+        notes: 'Engine light check, oil change.',
+        nextServiceKm: "35000",
+        serviceReminderSent: false, // <-- ADD THIS LINE
         items: [
             { masterItemId: 'S001', name: 'Engine Oil Change (Synthetic)', partNo: 'SVC-OIL-SYN', quantity: 1, unitPrice: 1800, lubeCharge: 250, labourCharge: 300, lineParts: 1800, lineLubes: 250, lineLabour: 300, lineTotal: 2350 },
             { masterItemId: 'P002', name: 'Oil Filter - Honda Civic', partNo: 'HF-OF-15400', quantity: 1, unitPrice: 300, lubeCharge: 0, labourCharge: 0, lineParts: 300, lineLubes: 0, lineLabour: 0, lineTotal: 300 }
@@ -352,7 +362,17 @@ export let initialJobSheets = [
     },
     // Job Sheet for Invoice 2
      {
-        id: 'JS102', jobSheetNumber: 'JS-00102', vehicleId: 'V2002', customerId: 'C1002', dateCreated: '2024-01-10', dateCompleted: '2024-01-11', kmReading: '40000', status: 'Invoiced', notes: 'Annual service.', nextServiceKm: "50000",
+        id: 'JS102',
+        jobSheetNumber: 'JS-00102',
+        vehicleId: 'V2002',
+        customerId: 'C1002',
+        dateCreated: '2024-01-10',
+        dateCompleted: '2024-01-11',
+        kmReading: '40000',
+        status: 'Invoiced',
+        notes: 'Annual service.',
+        nextServiceKm: "50000",
+        serviceReminderSent: false, // <-- ADD THIS LINE
         items: [
              { masterItemId: 'S002', name: 'General Service Checkup', partNo: 'SVC-GEN-CHK', quantity: 1, unitPrice: 0, lubeCharge: 0, labourCharge: 1200, lineParts: 0, lineLubes: 0, lineLabour: 1200, lineTotal: 1200 },
              { masterItemId: 'P007', name: 'Coolant (1L) - Generic', partNo: 'GEN-CLT-1L', quantity: 1, unitPrice: 350, lubeCharge: 0, labourCharge: 0, lineParts: 350, lineLubes: 0, lineLabour: 0, lineTotal: 350 }
@@ -361,7 +381,17 @@ export let initialJobSheets = [
      },
      // Job Sheet for Invoice 3
      {
-        id: 'JS103', jobSheetNumber: 'JS-00103', vehicleId: 'V2003', customerId: 'C1003', dateCreated: '2024-03-01', dateCompleted: '2024-03-01', kmReading: '15000', status: 'Invoiced', notes: 'Wash requested.', nextServiceKm: "25000",
+        id: 'JS103',
+        jobSheetNumber: 'JS-00103',
+        vehicleId: 'V2003',
+        customerId: 'C1003',
+        dateCreated: '2024-03-01',
+        dateCompleted: '2024-03-01',
+        kmReading: '15000',
+        status: 'Invoiced',
+        notes: 'Wash requested.',
+        nextServiceKm: "25000",
+        serviceReminderSent: false, // <-- ADD THIS LINE
         items: [
              { masterItemId: 'S006', name: 'Car Wash (Exterior & Interior)', partNo: 'SVC-WASH', quantity: 1, unitPrice: 100, lubeCharge: 0, labourCharge: 650, lineParts: 100, lineLubes: 0, lineLabour: 650, lineTotal: 750 }
         ],
@@ -369,7 +399,17 @@ export let initialJobSheets = [
     },
     // Job Sheet not yet invoiced
      {
-        id: 'JS104', jobSheetNumber: 'JS-00104', vehicleId: 'V2004', customerId: 'C1001', dateCreated: '2024-03-10', dateCompleted: null, kmReading: '55000', status: 'In Progress', notes: 'Check brakes, slight noise.', nextServiceKm: null,
+        id: 'JS104',
+        jobSheetNumber: 'JS-00104',
+        vehicleId: 'V2004',
+        customerId: 'C1001',
+        dateCreated: '2024-03-10',
+        dateCompleted: null,
+        kmReading: '55000',
+        status: 'In Progress',
+        notes: 'Check brakes, slight noise.',
+        nextServiceKm: null,
+        serviceReminderSent: false, // <-- ADD THIS LINE
         items: [
              { masterItemId: 'P003', name: 'Brake Pad Set (Front) - Generic', partNo: 'GEN-BP-F01', quantity: 1, unitPrice: 2500, lubeCharge: 0, labourCharge: 450, lineParts: 2500, lineLubes: 0, lineLabour: 450, lineTotal: 2950 }
         ],
@@ -394,7 +434,10 @@ export let initialInvoices = [
             { masterItemId: 'S001', lineParts: 1800, lineLubes: 250, lineLabour: 300 },
             { masterItemId: 'P002', lineParts: 300, lineLubes: 0, lineLabour: 0 }
         ], { type: null, value: 0 }, 18),
-        amountPaid: 3127.00, status: 'Paid',
+        paymentRecords: [
+            { id: 'pay-1', datePaid: getDateDaysAgo(18), amountPaid: 3127.00, paymentMethod: 'UPI', notes: 'Full payment via GPay.' }
+        ],
+        status: 'Paid',
         bankBranch: 'BORSAD', bankAccountNo: '07492000002739', bankIfsc: 'HDFC0000749',
     },
     // Invoice based on JS102
@@ -412,7 +455,8 @@ export let initialInvoices = [
              { masterItemId: 'S002', lineParts: 0, lineLubes: 0, lineLabour: 1200 },
              { masterItemId: 'P007', lineParts: 350, lineLubes: 0, lineLabour: 0 }
         ], { type: 'Fixed', value: 50 }, 18),
-        amountPaid: 0.00, status: 'Overdue',
+        paymentRecords: [],
+        status: 'Overdue',
         bankBranch: 'BORSAD', bankAccountNo: '07492000002739', bankIfsc: 'HDFC0000749',
     },
     // Invoice based on JS103
@@ -426,7 +470,10 @@ export let initialInvoices = [
         ],
         discountType: null, discountValue: 0, taxRate: 0,
         ...calculateInvoiceTotals([ { masterItemId: 'S006', lineParts: 100, lineLubes: 0, lineLabour: 650 } ], { type: null, value: 0 }, 0),
-        amountPaid: 300.00, status: 'Pending',
+        paymentRecords: [
+            { id: 'pay-2', datePaid: getDateDaysAgo(4), amountPaid: 300.00, paymentMethod: 'Cash', notes: 'Advance payment.' }
+        ],
+        status: 'Partially Paid',
         bankBranch: 'BORSAD', bankAccountNo: '07492000002739', bankIfsc: 'HDFC0000749',
     }
 ];
@@ -482,7 +529,6 @@ export const updateCustomer = (customerId, updatedData) => {
     return null; // Not found
 };
 
-// --- ADDED deleteCustomerById ---
 export const deleteCustomerById = (customerId) => {
     const initialCustLength = initialCustomers.length;
     const initialVehiLength = initialVehicles.length;
@@ -523,7 +569,6 @@ export const updateVehicle = (vehicleId, updatedData) => {
     return null; // Not found
 };
 
-// --- ADDED deleteVehicleById ---
 export const deleteVehicleById = (vehicleId) => {
     const initialLength = initialVehicles.length;
     initialVehicles = initialVehicles.filter(v => v.id !== vehicleId);
@@ -569,16 +614,15 @@ export const addInvoice = (invoiceData) => {
      }
 
     const newInvoice = {
-        billBookNo: 'N/A', jcNo: 'N/A', amountPaid: 0, status: 'Pending',
+        billBookNo: 'N/A', jcNo: 'N/A', status: 'Pending',
+        paymentRecords: [], // Start with no payments
         bankBranch: 'BORSAD', bankAccountNo: '07492000002739', bankIfsc: 'HDFC0000749',
         ...invoiceData,
         id: newId, invoiceNumber: newInvoiceNumber,
         ...calculatedTotals,
     };
 
-    if (newInvoice.amountPaid >= newInvoice.grandTotal && newInvoice.grandTotal > 0) {
-        newInvoice.status = 'Paid';
-    } else if (newInvoice.dueDate && new Date(newInvoice.dueDate) < new Date() && newInvoice.amountPaid < newInvoice.grandTotal) {
+    if (newInvoice.dueDate && new Date(newInvoice.dueDate) < new Date()) {
          newInvoice.status = 'Overdue';
     } else {
          newInvoice.status = 'Pending';
@@ -597,7 +641,41 @@ export const addInvoice = (invoiceData) => {
     return { ...newInvoice };
 };
 
-// --- ADDED updateInvoice (Example - you might need more complex logic for payments etc.) ---
+// ADDED: New function to handle payments
+export const addPaymentToInvoice = (invoiceId, paymentData) => {
+    const invoiceIndex = initialInvoices.findIndex(inv => inv.id === invoiceId);
+    if (invoiceIndex === -1) {
+        throw new Error("Invoice not found");
+    }
+
+    const invoice = initialInvoices[invoiceIndex];
+
+    const newPayment = {
+        id: `pay-${Date.now()}`,
+        ...paymentData,
+        amountPaid: parseFloat(paymentData.amountPaid)
+    };
+    invoice.paymentRecords.push(newPayment);
+
+    // Recalculate total paid amount
+    const totalPaid = invoice.paymentRecords.reduce((sum, record) => sum + record.amountPaid, 0);
+
+    // Update status based on payment
+    if (totalPaid >= invoice.grandTotal) {
+        invoice.status = 'Paid';
+    } else if (totalPaid > 0) {
+        invoice.status = 'Partially Paid';
+    } else if (new Date(invoice.dueDate) < new Date()) {
+        invoice.status = 'Overdue';
+    } else {
+        invoice.status = 'Pending';
+    }
+
+    initialInvoices[invoiceIndex] = { ...invoice };
+    return { ...initialInvoices[invoiceIndex] };
+};
+
+
 export const updateInvoice = (invoiceId, updatedData) => {
     const index = initialInvoices.findIndex(inv => inv.id === invoiceId);
     if (index !== -1) {
@@ -615,11 +693,15 @@ export const updateInvoice = (invoiceId, updatedData) => {
              ...calculatedTotals // Overwrite totals with recalculated values
         };
 
-        // Recalculate status based on payment
+        // Recalculate status based on payment records
         const currentInvoice = initialInvoices[index];
-        if (currentInvoice.amountPaid >= currentInvoice.grandTotal && currentInvoice.grandTotal > 0) {
+        const totalPaid = currentInvoice.paymentRecords.reduce((sum, p) => sum + (p.amountPaid || 0), 0);
+        
+        if (totalPaid >= currentInvoice.grandTotal && currentInvoice.grandTotal > 0) {
             currentInvoice.status = 'Paid';
-        } else if (currentInvoice.dueDate && new Date(currentInvoice.dueDate) < new Date() && currentInvoice.amountPaid < currentInvoice.grandTotal) {
+        } else if (totalPaid > 0) {
+            currentInvoice.status = 'Partially Paid';
+        } else if (currentInvoice.dueDate && new Date(currentInvoice.dueDate) < new Date()) {
             currentInvoice.status = 'Overdue';
         } else {
             currentInvoice.status = 'Pending';
@@ -659,4 +741,3 @@ export const deleteTask = (taskId) => {
      console.log(`Simulated Delete Task: ${taskId}. Success: ${initialTasks.length < initialLength}`);
      return initialTasks.length < initialLength;
 };
-// No stray backslash here either

@@ -20,7 +20,8 @@ import PurchaseEntryPage from './pages/PurchaseEntryPage';
 import PurchaseHistoryPage from './pages/PurchaseHistoryPage';
 import TaskDashboardPage from './pages/TaskDashboardPage'; // Assuming you have this page
 import AnalyticsReportsPage from './pages/AnalyticsReportsPage'; // New page
-
+import AccountsReceivablePage from './pages/AccountsReceivablePage';
+import RemindersPage from './pages/RemindersPage';
 // --- CSS Imports ---
 import 'bootstrap/dist/css/bootstrap.min.css'; // Bootstrap base
 import './App.css'; // Your custom styles (which includes sidebar, header, main-content styles)
@@ -65,7 +66,10 @@ function App() {
               <Route path="/job-sheets" element={<JobSheets />} />
               <Route path="/invoices" element={<InvoicesPage />} />
               <Route path="/invoice/:invoiceId/view" element={<InvoiceViewPage />} />
+              <Route path="/accounts" element={<AccountsReceivablePage />} />
               <Route path="/customers-vehicles" element={<CustomersVehiclesPage />} />
+              <Route path="/reminders" element={<RemindersPage />} />
+
               <Route path="/add-customer" element={<AddCustomerPage />} />
 
                {/* Reports & Tools Routes */}
