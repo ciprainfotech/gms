@@ -1,15 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
-// Import Layout Components
+// --- Layout Component Imports ---
+// Ensure these components exist at these paths
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 
-// Import Pages (adjust paths as needed)
+// --- Page Imports (as provided by you) ---
 import Dashboard from './pages/Dashboard';
-import ActiveJobSheets from './pages/ActiveJobSheets'; // Use the renamed component
+import ActiveJobSheets from './pages/ActiveJobSheets';
 import JobSheetDetailPage from './pages/JobSheetDetailPage';
-import JobSheets from './pages/JobSheets'; // Historical archive page
+import JobSheets from './pages/JobSheets';
 import AddCustomerPage from './pages/AddCustomerPage';
 import CustomersVehiclesPage from './pages/CustomersVehiclesPage';
 import CreateInvoicePage from './pages/CreateInvoicePage';
@@ -18,51 +19,62 @@ import InvoiceViewPage from './pages/InvoiceViewPage';
 import StockManagementPage from './pages/StockManagementPage';
 import PurchaseEntryPage from './pages/PurchaseEntryPage';
 import PurchaseHistoryPage from './pages/PurchaseHistoryPage';
-import TaskDashboardPage from './pages/TaskDashboardPage'; // Assuming you have this page
-import AnalyticsReportsPage from './pages/AnalyticsReportsPage'; // New page
+import TaskDashboardPage from './pages/TaskDashboardPage';
+import AnalyticsReportsPage from './pages/AnalyticsReportsPage';
 import AccountsReceivablePage from './pages/AccountsReceivablePage';
 import RemindersPage from './pages/RemindersPage';
-// --- CSS Imports ---
-import 'bootstrap/dist/css/bootstrap.min.css'; // Bootstrap base
-import './App.css'; // Your custom styles (which includes sidebar, header, main-content styles)
 
-// --- FontAwesome Setup ---
-// Make sure you have installed: npm install @fortawesome/fontawesome-svg-core @fortawesome/free-solid-svg-icons @fortawesome/react-fontawesome
+// --- CSS and FontAwesome Imports ---
+import 'bootstrap/dist/css/bootstrap.min.css';
+import './App.css'; // Your custom styles (use the definitive CSS provided above)
 import { library } from '@fortawesome/fontawesome-svg-core';
 import { fas } from '@fortawesome/free-solid-svg-icons';
-library.add(fas); // Add all solid icons to the library
+library.add(fas);
 
 // --- Main App Component ---
 function App() {
+  // THIS IS THE STATE THAT CONTROLS THE SIDEBAR ON MOBILE
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+
+  // This function is passed to the Header to be called by the menu toggle button
+  const toggleSidebar = () => {
+    setSidebarOpen(!isSidebarOpen);
+  };
+
   return (
     <BrowserRouter>
-      {/* Main layout container using flexbox */}
-      <div className="layout d-flex">
+      {/* Main layout container. The `.layout` class handles flexbox. */}
+      <div className="layout">
 
-        {/* Sidebar Component */}
-        <nav className="sidebar"> {/* Apply sidebar class here */}
+        {/* The Sidebar component with a dynamic class for mobile view */}
+        <nav className={`sidebar ${isSidebarOpen ? 'is-open' : ''}`}>
           <Sidebar />
         </nav>
 
-        {/* Container for Header and Main Content */}
-        <div className="content-wrapper flex-grow-1"> {/* Takes remaining width */}
+        {/* This overlay becomes visible on mobile to close the sidebar */}
+        <div
+          className={`sidebar-overlay ${isSidebarOpen ? 'is-visible' : ''}`}
+          onClick={toggleSidebar}
+        ></div>
 
-          {/* Header Component */}
-          <header className="header"> {/* Apply header class here */}
-             <Header />
+        {/* Container for Header and Main Content */}
+        <div className="content-wrapper">
+
+          {/* Header Component - It receives the toggle function as a prop */}
+          <header className="header">
+             <Header onMenuToggle={toggleSidebar} />
           </header>
 
           {/* Main Content Area where pages are rendered */}
-          <main className="main-content"> {/* Apply main-content class here */}
+          <main className="main-content">
             <Routes>
-              {/* Workflow Routes */}
+              {/* --- YOUR ROUTES (UNCHANGED) --- */}
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/active-jobsheets" element={<ActiveJobSheets />} />
               <Route path="/jobsheet/:jobSheetId" element={<JobSheetDetailPage />} />
               <Route path="/create-invoice" element={<CreateInvoicePage />} />
               <Route path="/task-dashboard" element={<TaskDashboardPage />} />
 
-              {/* Management/Admin Routes */}
               <Route path="/job-sheets" element={<JobSheets />} />
               <Route path="/invoices" element={<InvoicesPage />} />
               <Route path="/invoice/:invoiceId/view" element={<InvoiceViewPage />} />
@@ -72,17 +84,13 @@ function App() {
 
               <Route path="/add-customer" element={<AddCustomerPage />} />
 
-               {/* Reports & Tools Routes */}
               <Route path="/stock" element={<StockManagementPage />} />
               <Route path="/purchase-entry" element={<PurchaseEntryPage />} />
               <Route path="/purchase-history" element={<PurchaseHistoryPage />} />
-              <Route path="/analytics-reports" element={<AnalyticsReportsPage />} /> {/* New route */}
-              {/* <Route path="/revenue" element={<RevenuePage />} /> */}
-
-              {/* Default Route */}
+              <Route path="/analytics-reports" element={<AnalyticsReportsPage />} />
+              
               <Route path="/" element={<Navigate replace to="/dashboard" />} />
-
-              {/* Optional: 404 Not Found */}
+              
               <Route path="*" element={<div className='text-center mt-5'><h2>404 - Page Not Found</h2><p>The page you requested could not be found.</p></div>} />
             </Routes>
           </main>
