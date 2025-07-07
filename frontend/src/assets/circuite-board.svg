@@ -1,0 +1,12 @@
+<svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <pattern id="circuit" patternUnits="userSpaceOnUse" width="100" height="100" >
+            <path d="M0 25 L25 25 L25 0 M75 100 L75 75 L100 75 M75 0 L75 25 L100 25 M25 100 L25 75 L0 75 M25 25 L75 25 M25 75 L75 75 M25 25 L25 75 M75 25 L75 75" stroke="#007BFF" stroke-width="1" fill="none" opacity="0.1"/>
+            <circle cx="25" cy="25" r="2" fill="#007BFF" opacity="0.2"/>
+            <circle cx="75" cy="75" r="2" fill="#007BFF" opacity="0.2"/>
+            <circle cx="75" cy="25" r="2" fill="#007BFF" opacity="0.2"/>
+            <circle cx="25" cy="75" r="2" fill="#007BFF" opacity="0.2"/>
+        </pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#circuit)" />
+</svg>

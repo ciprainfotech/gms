@@ -569,6 +569,22 @@ export const updateVehicle = (vehicleId, updatedData) => {
     return null; // Not found
 };
 
+// This file simulates a basic user database.
+// In a real application, you would fetch this data from a secure backend API.
+
+export const users = [
+  {
+    name: 'Admin User',
+    email: 'admin',
+    password: '123', // In a real app, this would be a hashed password
+  },
+  {
+    name: 'Test User',
+    email: 'test@example.com',
+    password: 'testpassword',
+  },
+];
+
 export const deleteVehicleById = (vehicleId) => {
     const initialLength = initialVehicles.length;
     initialVehicles = initialVehicles.filter(v => v.id !== vehicleId);

@@ -356,7 +356,238 @@ h4 { font-size: 1.25rem; }
 .chart-container-lg { height: 420px; }
 .chart-card .card-header { background-color: transparent; border-bottom: 1px solid var(--app-border); }
 
+/* =================================== */
+/* --- NEW: Global Transition Styles --- */
+/* =================================== */
 
+.transition-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: #101622; /* A dark color that matches your blueprint panel */
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.8s cubic-bezier(0.7, 0, 0.3, 1);
+}
+
+.transition-overlay.is-visible {
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* --- NEW: Entry animation for the main layout --- */
+.layout-wrapper.is-entering {
+  animation: fade-in-layout 0.8s ease-out forwards;
+}
+
+@keyframes fade-in-layout {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+/* ==========================================================================
+   ====== USER DROPDOWN STYLES (in Header) ======
+   ========================================================================== */
+
+/* This container is needed to correctly position the absolute dropdown */
+/* ========================================================================== */
+/* == Professional & Classy - Remastered User Dropdown Styles == */
+/* ========================================================================== */
+
+/* --- Variable Definitions (assumed from your app's theme) --- */
+:root {
+    --primary-color: #0d6efd; /* A standard, professional blue */
+    --app-bg-alt: #ffffff;
+    --app-border: #dee2e6;
+    --app-text: #212529;
+    --app-text-muted: #6c757d;
+    --app-hover-bg: #f8f9fa;
+    --danger-color: #dc3545;
+    --shadow-lg: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.1);
+    --border-radius-lg: 0.5rem; /* 8px */
+    --transition-easing: cubic-bezier(0.25, 0.1, 0.25, 1);
+    --transition-speed-fast: 0.2s;
+}
+
+/* --- Main Container & Trigger --- */
+
+.user-profile-container {
+    position: relative;
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+}
+
+/* --- Dropdown Menu (Desktop) --- */
+
+.user-dropdown {
+    position: absolute;
+    top: calc(100% + 12px); /* Perfect spacing from the trigger */
+    right: 0;
+    z-index: 1050;
+    width: 260px;
+    background-color: var(--app-bg-alt);
+    border: 1px solid var(--app-border);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    padding: 0.5rem; /* Outer padding for the whole menu */
+    list-style: none;
+    
+    /* Elegant entry animation */
+    animation: fadeInSlideUp 0.2s var(--transition-easing) forwards;
+    transform-origin: top right;
+    opacity: 0;
+}
+
+@keyframes fadeInSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* --- Dropdown Content & Items --- */
+
+.dropdown-header {
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.dropdown-user-name {
+    display: block;
+    font-weight: 600;
+    color: var(--app-text);
+    font-size: 0.95rem;
+}
+
+.dropdown-user-email {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--app-text-muted);
+    word-break: break-all;
+}
+
+.dropdown-divider {
+    border: 0;
+    border-top: 1px solid var(--app-border);
+    margin: 0.5rem 0;
+}
+
+.dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem; /* Perfect space between icon and text */
+    padding: 0.75rem 1rem; /* Spacious padding */
+    color: #495057; /* Slightly darker than muted text for better readability */
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-decoration: none;
+    background-color: transparent;
+    border: none;
+    width: 100%;
+    text-align: left;
+    border-radius: 6px; /* A softer radius for items */
+    transition: background-color var(--transition-speed-fast) ease, color var(--transition-speed-fast) ease;
+}
+
+/* Clean, simple hover state */
+.dropdown-item:hover {
+    background-color: var(--app-hover-bg);
+    color: var(--primary-color);
+    text-decoration: none;
+}
+
+.dropdown-item-icon {
+    font-size: 1rem;
+    width: 20px; /* Ensures consistent text alignment */
+    text-align: center;
+    color: var(--app-text-muted);
+}
+
+.dropdown-item:hover .dropdown-item-icon {
+    color: var(--primary-color);
+}
+
+.dropdown-item.logout-btn:hover {
+    background-color: rgba(220, 53, 69, 0.1); /* Danger hover background */
+    color: var(--danger-color);
+}
+
+.dropdown-item.logout-btn:hover .dropdown-item-icon {
+    color: var(--danger-color);
+}
+
+
+/* ========================================================================== */
+/* == Flawless Mobile Responsive Design (Action Sheet Style)             == */
+/* ========================================================================== */
+
+@media (max-width: 768px) {
+    /* On mobile, the dropdown becomes a clean bottom sheet */
+    .user-dropdown {
+        position: fixed;
+        top: auto; /* Unset top positioning */
+        bottom: 0;
+        left: 0;
+        right: 0;
+        
+        width: 100%;
+        max-width: 100%;
+        border-radius: 1.5rem 1.5rem 0 0; /* Rounded corners only on top */
+        padding: 1rem;
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom)); /* Support for iPhone notches */
+
+        /* New entry animation for the bottom sheet */
+        animation: sheet-slide-in 0.3s var(--transition-easing) forwards;
+    }
+
+    @keyframes sheet-slide-in {
+        from {
+            transform: translateY(100%);
+        }
+        to {
+            transform: translateY(0);
+        }
+    }
+    
+    /* We assume a global overlay will be triggered by your `isSidebarOpen` logic.
+       If not, this is how you would create a dedicated one. */
+    .user-profile-container.dropdown-open-mobile::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0,0,0,0.4);
+        z-index: 1040;
+    }
+
+    .dropdown-header {
+        text-align: center;
+    }
+}
 /* ================================== */
 /* =    PAGE SPECIFIC STYLES        = */
 /* ================================== */
@@ -544,6 +775,8 @@ h4 { font-size: 1.25rem; }
     padding: 1rem; /* Tighter padding on cards */
   }
 }
+
+
 /* ================================== */
 /* =         PRINT STYLES           = */
 /* ================================== */

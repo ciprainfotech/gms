@@ -1,0 +1,157 @@
+<svg width="320" height="80" viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg">
+    <title>CGMS - Complete Garage Management System</title>
+    
+    <!-- Gradient & Filter Definitions -->
+    <defs>
+        <!-- Primary gradient - Professional automotive blue -->
+        <linearGradient id="primary-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#1e40af" />
+            <stop offset="50%" stop-color="#3b82f6" />
+            <stop offset="100%" stop-color="#60a5fa" />
+        </linearGradient>
+        
+        <!-- Car body gradient - Realistic metallic -->
+        <linearGradient id="car-body" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#e5e7eb" />
+            <stop offset="30%" stop-color="#d1d5db" />
+            <stop offset="70%" stop-color="#9ca3af" />
+            <stop offset="100%" stop-color="#6b7280" />
+        </linearGradient>
+        
+        <!-- Car shadow gradient -->
+        <linearGradient id="car-shadow" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#374151" />
+            <stop offset="100%" stop-color="#1f2937" />
+        </linearGradient>
+        
+        <!-- Accent gradient - Orange -->
+        <linearGradient id="accent-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#ea580c" />
+            <stop offset="100%" stop-color="#f97316" />
+        </linearGradient>
+        
+        <!-- Tool gradient - Metallic steel -->
+        <linearGradient id="tool-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#cbd5e1" />
+            <stop offset="50%" stop-color="#94a3b8" />
+            <stop offset="100%" stop-color="#64748b" />
+        </linearGradient>
+        
+        <!-- Professional shadow -->
+        <filter id="drop-shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="1" dy="1" stdDeviation="1.5" flood-color="rgba(0,0,0,0.2)"/>
+        </filter>
+        
+        <!-- Realistic car reflection -->
+        <filter id="car-reflection" x="-10%" y="-10%" width="120%" height="120%">
+            <feGaussianBlur stdDeviation="0.5" result="coloredBlur"/>
+            <feMerge>
+                <feMergeNode in="coloredBlur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+    </defs>
+    
+    <!-- Main Icon Container - Realistic Car -->
+    <g transform="translate(5, 40)">
+        <!-- Car shadow/ground -->
+        <ellipse cx="32" cy="25" rx="28" ry="3" fill="url(#car-shadow)" opacity="0.3"/>
+        
+        <!-- Car body - Realistic sedan profile -->
+        <g filter="url(#car-reflection)">
+            <!-- Main body -->
+            <path d="M6 5 L58 5 C60 5 62 7 62 9 L62 18 C62 20 60 22 58 22 L6 22 C4 22 2 20 2 18 L2 9 C2 7 4 5 6 5 Z" 
+                  fill="url(#car-body)" stroke="#6b7280" stroke-width="0.5"/>
+            
+            <!-- Car roof with realistic curve -->
+            <path d="M14 -2 L50 -2 C52 -2 54 0 54 2 L54 5 L10 5 L10 2 C10 0 12 -2 14 -2 Z" 
+                  fill="url(#car-body)" stroke="#6b7280" stroke-width="0.5"/>
+            
+            <!-- Windshield -->
+            <path d="M12 0 L52 0 L54 4 L10 4 Z" fill="#87ceeb" opacity="0.8" stroke="#4682b4" stroke-width="0.3"/>
+            
+            <!-- Side windows -->
+            <rect x="15" y="7" width="10" height="6" rx="1" fill="#87ceeb" opacity="0.8" stroke="#4682b4" stroke-width="0.3"/>
+            <rect x="39" y="7" width="10" height="6" rx="1" fill="#87ceeb" opacity="0.8" stroke="#4682b4" stroke-width="0.3"/>
+            
+            <!-- Door handles -->
+            <rect x="28" y="12" width="2" height="1" rx="0.5" fill="#374151"/>
+            <rect x="34" y="12" width="2" height="1" rx="0.5" fill="#374151"/>
+            
+            <!-- Front grille -->
+            <rect x="62" y="10" width="3" height="8" rx="0.5" fill="#1f2937"/>
+            <line x1="63" y1="12" x2="64" y2="12" stroke="#4b5563" stroke-width="0.3"/>
+            <line x1="63" y1="14" x2="64" y2="14" stroke="#4b5563" stroke-width="0.3"/>
+            <line x1="63" y1="16" x2="64" y2="16" stroke="#4b5563" stroke-width="0.3"/>
+            
+            <!-- Realistic wheels with rims -->
+            <circle cx="16" cy="22" r="5" fill="#1f2937"/>
+            <circle cx="16" cy="22" r="4" fill="#374151"/>
+            <circle cx="16" cy="22" r="2.5" fill="#6b7280"/>
+            <circle cx="16" cy="22" r="1.5" fill="#9ca3af"/>
+            
+            <circle cx="48" cy="22" r="5" fill="#1f2937"/>
+            <circle cx="48" cy="22" r="4" fill="#374151"/>
+            <circle cx="48" cy="22" r="2.5" fill="#6b7280"/>
+            <circle cx="48" cy="22" r="1.5" fill="#9ca3af"/>
+            
+            <!-- Headlight with realistic glow -->
+            <ellipse cx="65" cy="12" rx="2.5" ry="3" fill="#fbbf24" opacity="0.9"/>
+            <ellipse cx="65" cy="12" rx="1.5" ry="2" fill="#f59e0b"/>
+            <ellipse cx="65" cy="12" rx="0.8" ry="1" fill="#ffffff" opacity="0.6"/>
+            
+            <!-- Car details -->
+            <line x1="2" y1="15" x2="62" y2="15" stroke="#4b5563" stroke-width="0.3"/>
+            <rect x="58" y="8" width="1" height="2" fill="#dc2626"/>
+        </g>
+        
+        <!-- Wrench tool - Realistic -->
+        <g transform="translate(70, 8)">
+            <path d="M2 0 L6 4 L4 6 L8 10 L6 12 L2 8 L0 6 L4 2 Z" 
+                  fill="url(#tool-gradient)" filter="url(#drop-shadow)"/>
+            <rect x="6" y="8" width="2" height="12" rx="1" fill="url(#tool-gradient)"/>
+            <circle cx="7" cy="22" r="2" fill="url(#tool-gradient)"/>
+            <circle cx="7" cy="22" r="1" fill="#e2e8f0"/>
+        </g>
+    </g>
+    
+    <!-- Typography Section - Compact -->
+    <g>
+        <!-- Main brand name -->
+        <text x="95" y="28" font-family="'Impact', 'Arial Black', sans-serif" font-size="32" font-weight="900" 
+              letter-spacing="3px" fill="url(#primary-gradient)" filter="url(#drop-shadow)">
+            CGMS
+        </text>
+        
+        <!-- Tagline -->
+        <text x="95" y="45" font-family="'Arial', sans-serif" font-size="11" font-weight="600" 
+              letter-spacing="0.6px" fill="#475569">
+            Complete Garage Management System
+        </text>
+        
+        <!-- Decorative line -->
+        <rect x="95" y="50" width="180" height="1.5" fill="url(#accent-gradient)" rx="0.75"/>
+        
+        <!-- Service indicators - Compact -->
+        <g transform="translate(95, 58)">
+            <circle cx="0" cy="3" r="1.5" fill="url(#primary-gradient)"/>
+            <text x="6" y="6" font-family="'Arial', sans-serif" font-size="8" font-weight="500" fill="#64748b">
+                Service
+            </text>
+            
+            <circle cx="45" cy="3" r="1.5" fill="url(#accent-gradient)"/>
+            <text x="51" y="6" font-family="'Arial', sans-serif" font-size="8" font-weight="500" fill="#64748b">
+                Inventory
+            </text>
+            
+            <circle cx="100" cy="3" r="1.5" fill="url(#tool-gradient)"/>
+            <text x="106" y="6" font-family="'Arial', sans-serif" font-size="8" font-weight="500" fill="#64748b">
+                Reports
+            </text>
+        </g>
+    </g>
+    
+    <!-- Professional corner accents - Minimal -->
+    <path d="M305 70 L320 70 L320 80" stroke="url(#accent-gradient)" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <path d="M0 0 L15 0 L0 15" stroke="url(#primary-gradient)" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+</svg>
