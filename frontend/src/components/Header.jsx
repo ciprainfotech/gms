@@ -84,8 +84,7 @@ const Header = ({ onMenuToggle, onLogout }) => {
                     </div>
 
                     {/* Conditionally render the dropdown menu */}
-                    {isDropdownOpen && (
-                        <div className="user-dropdown">
+                     <div className={`user-dropdown ${isDropdownOpen ? 'is-open' : ''}`}>
                             <div className="dropdown-header">
                                 <span className="dropdown-user-name">Admin</span>
                                 <span className="dropdown-user-email">admin@garage.com</span>
@@ -93,19 +92,18 @@ const Header = ({ onMenuToggle, onLogout }) => {
                             <hr className="dropdown-divider" />
                             <Link to="/profile" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
                                 <FaUserCircle className="dropdown-item-icon" />
-                                My Profile
+                                <span>My Profile</span>
                             </Link>
                             <Link to="/settings" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
                                 <FaCog className="dropdown-item-icon" />
-                                Settings
+                                <span>Settings</span>
                             </Link>
                             <hr className="dropdown-divider" />
-                            <button className="dropdown-item logout-btn" onClick={handleLogoutClick}>
+                            <button type="button" className="dropdown-item logout-btn" onClick={handleLogoutClick}>
                                 <FaSignOutAlt className="dropdown-item-icon" />
-                                Logout
+                                <span>Logout</span>
                             </button>
-                        </div>
-                    )}
+                </div>
                 </div>
             </div>
         </div>
