@@ -1,17 +1,21 @@
+// src/pages/InvoiceViewPage.jsx
+// --- COMPLETE & REFACTORED FILE WITH NEW LOGO CLASS ---
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Container, Row, Col, Table, Button, Spinner, Alert } from 'react-bootstrap';
 import { FaPrint, FaArrowLeft } from 'react-icons/fa';
-import { findInvoiceById, findCustomerById, findVehicleById } from '../data/staticData';
-import logo from '../assets/saman-logo.png'; // ** Verify your logo path **
-import '../App.css'; // Your main CSS file which now includes the print styles
+import api from '../api/api';
+import logo from '../assets/saman-logo.png';
+import '../App.css'; // Make sure you add the new CSS here
 
-// --- Currency Formatter (Robust) ---
+// FIX: Import number-to-words using ES Modules syntax
+import numberToWords from 'number-to-words'; 
+
+// Robust Currency Formatter
 const formatCurrency = (amount) => {
-    if (amount == null || typeof amount !== 'number' || isNaN(amount)) {
-        return `₹\u00A00.00`;
-    }
-    const fixedAmount = amount.toFixed(2);
+    const numericAmount = Number(amount) || 0;
+    const fixedAmount = numericAmount.toFixed(2);
     return Number(fixedAmount).toLocaleString('en-IN', {
         style: 'currency',
         currency: 'INR',
@@ -20,11 +24,13 @@ const formatCurrency = (amount) => {
     });
 };
 
-// --- Date Formatter ---
+// Date Formatter
 const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     try {
-        return new Date(dateString).toLocaleDateString('en-GB', { // dd/mm/yyyy format
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'Invalid Date';
+        return date.toLocaleDateString('en-GB', {
             day: '2-digit',
             month: '2-digit',
             year: 'numeric'
@@ -35,98 +41,104 @@ const formatDate = (dateString) => {
     }
 };
 
-
 const InvoiceViewPage = () => {
     const { invoiceId } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
 
     const [invoice, setInvoice] = useState(null);
-    const [customer, setCustomer] = useState(null);
-    const [vehicle, setVehicle] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [missingDataWarning, setMissingDataWarning] = useState(null);
 
-    const isPrintMode = useMemo(() => new URLSearchParams(location.search).get('print') === 'true', [location.search]);
-
-    // --- Data Fetching Effect ---
+    // Data Fetching Effect
     useEffect(() => {
-        let isMounted = true;
-        setLoading(true);
-        setError(null);
-        setMissingDataWarning(null);
-        setInvoice(null); setCustomer(null); setVehicle(null);
-
-        const timer = setTimeout(() => {
-            if (!isMounted) return;
-
+        const fetchInvoiceData = async () => {
+            setLoading(true);
+            setError(null);
             try {
-                const foundInvoice = findInvoiceById(invoiceId);
-                if (!foundInvoice) {
-                    setError(`Invoice with ID ${invoiceId} not found.`);
-                    setLoading(false);
-                    return;
+                const response = await api.get(`/invoices/${invoiceId}`);
+                if (!response.ok) {
+                    let errorMessage = `API Error: ${response.status} ${response.statusText}`;
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.message || errorMessage;
+                    } catch (e) { /* JSON parsing failed, use default message */ }
+                    throw new Error(errorMessage);
                 }
-
-                setInvoice(foundInvoice);
-
-                let warnings = [];
-                const foundCustomer = findCustomerById(foundInvoice.customerId);
-                if (foundCustomer) {
-                    setCustomer(foundCustomer);
-                } else {
-                    warnings.push("Customer details are missing.");
-                }
-
-                const foundVehicle = findVehicleById(foundInvoice.vehicleId);
-                if (foundVehicle) {
-                    setVehicle(foundVehicle);
-                } else {
-                    warnings.push("Vehicle details are missing.");
-                }
-
-                if (warnings.length > 0) {
-                    setMissingDataWarning(`Note: ${warnings.join(' ')} Invoice display might be incomplete.`);
-                }
-
+                const data = await response.json();
+                setInvoice(data);
             } catch (err) {
                 console.error("Error loading invoice data:", err);
-                setError("An unexpected error occurred while loading the invoice.");
+                setError(err.message || "An unexpected error occurred.");
             } finally {
-                if (isMounted) setLoading(false);
+                setLoading(false);
             }
-        }, 300);
-
-        return () => {
-            isMounted = false;
-            clearTimeout(timer);
         };
+        fetchInvoiceData();
     }, [invoiceId]);
 
-    // New effect to trigger print AFTER data is loaded
-    useEffect(() => {
-        if (isPrintMode && !loading && invoice) {
-            setTimeout(() => {
-                window.print();
-            }, 100);
-        }
-    }, [isPrintMode, loading, invoice]);
+    // --- Calculate all totals on the frontend using useMemo ---
+    const invoiceTotals = useMemo(() => {
+        if (!invoice) return null;
 
+        const items = invoice.items || [];
+        
+        // 1. Calculate base totals from the items list
+        const calculatedTotals = items.reduce((acc, item) => {
+            acc.totalParts += Number(item.line_parts_calculated) || 0;
+            acc.totalLubes += Number(item.lube_charge) || 0;
+            acc.totalLabour += Number(item.labour_charge) || 0;
+            return acc;
+        }, { totalParts: 0, totalLubes: 0, totalLabour: 0 });
+
+        const subTotal = calculatedTotals.totalParts + calculatedTotals.totalLubes + calculatedTotals.totalLabour;
+
+        // 2. Calculate discount from the invoice header data
+        let discountAmount = 0;
+        const invoiceDiscountValue = Number(invoice.discount_value) || 0;
+
+        if (invoice.discount_type === 'Percent') {
+            discountAmount = subTotal * (invoiceDiscountValue / 100.0);
+        } else { // 'Fixed'
+            discountAmount = invoiceDiscountValue;
+        }
+
+        // 3. Calculate tax and final grand total
+        const amountBeforeTax = subTotal - discountAmount;
+        const invoiceTaxRate = Number(invoice.tax_rate) || 0;
+        const taxAmount = amountBeforeTax * (invoiceTaxRate / 100.0);
+        
+        return {
+            ...calculatedTotals,
+            subTotal,
+            discountAmount,
+            amountBeforeTax,
+            taxAmount,
+            grandTotal: Number(invoice.grand_total) || 0
+        };
+
+    }, [invoice]);
 
     // --- Amount in Words ---
     const amountInWords = useMemo(() => {
-        const total = invoice?.grandTotal;
-        if (total == null || typeof total !== 'number' || isNaN(total)) {
+        const total = Number(invoice?.grand_total) || 0; 
+        if (total === 0) {
             return 'RUPEES ZERO ONLY';
         }
+
+        // Use the imported numberToWords
         const integerPart = Math.floor(total);
         const decimalPart = Math.round((total - integerPart) * 100);
-        return `RUPEES ${integerPart} AND PAISE ${decimalPart.toString().padStart(2, '0')} ONLY (Placeholder)`;
 
-    }, [invoice?.grandTotal]);
+        let words = numberToWords.toWords(integerPart).toUpperCase();
+        if (decimalPart > 0) {
+            words += ` AND PAISE ${numberToWords.toWords(decimalPart).toUpperCase()}`;
+        }
+        return `RUPEES ${words} ONLY`;
+    }, [invoice?.grand_total]);
 
-    // --- Render States ---
+
+    // Render States
     if (loading) {
         return (
             <Container className="text-center py-5">
@@ -136,10 +148,10 @@ const InvoiceViewPage = () => {
         );
     }
 
-    if (error && !invoice) {
+    if (error) {
          return (
             <Container className="py-5">
-                <Alert variant="danger">
+                <Alert variant="danger" className="d-print-none">
                     <Alert.Heading>Error Loading Invoice</Alert.Heading>
                     <p>{error}</p>
                     <hr />
@@ -151,79 +163,54 @@ const InvoiceViewPage = () => {
         );
     }
 
-    if (!invoice) {
+    if (!invoice || !invoiceTotals) {
         return (
              <Container className="py-5">
-                <Alert variant="warning">Invoice data is not available.</Alert>
+                <Alert variant="warning">Invoice data could not be loaded or is incomplete.</Alert>
              </Container>
         );
     }
-
-    const items = invoice.items || [];
-    const totalItems = items.length;
-    const minTableRows = 10;
-
+    
+    // Helper functions to get labels
     const getDiscountLabel = () => {
-        if (!invoice || invoice.discountAmount <= 0) return 'DISCOUNT';
-        if (invoice.discountType === 'Percent' && invoice.discountValue > 0) {
-            return `DISCOUNT (${invoice.discountValue}%)`;
+        if (Number(invoice.discount_value) > 0) {
+            if (invoice.discount_type === 'Percent') {
+                 return `DISCOUNT (${invoice.discount_value}%)`;
+            }
         }
-        if (invoice.discountType === 'Fixed' && invoice.discountValue > 0) {
-             return `DISCOUNT APPLIED`;
-        }
-        return 'DISCOUNT';
+        return `DISCOUNT APPLIED`;
     };
 
-     const getTaxLabel = () => {
-         if (!invoice || invoice.taxAmount <= 0) return 'TAX';
-         if (invoice.taxRate > 0) {
-             return `TAX (${invoice.taxRate}%)`;
-         }
-         return 'TAX ADDED';
-     };
-
-
+    const getTaxLabel = () => {
+        if (Number(invoice.tax_rate) > 0) {
+            return `TAX (${invoice.tax_rate}%)`;
+        }
+        return 'TAX ADDED';
+    };
+    
+    // Constants for rendering
+    const items = invoice.items || [];
+    const minTableRows = 10;
+    
     return (
-        // The 'printable-section' class is essential for the new print CSS to work
-        <div className={`invoice-view-wrapper bg-light py-4 py-md-5 printable-section ${isPrintMode ? 'force-print' : ''}`}>
+        <div className={`invoice-view-wrapper bg-light py-4 py-md-5 printable-section`}>
             <Container>
-
-                 {/* The !isPrintMode check hides these buttons when loaded in the headless iframe */}
-                 {!isPrintMode && (
-                     <>
-                         <Row className="mb-3 d-print-none">
-                             <Col className="text-end">
-                                 <Button variant="outline-secondary" size="sm" onClick={() => navigate(-1)} className="me-2">
-                                     <FaArrowLeft className="me-1"/> Back
-                                 </Button>
-                                 <Button variant="primary" size="sm" onClick={() => window.print()}>
-                                     <FaPrint className="me-1"/> Print Invoice
-                                 </Button>
-                             </Col>
-                         </Row>
-                         {missingDataWarning && (
-                              <Alert variant="warning" className="mx-lg-auto mb-3 d-print-none shadow-sm small" style={{ maxWidth: '800px' }}>
-                                  {missingDataWarning}
-                              </Alert>
-                         )}
-                         {error && invoice && (
-                             <Alert variant="danger" className="mx-lg-auto mb-3 d-print-none shadow-sm small" style={{ maxWidth: '800px' }}>
-                                 {error}
-                             </Alert>
-                         )}
-                    </>
-                 )}
+                <Row className="mb-3 d-print-none">
+                     <Col className="text-end">
+                         <Button variant="outline-secondary" size="sm" onClick={() => navigate(-1)} className="me-2"><FaArrowLeft className="me-1"/> Back</Button>
+                         <Button variant="primary" size="sm" onClick={() => window.print()}><FaPrint className="me-1"/> Print Invoice</Button>
+                     </Col>
+                 </Row>
                  
                 <div className="invoice-paper mx-lg-auto p-4 p-md-5 border bg-white shadow-sm">
-                    {/* All the invoice HTML structure remains the same */}
-                    {/* --- Header --- */}
                     <Row className="invoice-header align-items-center mb-4">
                         <Col xs={7} md={8} className="company-info">
-                                <img src={logo} alt="Saman Motors Logo" className="company-logo mb-2"/>
-                                <h4 className="fw-bold mb-1 company-name">SAMAN MOTORS</h4>
-                                <p className="mb-0 company-tagline small">ALL CARS SPARES SALES & SERVICE STATION</p>
-                                <p className="mb-0 company-address small">Opp. Geeta Hume Pipe, Vasad Road, Vaghwala, Borsad - 388540</p>
-                                <p className="company-gstin mb-0 small">GSTIN No.: {invoice.gstinNo || '24BBDPK3507P1ZK'} | State: Gujarat (24)</p>
+                            {/* 👉 MODIFIED CLASS & REMOVED INLINE STYLE */}
+                            <img src={logo} alt="Saman Motors Logo" className="company-logo-view mb-2"/>
+                            <h4 className="fw-bold mb-1 company-name">SAMAN MOTORS</h4>
+                            <p className="mb-0 company-tagline small">ALL CARS SPARES SALES & SERVICE STATION</p>
+                            <p className="mb-0 company-address small">Opp. Geeta Hume Pipe, Vasad Road, Vaghwala, Borsad - 388540</p>
+                            <p className="company-gstin mb-0 small">GSTIN No.: {invoice.gstinNo || '24BBDPK3507P1ZK'} | State: Gujarat (24)</p>
                         </Col>
                         <Col xs={5} md={4} className="text-end invoice-title">
                             <h5 className="invoice-type fw-bold mb-1 text-uppercase">Tax Invoice</h5>
@@ -231,46 +218,36 @@ const InvoiceViewPage = () => {
                         </Col>
                     </Row>
                     <hr className="my-3"/>
-
-                    {/* --- Meta Details --- */}
-                        <Row className="mb-4 invoice-meta-section">
+                    <Row className="mb-4 invoice-meta-section">
                         <Col md={7} className="customer-details mb-3 mb-md-0 pe-md-4">
                             <h6 className="text-muted small text-uppercase mb-2 fw-semibold">Bill To:</h6>
                             <div className="detail-block">
-                                <strong className="d-block">{customer?.name || 'N/A'}</strong>
+                                <strong className="d-block">{invoice.customer_name || 'N/A'}</strong>
                                 <div className="small text-muted">
-                                    {customer?.address || 'N/A'}{customer?.city ? `, ${customer.city}` : ''}<br/>
-                                    Mob: {customer?.phone || 'N/A'}<br/>
-                                    GSTIN: {customer?.gstin || 'N/A'}
+                                    {invoice.customer_address || 'N/A'}<br/>
+                                    Mob: {invoice.customer_phone || 'N/A'}<br/>
+                                    GSTIN: {invoice.customer_gstin || 'N/A'}
                                 </div>
                             </div>
                         </Col>
                         <Col md={5} className="invoice-vehicle-details border-start-md ps-md-4">
-                                <Row as="dl" className="detail-grid-dl mb-0 small">
+                            <Row as="dl" className="detail-grid-dl mb-0 small">
                                 <Col xs={5} as="dt">Invoice No:</Col>
-                                <Col xs={7} as="dd" className="fw-bold">{invoice.invoiceNumber || 'N/A'}</Col>
-
+                                <Col xs={7} as="dd" className="fw-bold">{invoice.invoice_number || 'N/A'}</Col>
                                 <Col xs={5} as="dt">Invoice Date:</Col>
-                                <Col xs={7} as="dd">{formatDate(invoice.dateIssued)}</Col>
-
+                                <Col xs={7} as="dd">{formatDate(invoice.date_issued)}</Col>
                                 <Col xs={5} as="dt">Job Card No:</Col>
-                                <Col xs={7} as="dd">{invoice.jobSheetNumber || 'N/A'}</Col>
-
+                                <Col xs={7} as="dd">{invoice.job_sheet_number || invoice.jobSheetNumber || 'N/A'}</Col>
                                 <Col xs={5} as="dt">Vehicle No:</Col>
-                                <Col xs={7} as="dd" className="fw-semibold">{vehicle?.carNumber || 'N/A'}</Col>
-
+                                <Col xs={7} as="dd" className="fw-semibold">{invoice.vehicle_car_number || 'N/A'}</Col>
                                 <Col xs={5} as="dt">Model:</Col>
-                                <Col xs={7} as="dd">{`${vehicle?.make || ''} ${vehicle?.model || 'N/A'}`.trim()}</Col>
-
+                                <Col xs={7} as="dd">{`${invoice.vehicle_make || ''} ${invoice.vehicle_model || 'N/A'}`.trim()}</Col>
                                 <Col xs={5} as="dt">KM Reading:</Col>
-                                <Col xs={7} as="dd">{invoice.kmReading != null ? `${invoice.kmReading} KM` : 'N/A'}</Col>
+                                <Col xs={7} as="dd">{invoice.km_reading != null ? `${invoice.km_reading} KM` : 'N/A'}</Col>
                             </Row>
                         </Col>
                     </Row>
-
-
-                    {/* --- Items Table (Wrapped for Screen Responsiveness) --- */}
-                        <div className="table-responsive">
+                    <div className="table-responsive">
                         <Table bordered className="invoice-items-table mb-0 small">
                             <thead className="table-light align-middle">
                                 <tr>
@@ -278,7 +255,6 @@ const InvoiceViewPage = () => {
                                     <th style={{ minWidth: '100px' }}>Part No.</th>
                                     <th style={{ minWidth: '200px' }}>Description</th>
                                     <th className="text-center" style={{ width: '50px' }}>Qty</th>
-                                    <th className="text-end" style={{ width: '100px' }}>Rate</th>
                                     <th className="text-end" style={{ width: '100px' }}>Parts Amt</th>
                                     <th className="text-end" style={{ width: '100px' }}>Lubes Amt</th>
                                     <th className="text-end" style={{ width: '100px' }}>Labour Amt</th>
@@ -286,26 +262,23 @@ const InvoiceViewPage = () => {
                             </thead>
                             <tbody>
                                 {items.map((item, index) => (
-                                    <tr key={item.masterItemId || `item-${index}`}>
+                                    <tr key={item.master_item_id || `item-${index}`}>
                                         <td className="text-center">{index + 1}</td>
-                                        <td>{item.partNo || '-'}</td>
+                                        <td>{item.part_no || '-'}</td>
                                         <td>{item.name || 'N/A'}</td>
                                         <td className="text-center">{item.quantity || 0}</td>
-                                        <td className="text-end">{formatCurrency(item.unitPrice)}</td>
-                                        <td className="text-end">{formatCurrency(item.lineParts)}</td>
-                                        <td className="text-end">{formatCurrency(item.lineLubes)}</td>
-                                        <td className="text-end">{formatCurrency(item.lineLabour)}</td>
+                                        <td className="text-end">{formatCurrency(item.line_parts_calculated)}</td>
+                                        <td className="text-end">{formatCurrency(item.lube_charge)}</td>
+                                        <td className="text-end">{formatCurrency(item.labour_charge)}</td>
                                     </tr>
                                 ))}
-                                {Array.from({ length: Math.max(0, minTableRows - totalItems) }).map((_, i) => (
-                                    <tr key={`empty-${i}`} className="empty-row">
-                                        <td> </td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
-                                    </tr>
+                                {Array.from({ length: Math.max(0, minTableRows - items.length) }).map((_, i) => (
+                                    <tr key={`empty-${i}`} className="empty-row"><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
                                 ))}
                             </tbody>
                             <tfoot>
                                 <tr>
-                                    <td colSpan="5" rowSpan={8} className="align-top text-section border-end p-2">
+                                    <td colSpan="4" rowSpan={8} className="align-top text-section border-end p-2">
                                         <div className="mb-2">
                                             <strong className="d-block small text-uppercase text-muted">Amount in Words:</strong>
                                             <span className="amount-words fw-semibold">{amountInWords}</span>
@@ -320,71 +293,61 @@ const InvoiceViewPage = () => {
                                         </div>
                                     </td>
                                     <td colSpan="2" className="text-end label-cell fw-medium">TOTAL PARTS</td>
-                                    <td className="text-end value-cell fw-medium">{formatCurrency(invoice.totalParts)}</td>
+                                    <td className="text-end value-cell fw-medium">{formatCurrency(invoiceTotals.totalParts)}</td>
                                 </tr>
                                 <tr>
                                     <td colSpan="2" className="text-end label-cell fw-medium">TOTAL LUBES</td>
-                                    <td className="text-end value-cell fw-medium">{formatCurrency(invoice.totalLubes)}</td>
+                                    <td className="text-end value-cell fw-medium">{formatCurrency(invoiceTotals.totalLubes)}</td>
                                 </tr>
                                 <tr>
                                     <td colSpan="2" className="text-end label-cell fw-medium">TOTAL LABOUR</td>
-                                    <td className="text-end value-cell fw-medium">{formatCurrency(invoice.totalLabour)}</td>
+                                    <td className="text-end value-cell fw-medium">{formatCurrency(invoiceTotals.totalLabour)}</td>
                                 </tr>
                                 <tr className="subtotal-row">
                                     <td colSpan="2" className="text-end label-cell fw-semibold border-top pt-2">SUB TOTAL</td>
-                                    <td className="text-end value-cell fw-semibold border-top pt-2">{formatCurrency(invoice.subTotal)}</td>
+                                    <td className="text-end value-cell fw-semibold border-top pt-2">{formatCurrency(invoiceTotals.subTotal)}</td>
                                 </tr>
-
-                                {invoice.discountAmount != null && invoice.discountAmount > 0 ? (
+                                {invoiceTotals.discountAmount > 0 && (
                                     <tr>
                                         <td colSpan="2" className="text-end label-cell">{getDiscountLabel()}</td>
-                                        <td className="text-end value-cell text-danger">(-) {formatCurrency(invoice.discountAmount)}</td>
+                                        <td className="text-end value-cell text-danger">(-) {formatCurrency(invoiceTotals.discountAmount)}</td>
                                     </tr>
-                                ) : ( <tr className="filler-row"><td colSpan="3"> </td></tr> )}
-
-                                    {(invoice.discountAmount > 0 || invoice.taxAmount > 0) && (
-                                        <tr className="taxable-amount-row">
-                                            <td colSpan="2" className="text-end label-cell fw-semibold">TAXABLE AMOUNT</td>
-                                            <td className="text-end value-cell fw-semibold">{formatCurrency(invoice.amountBeforeTax)}</td>
-                                        </tr>
-                                    )}
-
-                                {invoice.taxAmount != null && invoice.taxAmount > 0 ? (
+                                )}
+                                {Number(invoice.tax_rate) > 0 && (
+                                    <tr className="taxable-amount-row">
+                                        <td colSpan="2" className="text-end label-cell fw-semibold">TAXABLE AMOUNT</td>
+                                        <td className="text-end value-cell fw-semibold">{formatCurrency(invoiceTotals.amountBeforeTax)}</td>
+                                    </tr>
+                                )}
+                                {invoiceTotals.taxAmount > 0 && (
                                     <tr>
                                         <td colSpan="2" className="text-end label-cell">{getTaxLabel()}</td>
-                                        <td className="text-end value-cell">(+) {formatCurrency(invoice.taxAmount)}</td>
+                                        <td className="text-end value-cell">(+) {formatCurrency(invoiceTotals.taxAmount)}</td>
                                     </tr>
-                                ) : (
-                                        !(invoice.discountAmount > 0) && <tr className="filler-row"><td colSpan="3"> </td></tr>
-                                    )}
-
+                                )}
                                 <tr className="grand-total-row table-light">
                                     <td colSpan="2" className="text-end label-cell fw-bolder pt-2">GRAND TOTAL</td>
-                                    <td className="text-end value-cell fw-bolder fs-5 pt-2">{formatCurrency(invoice.grandTotal)}</td>
+                                    <td className="text-end value-cell fw-bolder fs-5 pt-2">{formatCurrency(invoiceTotals.grandTotal)}</td>
                                 </tr>
                             </tfoot>
                         </Table>
-                        </div>
-
-
-                        {/* --- Footer: Terms & Signature --- */}
-                        <Row className="invoice-footer mt-4 pt-3 border-top">
-                                <Col md={7} className="terms-section small pe-md-4 mb-3 mb-md-0">
-                                <strong className="text-muted text-uppercase small d-block mb-1">Terms & Conditions:</strong>
-                                <ol className="ps-3 mb-0">
-                                    <li>Goods once sold will not be taken back or exchanged.</li>
-                                    <li>Interest @18% p.a. will be charged if payment is not made within the stipulated time.</li>
-                                    <li>All disputes are subject to BORSAD Jurisdiction only.</li>
-                                    <li>E. & O. E. (Errors and Omissions Excepted).</li>
-                                </ol>
-                            </Col>
-                            <Col md={5} className="signature-section text-center pt-md-4 mt-md-4">
-                                <p className="mb-5 small">For, <strong>SAMAN MOTORS</strong></p>
-                                <p className="signature-line pt-2 mt-5 border-top small">Authorised Signatory</p>
-                            </Col>
-                        </Row>
+                    </div>
+                    <Row className="invoice-footer mt-4 pt-3 border-top">
+                        <Col md={7} className="terms-section small pe-md-4 mb-3 mb-md-0">
+                            <strong className="text-muted text-uppercase small d-block mb-1">Terms & Conditions:</strong>
+                            <ol className="ps-3 mb-0">
+                                <li>Goods once sold will not be taken back or exchanged.</li>
+                                <li>Interest @18% p.a. will be charged if payment is not made within the stipulated time.</li>
+                                <li>All disputes are subject to BORSAD Jurisdiction only.</li>
+                                <li>E. & O. E. (Errors and Omissions Excepted).</li>
+                            </ol>
+                        </Col>
+                        <Col md={5} className="signature-section text-center pt-md-4 mt-md-4">
+                            <p className="mb-5 small">For, <strong>SAMAN MOTORS</strong></p>
+                            <p className="signature-line pt-2 mt-5 border-top small">Authorised Signatory</p>
+                        </Col>
+                    </Row>
                 </div>
-
             </Container>
         </div>
     );

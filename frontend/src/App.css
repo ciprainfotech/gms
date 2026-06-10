@@ -1566,3 +1566,18 @@ h4 { font-size: 1.25rem; }
     thead { display: table-header-group !important; }
     tfoot { display: table-footer-group !important; }
 }
+
+/* Add this to src/App.css */
+.company-logo-view {
+  height: 150px; /* Increase this number for a bigger logo */
+  width: auto;   /* Maintains aspect ratio */
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+@media print {
+  .company-logo-view {
+    max-height: 60px !important; /* Shrinks it even more to save paper space */
+    margin-bottom: 0.5rem !important;
+  }
+}

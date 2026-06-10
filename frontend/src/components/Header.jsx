@@ -2,22 +2,26 @@ import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { FaSearch, FaBell, FaBars, FaUserCircle, FaCog, FaSignOutAlt } from "react-icons/fa";
 import logoIcon from "../assets/logo-icon.svg";
-import userAvatar from "../assets/avatar.jpg";
+import userAvatar from "../assets/avatar.jpg"; // Using a static avatar for now
 
-// The Header now accepts 'onLogout' in addition to 'onMenuToggle'
-const Header = ({ onMenuToggle, onLogout }) => {
-    // State to manage the user dropdown visibility
+/**
+ * The main application header.
+ * @param {object} props
+ * @param {function} props.onMenuToggle - Function to toggle the sidebar.
+ * @param {function} props.onLogout - Function to handle user logout.
+ * @param {object|null} props.user - The currently logged-in user object.
+ */
+const Header = ({ onMenuToggle, onLogout, user }) => {
     const [isDropdownOpen, setDropdownOpen] = useState(false);
-    
-    // Ref to detect clicks outside the dropdown
     const dropdownRef = useRef(null);
 
+    // This handler remains the same
     const handleSearch = (e) => {
         e.preventDefault();
         console.log("Search submitted");
     };
     
-    // Effect to handle closing the dropdown when clicking outside
+    // This effect to handle clicks outside the dropdown remains the same
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -25,17 +29,16 @@ const Header = ({ onMenuToggle, onLogout }) => {
             }
         };
 
-        // Add event listener when the dropdown is open
         if (isDropdownOpen) {
             document.addEventListener("mousedown", handleClickOutside);
         }
 
-        // Cleanup the event listener on component unmount or when dropdown closes
         return () => {
             document.removeEventListener("mousedown", handleClickOutside);
         };
     }, [isDropdownOpen]);
 
+    // This logout handler remains the same
     const handleLogoutClick = () => {
         setDropdownOpen(false); // Close dropdown first
         onLogout(); // Call the logout function from App.jsx
@@ -68,7 +71,7 @@ const Header = ({ onMenuToggle, onLogout }) => {
                     <FaBell />
                 </div>
 
-                {/* --- USER DROPDOWN FEATURE --- */}
+                {/* --- MODIFIED USER DROPDOWN FEATURE --- */}
                 <div className="user-profile-container" ref={dropdownRef}>
                     <div
                         className="user-profile"
@@ -78,16 +81,19 @@ const Header = ({ onMenuToggle, onLogout }) => {
                         onClick={() => setDropdownOpen(!isDropdownOpen)}
                     >
                         <div className="user-avatar">
+                            {/* In the future, you could replace this with a user-specific avatar */}
                             <img src={userAvatar} alt="User Avatar" />
                         </div>
-                        <span className="user-name">Admin</span>
+                        {/* MODIFIED: Display the logged-in user's name */}
+                        <span className="user-name">{user ? user.name : '...'}</span>
                     </div>
 
-                    {/* Conditionally render the dropdown menu */}
+                    {/* MODIFIED: The dropdown now uses dynamic data */}
                      <div className={`user-dropdown ${isDropdownOpen ? 'is-open' : ''}`}>
                             <div className="dropdown-header">
-                                <span className="dropdown-user-name">Admin</span>
-                                <span className="dropdown-user-email">admin@garage.com</span>
+                                {/* Display user's name and email from props */}
+                                <span className="dropdown-user-name">{user ? user.name : 'Loading...'}</span>
+                                <span className="dropdown-user-email">{user ? user.email : '...'}</span>
                             </div>
                             <hr className="dropdown-divider" />
                             <Link to="/profile" className="dropdown-item" onClick={() => setDropdownOpen(false)}>
@@ -103,7 +109,7 @@ const Header = ({ onMenuToggle, onLogout }) => {
                                 <FaSignOutAlt className="dropdown-item-icon" />
                                 <span>Logout</span>
                             </button>
-                </div>
+                    </div>
                 </div>
             </div>
         </div>

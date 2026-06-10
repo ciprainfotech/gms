@@ -3,7 +3,7 @@ import { NavLink } from "react-router-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faTachometerAlt, faWrench, faFileInvoiceDollar, faFolderOpen,
-    faReceipt, faUsers, faBoxOpen, faChartPie, faPaperPlane
+    faReceipt, faUsers, faBoxOpen, faChartPie, faPaperPlane, faShieldAlt
 } from "@fortawesome/free-solid-svg-icons";
 import logo from "../assets/saman-logo.png";
 
@@ -11,13 +11,16 @@ const Sidebar = () => {
     const navLinkClass = ({ isActive }) => (isActive ? "nav-link active" : "nav-link");
 
     return (
-        <>
+        <div className="d-flex flex-column h-100">
+            {/* Sidebar Header / Brand Logo */}
             <div className="sidebar-header">
                 <NavLink to="/dashboard">
                     <img src={logo} alt="Saman Motors Logo" />
                 </NavLink>
             </div>
-            <div className="sidebar-content">
+
+            {/* Sidebar Navigation Items */}
+            <div className="sidebar-content flex-grow-1">
                 <ul className="nav flex-column">
                     <h6 className="sidebar-heading">Workflow</h6>
                     <li className="nav-item">
@@ -86,7 +89,20 @@ const Sidebar = () => {
                     </li>
                 </ul>
             </div>
-        </>
+
+            {/* 👉 FIXED: High-Contrast Corporate Branding Sidebar Footer Section */}
+            <div className="sidebar-footer mt-auto pt-3 pb-3 px-3 border-top border-secondary border-opacity-10">
+                <div style={{ fontSize: '11px', lineHeight: '1.4' }}>
+                    {/* text-white-50 provides a perfect soft white tone for the copyright details */}
+                    <p className="mb-1 text-nowrap text-white-50">
+                        &copy; {new Date().getFullYear()} <strong className="text-light">Cipra Infotech</strong>
+                    </p>
+                    <p className="mb-0 text-uppercase tracking-wider fw-bold text-info d-flex align-items-center" style={{ fontSize: '9px', gap: '4px', letterSpacing: '0.5px' }}>
+                        <FontAwesomeIcon icon={faShieldAlt} /> Secure Workspace License
+                    </p>
+                </div>
+            </div>
+        </div>
     );
 };
 

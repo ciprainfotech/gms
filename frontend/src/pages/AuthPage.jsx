@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { users } from '../data/staticData.js'; // Ensure this path is correct for your project structure
+import api from '../api/api.js'; // IMPORTED: Our new API service
 
-// Import assets from the root /assets folder
+// Import assets from the root /assets folder (paths assumed correct)
 import Logo from '../assets/logo.svg';
 import MechanicAvatar from '../assets/mechanic-avatar.png';
 import UserIcon from '../assets/user-icon.svg';
@@ -15,23 +15,24 @@ import PistonIcon from '../assets/tool-piston.svg';
 // Ensure this CSS path is correct for your project structure
 import '../AuthPage.css';
 
-// Self-contained animated spanner icon for the button to ensure it works out of the box
+// Self-contained animated spanner icon (Unchanged)
 const SpannerIcon = () => (
     <svg className="quantum-spanner-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
     </svg>
 );
 
-// This component now accepts the onLoginSuccess prop from App.js
+// This component now accepts the onLoginSuccess prop from App.jsx
 const AuthPage = ({ onLoginSuccess }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [status, setStatus] = useState('idle'); // idle, loading, error, success
+    const [errorMessage, setErrorMessage] = useState(''); // ADDED: State for API error messages
 
     const blueprintPanelRef = useRef(null);
 
-    // Effect for entry animations & 3D parallax
+    // Effect for entry animations & 3D parallax (Unchanged)
     useEffect(() => {
         document.body.classList.add('auth-page-active');
         const container = document.querySelector('.login-container');
@@ -41,7 +42,6 @@ const AuthPage = ({ onLoginSuccess }) => {
 
         const handleMouseMove = (e) => {
             if (!blueprintPanelRef.current || 'ontouchstart' in window) return;
-
             const { clientX, clientY, currentTarget } = e;
             const { left, top, width, height } = currentTarget.getBoundingClientRect();
             const x = (clientX - left - width / 2) / (width / 2);
@@ -60,36 +60,48 @@ const AuthPage = ({ onLoginSuccess }) => {
         };
     }, []);
 
+    // MODIFIED: handleLogin now uses the API
     const handleLogin = (e) => {
         e.preventDefault();
         if (status === 'loading' || status === 'success') return;
+        console.log('[Frontend] Attempting login with:', { email, password });
+        
         setStatus('loading');
+        setErrorMessage('');
 
-        // This 3s delay MUST match the button's loading animation duration in the CSS
-        setTimeout(() => {
-            const user = users.find(u => u.email === email && u.password === password);
-            if (user) {
-                setStatus('success');
-                // The onLoginSuccess prop is called after the internal success animation starts.
-                // App.jsx will then handle the overlay and the actual page switch.
-                if (onLoginSuccess) {
+        // This 3s delay MUST match the button's loading animation.
+        // The API call happens inside this timed window.
+        setTimeout(async () => {
+            try {
+                const response = await api.post('/auth/login', { email, password });
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    setStatus('success');
+                    // The onLoginSuccess prop is called after the internal success animation starts.
+                    // It now passes the user data up to App.jsx.
                     setTimeout(() => {
-                        onLoginSuccess();
+                        onLoginSuccess(data.user);
                     }, 1500); // This delay allows the user to see the success message
+                } else {
+                    // Handle API-level errors (e.g., invalid credentials from backend)
+                    setErrorMessage(data.message || 'Login failed. Please check your credentials.');
+                    setStatus('error');
+                    setTimeout(() => setStatus('idle'), 2000); // Reset after showing error
                 }
-            } else {
+            } catch (err) {
+                // Handle network/server errors
+                console.error('Login API error:', err);
+                setErrorMessage('Unable to connect to the server. Please try again later.');
                 setStatus('error');
-                // Reset status after the error animation/message has been shown
                 setTimeout(() => setStatus('idle'), 2000);
             }
         }, 3000);
     };
 
     return (
-        // --- CRITICAL JSX FIX ---
-        // By using a React Fragment (<>), the background icons and the main wrapper
-        // become siblings, allowing CSS to layer them correctly.
         <>
+            {/* Background Icons (Unchanged) */}
             <ul className="background-icons">
                 <li><img src={GearIcon} alt="gear" /></li>
                 <li><img src={WrenchIcon} alt="wrench" /></li>
@@ -103,6 +115,7 @@ const AuthPage = ({ onLoginSuccess }) => {
 
             <div className={`auth-page-wrapper status-${status}`}>
                 <div className="login-container">
+                    {/* Blueprint Panel (Unchanged) */}
                     <div className="blueprint-panel" ref={blueprintPanelRef}>
                         <div className="blueprint-glare"></div>
                         <div className="blueprint-grid-feed"></div>
@@ -120,6 +133,7 @@ const AuthPage = ({ onLoginSuccess }) => {
 
                     <div className="control-panel">
                         <div className="control-panel-content">
+                            {/* Success State (Unchanged) */}
                             <div className="success-state">
                                 <svg className="success-checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
                                     <circle className="checkmark-circle" cx="26" cy="26" r="25" fill="none" />
@@ -129,6 +143,7 @@ const AuthPage = ({ onLoginSuccess }) => {
                                 <p>System Online. Redirecting...</p>
                             </div>
                             
+                            {/* Login Form and inputs */}
                             <div className="login-state">
                                 <div className="console-header">
                                     <img src={Logo} alt="CGMS Logo" className="console-logo" />
@@ -137,17 +152,18 @@ const AuthPage = ({ onLoginSuccess }) => {
                                 <p className="console-subtitle">Enter your credentials to access the dashboard.</p>
                                 <form onSubmit={handleLogin} noValidate>
                                     <div className="input-wrapper">
-                                        <input id="email" type="email" className="form-control-custom" placeholder="Email Address" onChange={(e) => setEmail(e.target.value)} required disabled={status === 'loading' || status === 'success'}/>
+                                        <input id="email" type="email" className="form-control-custom" placeholder="Email Address" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={status !== 'idle' && status !== 'error'}/>
                                         <img src={UserIcon} alt="user icon" className="input-icon" />
                                     </div>
                                     <div className="input-wrapper">
-                                        <input id="password" type={showPassword ? 'text' : 'password'} className="form-control-custom" placeholder="Password" onChange={(e) => setPassword(e.target.value)} required disabled={status === 'loading' || status === 'success'}/>
+                                        <input id="password" type={showPassword ? 'text' : 'password'} className="form-control-custom" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required disabled={status !== 'idle' && status !== 'error'}/>
                                         <img src={KeyIcon} alt="key icon" className="input-icon" />
-                                        <button type="button" className="password-toggle-btn" onClick={() => setShowPassword(!showPassword)}>
+                                        <button type="button" className="password-toggle-btn" onClick={() => setShowPassword(!showPassword)} disabled={status !== 'idle' && status !== 'error'}>
                                             <img src={showPassword ? EyeClosedIcon : EyeOpenIcon} alt="Toggle Visibility" />
                                         </button>
                                     </div>
-                                    {status === 'error' && <div className="alert-error">Invalid credentials. Please try again.</div>}
+                                    {/* MODIFIED: Using dynamic error message state */}
+                                    {status === 'error' && <div className="alert-error">{errorMessage}</div>}
                                     <button type="submit" className="login-btn" disabled={status === 'loading' || status === 'success'}>
                                         <span className="btn-text">{status === 'loading' ? 'LOGGING IN...' : 'LOGIN'}</span>
                                         <div className="btn-progress-track">
@@ -160,6 +176,7 @@ const AuthPage = ({ onLoginSuccess }) => {
                         </div>
                     </div>
                 </div>
+                {/* Footer (Unchanged) */}
                 <footer className="auth-footer">
                     © {new Date().getFullYear()} CIPRA Infotech Pvt. Ltd. All Rights Reserved.
                 </footer>

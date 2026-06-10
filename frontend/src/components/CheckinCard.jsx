@@ -1,65 +1,72 @@
 import React from 'react';
-import { Badge } from 'react-bootstrap'; // Or use custom badge component
-import Button from 'react-bootstrap/Button';
-import { FaUser, FaClock, FaTools, FaCheckCircle } from 'react-icons/fa';
+import { Card, Badge, Button } from 'react-bootstrap';
+import { FaArrowRight, FaStickyNote, FaTrashAlt, FaCar, FaUser } from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
+import '../App.css'; // Ensure this file contains styles for .checkin-card, .card-title-clickable, etc.
 
-const CheckinCard = ({ vehicle, onStartRepair, onCompleteCheckout }) => {
-    // Destructure for easier access
-    const {
-        id, customer, carNumber, vehicleModel, status, checkIn
-    } = vehicle;
+const CheckinCard = ({ job, onStartRepair, onDelete }) => {
+    const navigate = useNavigate();
+
+    const getStatusVariant = (status) => {
+        switch (status) {
+            case 'Waiting': return 'secondary';
+            case 'In Progress': return 'warning';
+            case 'Completed': return 'success';
+            default: return 'light';
+        }
+    };
+
+    const handleViewDetails = () => {
+        // For 'In Progress' and 'Completed' jobs, this navigates to the full job sheet editor/viewer.
+        navigate(`/jobsheet/${job.id}`);
+    };
 
     return (
-        // Add data-status for CSS accent border
-        <div className="checkin-card shadow-sm" data-status={status}>
-            <div className="card-vehicle-info">
-                <span className="card-vehicle-number">{carNumber}</span>
-                <span className="card-vehicle-model">{vehicleModel}</span>
-            </div>
-
-            <div className="card-customer-info">
-                <FaUser /> <strong>{customer}</strong>
-            </div>
-
-            <div className="card-checkin-time">
-                <FaClock /> <span>Checked In: {checkIn}</span>
-            </div>
-
-            {/* Actions only shown for Waiting or In Progress */}
-            {(status === "Waiting" || status === "In Progress") && (
-                <div className="card-actions">
-                    {status === "Waiting" && (
-                        <Button
-                            variant="outline-warning" // Use custom class for specific styling
-                            size="sm"
-                            className="btn-start" // Custom class from CSS
-                            onClick={() => onStartRepair(vehicle)}
-                            title="Start Repair"
-                        >
-                            <FaTools /> Start Repair
-                        </Button>
-                    )}
-                    {status === "In Progress" && (
-                        <Button
-                            variant="outline-success" // Use custom class for specific styling
-                            size="sm"
-                            className="btn-complete" // Custom class from CSS
-                            onClick={() => onCompleteCheckout(vehicle)}
-                            title="Mark as Completed"
-                        >
-                            <FaCheckCircle /> Complete
-                        </Button>
-                    )}
+        <Card className="checkin-card mb-3 shadow-sm">
+            <Card.Body className="p-3">
+                <div className="d-flex justify-content-between align-items-start">
+                    <div onClick={handleViewDetails} style={{ cursor: 'pointer', flexGrow: 1 }}>
+                        <Card.Title className="h6 mb-1 card-title-clickable">{job.vehicleModel}</Card.Title>
+                        <p className="mb-2 text-muted small"><FaCar className="me-1" /> {job.vehicleNumber}</p>
+                    </div>
+                    <Badge pill bg={getStatusVariant(job.status)} className="align-self-center">{job.status}</Badge>
                 </div>
-            )}
+                <p className="small mb-2"><FaUser className="me-2 text-muted"/>{job.customerName}</p>
+                <Card.Text className="small text-muted mb-3 notes-preview">
+                    <FaStickyNote className="me-2"/>{job.notes || "No notes provided."}
+                </Card.Text>
 
-            {/* Optionally display something for 'Completed' status */}
-             {status === "Completed" && (
-                <div className="text-end text-success fst-italic mt-2" style={{fontSize: '0.85rem'}}>
-                    Ready for Billing/Pickup
+                <div className="d-flex justify-content-between align-items-center">
+                    {/* Main Action Buttons */}
+                    <div>
+                        {job.status === 'Waiting' && (
+                            <Button variant="primary" size="sm" onClick={onStartRepair}>
+                                Start Repair <FaArrowRight />
+                            </Button>
+                        )}
+                        {job.status === 'In Progress' && (
+                             <Button variant="success" size="sm" onClick={handleViewDetails}>
+                                Update Details
+                            </Button>
+                        )}
+                         {job.status === 'Completed' && (
+                             <Button variant="info" size="sm" onClick={handleViewDetails}>
+                                View Details
+                            </Button>
+                        )}
+                    </div>
+
+                    {/* Secondary Action: Delete/Cancel Button */}
+                    <div>
+                        {(job.status === 'Waiting' || job.status === 'In Progress') && (
+                            <Button variant="outline-danger" size="sm" className="p-1" onClick={onDelete} title="Cancel Check-in">
+                                <FaTrashAlt />
+                            </Button>
+                        )}
+                    </div>
                 </div>
-            )}
-        </div>
+            </Card.Body>
+        </Card>
     );
 };
 

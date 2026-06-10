@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Container, Card, Table, Button, Row, Col, Spinner, Badge } from 'react-bootstrap';
 import { FaPaperPlane, FaExclamationCircle, FaTools } from 'react-icons/fa';
 import { initialInvoices, initialJobSheets } from '../data/staticData';
-import { sendPaymentReminder, sendServiceReminder } from '../api/communicationAPI';
+// import { sendPaymentReminder, sendServiceReminder } from '../api/api';
 
 const SERVICE_REMINDER_DAYS = 90; // e.g., 3 months
 

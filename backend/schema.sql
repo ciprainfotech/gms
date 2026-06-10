@@ -1,165 +1,271 @@
--- AutoCare Management System - SQL Schema with Full Audit Support
--- Includes: created_at, soft delete (is_deleted), and normalized structure
+-- =====================================================================
+-- AutoCare PRO - FINAL Database Schema
+-- Version: 7.0 (Schema Only, using SERIAL for auto-increment)
+-- =====================================================================
 
--- === CUSTOMERS ===
-CREATE TABLE customers (
+-- This script creates the complete, empty database structure.
+-- It is designed to be run on a clean database.
+
+BEGIN;
+
+-- === 1. SETUP: Helper function for `updated_at` columns ===
+CREATE OR REPLACE FUNCTION trigger_set_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- =====================================================================
+-- 2. SCHEMA CREATION (ALL TABLES)
+-- =====================================================================
+
+-- Core tenancy and user tables
+CREATE TABLE garages (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    phone VARCHAR(15),
-    email VARCHAR(100),
-    city VARCHAR(100),
+    name VARCHAR(150) NOT NULL UNIQUE,
     address TEXT,
-    is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    phone VARCHAR(20),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- === VEHICLES ===
-CREATE TABLE vehicles (
-    id SERIAL PRIMARY KEY,
-    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-    car_number VARCHAR(20) UNIQUE NOT NULL,
-    make VARCHAR(100),
-    model VARCHAR(100),
-    year INTEGER,
-    vin VARCHAR(100),
-    is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- === SUPPLIERS ===
-CREATE TABLE suppliers (
+CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    contact_person VARCHAR(100),
-    phone VARCHAR(15),
-    city VARCHAR(100),
+    email VARCHAR(100) UNIQUE NOT NULL,
+    phone VARCHAR(20),
+    password_hash TEXT NOT NULL,
     is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- === MASTER ITEMS ===
+-- Master data for vehicles
+CREATE TABLE makes (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE
+);
+
+CREATE TABLE models (
+    id SERIAL PRIMARY KEY,
+    make_id INTEGER NOT NULL REFERENCES makes(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    start_year INTEGER,
+    end_year INTEGER,
+    available_fuel_types TEXT[],
+    UNIQUE(make_id, name)
+);
+
+-- Many-to-many junction table for user-garage roles
+CREATE TABLE garage_users (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('owner', 'manager', 'mechanic')),
+    PRIMARY KEY (user_id, garage_id)
+);
+
+-- Garage-specific business tables
 CREATE TABLE master_items (
     id SERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
     name VARCHAR(150) NOT NULL,
     part_no VARCHAR(50),
-    type VARCHAR(50) CHECK (type IN ('Spare', 'Service')),
+    type VARCHAR(50) NOT NULL CHECK (type IN ('Spare', 'Service')),
     cost_price DECIMAL(10,2) DEFAULT 0,
     unit_price DECIMAL(10,2) DEFAULT 0,
     lube_charge DECIMAL(10,2) DEFAULT 0,
     labour_charge DECIMAL(10,2) DEFAULT 0,
     stock_qty INTEGER,
     is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(garage_id, part_no)
 );
 
--- === PURCHASE BILLS ===
-CREATE TABLE purchase_bills (
+CREATE TABLE customers (
     id SERIAL PRIMARY KEY,
-    supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    email VARCHAR(100),
+    address TEXT,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(garage_id, phone)
+);
+
+CREATE TABLE vehicles (
+    id SERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    make_id INTEGER NOT NULL REFERENCES makes(id),
+    model_id INTEGER NOT NULL REFERENCES models(id),
+    car_number VARCHAR(20) NOT NULL,
+    year INTEGER,
+    vin VARCHAR(100),
+    fuel_type VARCHAR(20),
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(garage_id, car_number)
+);
+
+CREATE TABLE suppliers (
+    id SERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    contact_person VARCHAR(100),
+    phone VARCHAR(20),
+    city VARCHAR(100),
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Transactional Tables
+CREATE TABLE job_sheets (
+    id BIGSERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    job_sheet_number VARCHAR(50) NOT NULL,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
+    km_reading INTEGER,
+    date_created DATE NOT NULL,
+    date_completed DATE,
+    next_service_km INTEGER,
+    status VARCHAR(50) NOT NULL,
+    notes TEXT,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(garage_id, job_sheet_number)
+);
+
+CREATE TABLE job_sheet_items (
+    id BIGSERIAL PRIMARY KEY,
+    job_sheet_id BIGINT NOT NULL REFERENCES job_sheets(id) ON DELETE CASCADE,
+    master_item_id INTEGER NOT NULL REFERENCES master_items(id),
+    quantity INTEGER NOT NULL,
+    unit_price DECIMAL(10,2) DEFAULT 0,
+    lube_charge DECIMAL(10,2) DEFAULT 0,
+    labour_charge DECIMAL(10,2) DEFAULT 0
+);
+
+CREATE TABLE invoices (
+    id BIGSERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    invoice_number VARCHAR(50) NOT NULL,
+    job_sheet_id BIGINT NOT NULL REFERENCES job_sheets(id),
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
+    date_issued DATE NOT NULL,
+    due_date DATE,
+    km_reading INTEGER,
+    discount_type VARCHAR(10) CHECK (discount_type IN ('Fixed', 'Percent')),
+    discount_value DECIMAL(10,2) DEFAULT 0,
+    tax_rate DECIMAL(5,2) DEFAULT 0,
+    grand_total DECIMAL(10,2),
+    status VARCHAR(20) NOT NULL,
+    notes TEXT,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(garage_id, invoice_number)
+);
+
+CREATE TABLE invoice_items (
+    id BIGSERIAL PRIMARY KEY,
+    invoice_id BIGINT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    master_item_id INTEGER NOT NULL REFERENCES master_items(id),
+    quantity INTEGER NOT NULL,
+    unit_price DECIMAL(10,2) DEFAULT 0,
+    lube_charge DECIMAL(10,2) DEFAULT 0,
+    labour_charge DECIMAL(10,2) DEFAULT 0
+);
+
+CREATE TABLE payments (
+    id BIGSERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    invoice_id BIGINT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    amount_paid DECIMAL(10,2) NOT NULL,
+    date_paid DATE NOT NULL,
+    payment_method VARCHAR(50),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE purchase_bills (
+    id BIGSERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    supplier_id INTEGER REFERENCES suppliers(id),
     bill_number VARCHAR(100) NOT NULL,
     bill_date DATE NOT NULL,
+    total_amount DECIMAL(10,2),
     notes TEXT,
-    total_amount DECIMAL(10,2) NOT NULL,
-    date_recorded DATE DEFAULT CURRENT_DATE,
     is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- === PURCHASE BILL ITEMS ===
 CREATE TABLE purchase_bill_items (
-    id SERIAL PRIMARY KEY,
-    purchase_bill_id INTEGER NOT NULL REFERENCES purchase_bills(id) ON DELETE CASCADE,
+    id BIGSERIAL PRIMARY KEY,
+    purchase_bill_id BIGINT NOT NULL REFERENCES purchase_bills(id) ON DELETE CASCADE,
     master_item_id INTEGER NOT NULL REFERENCES master_items(id),
     quantity INTEGER NOT NULL,
     purchase_price DECIMAL(10,2) NOT NULL
 );
 
--- === JOB SHEETS ===
-CREATE TABLE job_sheets (
-    id SERIAL PRIMARY KEY,
-    job_sheet_number VARCHAR(50) NOT NULL UNIQUE,
-    customer_id INTEGER NOT NULL REFERENCES customers(id),
-    vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
-    km_reading VARCHAR(20),
-    date_created DATE NOT NULL,
-    date_completed DATE,
-    next_service_km VARCHAR(20),
-    status VARCHAR(50),
-    notes TEXT,
-    is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- === JOB SHEET ITEMS ===
-CREATE TABLE job_sheet_items (
-    id SERIAL PRIMARY KEY,
-    job_sheet_id INTEGER NOT NULL REFERENCES job_sheets(id) ON DELETE CASCADE,
-    master_item_id INTEGER NOT NULL REFERENCES master_items(id),
-    quantity INTEGER NOT NULL,
-    unit_price DECIMAL(10,2) DEFAULT 0,
-    lube_charge DECIMAL(10,2) DEFAULT 0,
-    labour_charge DECIMAL(10,2) DEFAULT 0,
-    line_parts DECIMAL(10,2) DEFAULT 0,
-    line_lubes DECIMAL(10,2) DEFAULT 0,
-    line_labour DECIMAL(10,2) DEFAULT 0,
-    line_total DECIMAL(10,2) DEFAULT 0
-);
-
--- === INVOICES ===
-CREATE TABLE invoices (
-    id SERIAL PRIMARY KEY,
-    invoice_number VARCHAR(50) UNIQUE NOT NULL,
-    job_sheet_id INTEGER NOT NULL REFERENCES job_sheets(id),
-    customer_id INTEGER NOT NULL REFERENCES customers(id),
-    vehicle_id INTEGER NOT NULL REFERENCES vehicles(id),
-    km_reading VARCHAR(20),
-    bill_book_no VARCHAR(50),
-    jc_no VARCHAR(50),
-    date_issued DATE NOT NULL,
-    due_date DATE,
-    discount_type VARCHAR(10) CHECK (discount_type IN ('Fixed', 'Percent')),
-    discount_value DECIMAL(10,2) DEFAULT 0,
-    tax_rate DECIMAL(5,2) DEFAULT 0,
-    total_parts DECIMAL(10,2) DEFAULT 0,
-    total_lubes DECIMAL(10,2) DEFAULT 0,
-    total_labour DECIMAL(10,2) DEFAULT 0,
-    sub_total DECIMAL(10,2) DEFAULT 0,
-    discount_amount DECIMAL(10,2) DEFAULT 0,
-    amount_before_tax DECIMAL(10,2) DEFAULT 0,
-    tax_amount DECIMAL(10,2) DEFAULT 0,
-    grand_total DECIMAL(10,2) DEFAULT 0,
-    amount_paid DECIMAL(10,2) DEFAULT 0,
-    status VARCHAR(20),
-    bank_branch VARCHAR(100),
-    bank_account_no VARCHAR(50),
-    bank_ifsc VARCHAR(20),
-    is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- === INVOICE ITEMS ===
-CREATE TABLE invoice_items (
-    id SERIAL PRIMARY KEY,
-    invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-    master_item_id INTEGER NOT NULL REFERENCES master_items(id),
-    quantity INTEGER NOT NULL,
-    unit_price DECIMAL(10,2) DEFAULT 0,
-    lube_charge DECIMAL(10,2) DEFAULT 0,
-    labour_charge DECIMAL(10,2) DEFAULT 0,
-    line_parts DECIMAL(10,2) DEFAULT 0,
-    line_lubes DECIMAL(10,2) DEFAULT 0,
-    line_labour DECIMAL(10,2) DEFAULT 0,
-    line_total DECIMAL(10,2) DEFAULT 0
-);
-
--- === TASKS ===
 CREATE TABLE tasks (
-    id SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
     description TEXT,
-    assigned_to VARCHAR(100),
-    status VARCHAR(50) CHECK (status IN ('Todo', 'In Progress', 'Done')) DEFAULT 'Todo',
+    assigned_to_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    status VARCHAR(50) NOT NULL CHECK (status IN ('Todo', 'In Progress', 'Done')) DEFAULT 'Todo',
     due_date DATE,
     is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+
+-- =====================================================================
+-- 3. APPLY TRIGGERS AND INDEXES
+-- =====================================================================
+
+CREATE TRIGGER set_timestamp_garages BEFORE UPDATE ON garages FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_users BEFORE UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_master_items BEFORE UPDATE ON master_items FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_customers BEFORE UPDATE ON customers FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_vehicles BEFORE UPDATE ON vehicles FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_suppliers BEFORE UPDATE ON suppliers FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_job_sheets BEFORE UPDATE ON job_sheets FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_invoices BEFORE UPDATE ON invoices FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_purchase_bills BEFORE UPDATE ON purchase_bills FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+CREATE TRIGGER set_timestamp_tasks BEFORE UPDATE ON tasks FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_garage_users_user_id ON garage_users(user_id);
+CREATE INDEX idx_garage_users_garage_id ON garage_users(garage_id);
+CREATE INDEX idx_models_make_id ON models(make_id);
+CREATE INDEX idx_master_items_garage_id ON master_items(garage_id);
+CREATE INDEX idx_customers_garage_id ON customers(garage_id);
+CREATE INDEX idx_vehicles_garage_id ON vehicles(garage_id);
+CREATE INDEX idx_vehicles_customer_id ON vehicles(customer_id);
+CREATE INDEX idx_suppliers_garage_id ON suppliers(garage_id);
+CREATE INDEX idx_job_sheets_garage_id ON job_sheets(garage_id);
+CREATE INDEX idx_job_sheets_customer_id ON job_sheets(customer_id);
+CREATE INDEX idx_job_sheets_vehicle_id ON job_sheets(vehicle_id);
+CREATE INDEX idx_invoices_garage_id ON invoices(garage_id);
+CREATE INDEX idx_invoices_job_sheet_id ON invoices(job_sheet_id);
+CREATE INDEX idx_payments_invoice_id ON payments(invoice_id);
+CREATE INDEX idx_purchase_bills_garage_id ON purchase_bills(garage_id);
+CREATE INDEX idx_tasks_assigned_to_user_id ON tasks(assigned_to_user_id);
+
+
+COMMIT;

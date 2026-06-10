@@ -1,121 +1,232 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Container, Card, Form, Row, Col, Button, Alert, Spinner } from 'react-bootstrap';
+import { Container, Card, Form, Row, Col, Button, Alert, Spinner, InputGroup } from 'react-bootstrap';
 import { FaUserPlus, FaUser, FaCar, FaSave, FaTimes, FaPhone, FaEnvelope, FaMapMarkerAlt, FaCity } from 'react-icons/fa';
-import { addCustomer, addVehicle } from '../data/staticData'; // Import simulation functions
+import api from '../api/api.js';
 
 const AddCustomerPage = () => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // Get the car number passed from the dashboard, default to null if not passed
-    const carNumberFromState = location.state?.carNumber || null;
-    // Determine if the car number field should be editable
+    // Data from previous page
+    const carNumberFromState = location.state?.carNumber || '';
+    const keyProblemsFromState = location.state?.keyProblems || '';
     const isCarNumberEditable = !carNumberFromState;
 
-    // Initialize form state
-    const [formData, setFormData] = useState({
-        name: "",
-        phone: "",
-        email: "",
-        city: "",
-        address: "",
-        vehicleModel: "",
-        // If navigated directly, carNumber starts blank; otherwise, pre-fill
-        carNumber: carNumberFromState || "",
-        vehicleMake: "",
+    // --- Structured State for Forms ---
+    const [customer, setCustomer] = useState({ name: "", phone: "", email: "", city: "", address: "" });
+    const [vehicle, setVehicle] = useState({
+        carNumber: carNumberFromState,
+        make_id: "",
+        model_id: "",
         vehicleYear: "",
-        vehicleVin: ""
+        vehicleVin: "",
+        fuel_type: ""
     });
-    const [error, setError] = useState('');
+    
+    // Dropdown data and selected model info
+    const [makes, setMakes] = useState([]);
+    const [models, setModels] = useState([]);
+    const [selectedModelInfo, setSelectedModelInfo] = useState(null);
+    const [yearOptions, setYearOptions] = useState([]); // <<< NEW: For year dropdown options
+
+    // UI State
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState('');
+    // 👉 NEW: Track if we found an existing customer
+    const [isCheckingPhone, setIsCheckingPhone] = useState(false);
+    const [foundCustomerAlert, setFoundCustomerAlert] = useState(false);
 
-    // --- REMOVED useEffect redirect ---
-    // We allow users to land here directly now.
+    // --- Data Fetching Effect ---
+    useEffect(() => {
+        const fetchMakes = async () => {
+            try {
+                const res = await api.get('/meta/makes');
+                if (!res.ok) throw new Error('Could not fetch vehicle makes.');
+                const data = await res.json();
+                setMakes(data.data);
+            } catch (err) {
+                setError(err.message);
+            }
+        };
+        fetchMakes();
+    }, []);
 
-    // Update form data state on input change
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        // Prevent changing carNumber if it was pre-filled from state
-        if (name === 'carNumber' && !isCarNumberEditable) {
-            return;
+    // --- Event Handlers ---
+    const handleCustomerChange = (e) => setCustomer({ ...customer, [e.target.name]: e.target.value });
+    const handlePhoneBlur = async () => {
+        // Only check if they typed a standard length phone number
+        if (customer.phone.length < 8) return; 
+        
+        setIsCheckingPhone(true);
+        setFoundCustomerAlert(false);
+        try {
+            const res = await api.get(`/customers/check-phone/${customer.phone}`);
+            const result = await res.json();
+            
+            if (result.exists) {
+                // Auto-fill the form!
+                setCustomer(prev => ({
+                    ...prev,
+                    name: result.data.name,
+                    email: result.data.email || "",
+                    address: result.data.address || ""
+                }));
+                setFoundCustomerAlert(true); // Show the success banner
+            }
+        } catch (err) {
+            console.error("Error looking up phone:", err);
+        } finally {
+            setIsCheckingPhone(false);
         }
-        setFormData(prevData => ({ ...prevData, [name]: value }));
+    };
+    const handleVehicleChange = (e) => setVehicle(prev => ({ ...prev, [e.target.name]: e.target.value }));
+
+    const handleMakeChange = async (e) => {
+        const makeId = e.target.value;
+        // Update the vehicle state directly
+        setVehicle(prev => ({ ...prev, make_id: makeId, model_id: '', vehicleYear: '', fuel_type: '' }));
+        
+        setModels([]);
+        setSelectedModelInfo(null);
+        setYearOptions([]);
+        
+        if (makeId) {
+            try {
+                const res = await api.get(`/meta/models/${makeId}`);
+                if (!res.ok) throw new Error('Could not fetch models.');
+                const data = await res.json();
+                setModels(data.data);
+            } catch (err) {
+                setError(err.message);
+            }
+        }
     };
 
-    // Navigate back to dashboard on cancel
-    const handleCancel = () => {
-        // Go back in history if possible, otherwise to dashboard
-        if (window.history.length > 1) {
-            navigate(-1);
+    const handleModelChange = (e) => {
+        const modelId = e.target.value;
+        const selectedModel = models.find(m => m.id.toString() === modelId);
+        
+        setVehicle(prev => ({ ...prev, model_id: modelId, vehicleYear: '', fuel_type: '' }));
+        setSelectedModelInfo(selectedModel || null);
+
+        // <<< NEW: Logic to populate year dropdown >>>
+        if (selectedModel) {
+            const start = selectedModel.start_year;
+            const end = selectedModel.end_year || new Date().getFullYear();
+            const years = [];
+            for (let y = end; y >= start; y--) {
+                years.push(y);
+            }
+            setYearOptions(years);
         } else {
-            navigate('/dashboard');
+            setYearOptions([]);
         }
     };
 
-    // Handle form submission
-    const handleSubmit = (e) => {
+    const handleCancel = () => {
+        if (window.history.length > 1) navigate(-1);
+        else navigate('/dashboard');
+    };
+    
+    const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        // Get potentially updated carNumber from formData
-        const { name, phone, vehicleModel, carNumber, vehicleMake } = formData;
-
-        // Validation: Check required fields
-        if (!name || !phone || !vehicleMake || !vehicleModel || !carNumber) {
+        
+        // 1. Validation
+        if (!customer.name || !customer.phone || !vehicle.make_id || !vehicle.model_id || !vehicle.carNumber) {
             setError("Please fill in all required fields: Name, Phone, Vehicle Make, Model, and Number.");
             return;
         }
-
+        
         setIsSubmitting(true);
+        try {
+            // FIX #1: Merge 'city' into 'address'
+            const fullAddress = customer.city 
+                ? `${customer.address ? customer.address + ', ' : ''}${customer.city}` 
+                : customer.address;
 
-        // --- Simulation Logic ---
-        const savedCustomer = addCustomer({
-            name: name, phone: phone, email: formData.email,
-            city: formData.city, address: formData.address
-        });
-        if (!savedCustomer || !savedCustomer.id) {
-            setError("Failed to save customer data (Simulated Error).");
-            setIsSubmitting(false); return;
-        }
+            const customerPayload = { ...customer, address: fullAddress };
 
-        const savedVehicle = addVehicle({
-            customerId: savedCustomer.id, carNumber: carNumber.trim().toUpperCase(), // Ensure consistent format
-            make: vehicleMake, model: vehicleModel,
-            year: formData.vehicleYear, vin: formData.vehicleVin
-        });
-        if (!savedVehicle || !savedVehicle.id) {
-            setError("Failed to save vehicle data (Simulated Error).");
-            setIsSubmitting(false); return;
-        }
+            // 1. POST the new customer
+            const customerRes = await api.post('/customers', customerPayload);
+            
+            // 2. Parse the raw response!
+            const customerResult = await customerRes.json();
 
-        // If we arrived via check-in flow, navigate back and pass check-in data
-        if (carNumberFromState) {
-            const newCheckInData = {
-                id: Date.now(), customer: savedCustomer.name, carNumber: savedVehicle.carNumber,
-                vehicleModel: `${savedVehicle.make || ''} ${savedVehicle.model || ''}`.trim(),
-                status: "Waiting",
-                checkIn: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                customerId: savedCustomer.id, vehicleId: savedVehicle.id,
+            // 3. 👉 THE SHIELD: Catch the 409 Conflict immediately!
+            if (!customerRes.ok || customerResult.success === false) {
+                throw new Error(customerResult.message || 'Error creating customer. Check if phone number already exists.');
+            }
+
+            // 4. Safe to extract the ID now
+            const createdCustomer = customerResult.data;
+
+            // --- 5. Save Vehicle ---
+            const vehiclePayload = {
+                customer_id: createdCustomer.id, 
+                make_id: vehicle.make_id,
+                model_id: vehicle.model_id,
+                car_number: vehicle.carNumber,
+                year: vehicle.vehicleYear || null,
+                vin: vehicle.vehicleVin || null,
+                fuel_type: vehicle.fuel_type || null
             };
-            console.log("Navigating back to dashboard with new check-in data:", newCheckInData);
-            setTimeout(() => {
-                navigate('/dashboard', { state: { newCheckIn: newCheckInData }, replace: true });
-            }, 300);
-        } else {
-            // If navigated directly, maybe navigate to the customer/vehicle list or dashboard
-            console.log("Customer and Vehicle added directly. Navigating to Customers page.");
-             setTimeout(() => {
-                 // Consider navigating to the customers page to see the new entry
-                 navigate('/customers-vehicles');
-                 // Or just back to dashboard
-                 // navigate('/dashboard');
-                 setIsSubmitting(false); // Need to reset here as we are not unmounting immediately
-             }, 300);
-             alert(`Customer ${savedCustomer.name} and Vehicle ${savedVehicle.carNumber} added successfully!`); // Provide feedback
+            
+            const vehicleRes = await api.post('/vehicles', vehiclePayload);
+            const vehicleResult = await vehicleRes.json();
+
+            // 👉 THE FRONTEND ROLLBACK: If vehicle creation fails, delete the orphaned customer!
+            if (!vehicleRes.ok || vehicleResult.success === false) {
+                 // Silently delete the customer we just created
+                 await api.delete(`/customers/${createdCustomer.id}`);
+                 
+                 // Now throw the error to the screen
+                 throw new Error(vehicleResult.message || 'Error creating vehicle. Customer creation rolled back.');
+            }
+
+            const createdVehicle = vehicleResult.data;
+
+            // --- 6. Create Job Sheet (if applicable) ---
+            if (carNumberFromState) {
+                const jobSheetPayload = {
+                    vehicle_id: createdVehicle.id,
+                    customer_id: createdCustomer.id,
+                    notes: keyProblemsFromState || 'New vehicle check-in.'
+                };
+                
+                // 👉 THE FIX: Use the exact URL your Dashboard uses!
+                const jobRes = await api.post('/jobsheets/check-in', jobSheetPayload, {
+                    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }
+                });
+                
+                const jobResult = await jobRes.json();
+                
+                if (!jobRes.ok || jobResult.success === false) {
+                     throw new Error(jobResult.message || 'Error creating check-in ticket.');
+                }
+            }
+
+            // --- 7. Success Navigation ---
+            if (carNumberFromState) {
+                // This state refresh tells Dashboard.jsx's useEffect to instantly re-fetch the columns!
+                navigate('/dashboard', { state: { refresh: true } }); 
+            } else {
+                alert('Customer and vehicle added successfully!');
+                navigate('/customers-vehicles', { state: { refresh: true } }); 
+            }
+
+        } catch (err) {
+            console.error("Add Customer Error:", err);
+            // This will now gracefully show the red error text on your form 
+            // instead of a white screen of death!
+            setError(err.message || 'An unknown error occurred while saving.');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
-    // --- Render Component ---
+
     return (
         <Container fluid className="py-4 px-md-4">
             <Row className="justify-content-center">
@@ -125,100 +236,101 @@ const AddCustomerPage = () => {
                             <h3 className="mb-0"><FaUserPlus className="me-2" /> Add New Customer & Vehicle</h3>
                         </Card.Header>
                         <Card.Body className="p-4 p-md-5">
-                             {/* Informational alert (only show if coming from check-in) */}
-                             {carNumberFromState && (
-                                 <Alert variant="info" className="d-flex align-items-center">
-                                     <FaCar className="me-2 flex-shrink-0" size="1.5em"/>
-                                     <span>Vehicle with number <strong>{carNumberFromState}</strong> was not found. Please add details.</span>
-                                 </Alert>
-                             )}
-
-                            {/* Display submission error */}
+                            {carNumberFromState && (
+                                <Alert variant="info" className="d-flex align-items-center">
+                                    <FaCar className="me-2 flex-shrink-0" size="1.5em"/>
+                                    <span>Vehicle with number <strong>{carNumberFromState}</strong> was not found. Please add details.</span>
+                                </Alert>
+                            )}
                             {error && <Alert variant="danger">{error}</Alert>}
+                            
+                            {/* 👉 SUCCESS BANNER */}
+                            {foundCustomerAlert && (
+                                <Alert variant="success" className="d-flex align-items-center py-2" dismissible onClose={() => setFoundCustomerAlert(false)}>
+                                    <FaUser className="me-2" />
+                                    <div><strong>Existing Customer Found!</strong> Details have been pre-filled.</div>
+                                </Alert>
+                            )}
 
-                            {/* Form */}
                             <Form noValidate onSubmit={handleSubmit}>
-                                {/* Customer Information Section */}
+                                {/* --- CUSTOMER INFO --- */}
                                 <h5 className="text-secondary mb-3 border-bottom pb-2"><FaUser className="me-2"/>Customer Information</h5>
                                 <Row className="mb-3">
                                     <Form.Group as={Col} md={6} controlId="formCustomerName">
                                         <Form.Label>Customer Name <span className="text-danger">*</span></Form.Label>
-                                        <Form.Control type="text" name="name" required value={formData.name} onChange={handleChange} placeholder="Enter full name" disabled={isSubmitting}/>
+                                        <Form.Control type="text" name="name" required value={customer.name} onChange={handleCustomerChange} placeholder="Enter full name" disabled={isSubmitting}/>
                                     </Form.Group>
                                     <Form.Group as={Col} md={6} controlId="formCustomerPhone">
                                         <Form.Label>Phone Number <span className="text-danger">*</span></Form.Label>
-                                        <Form.Control type="tel" name="phone" required value={formData.phone} onChange={handleChange} placeholder="Enter 10-digit mobile number" disabled={isSubmitting}/>
+                                        <InputGroup>
+                                            <Form.Control type="tel" name="phone" required value={customer.phone} onChange={handleCustomerChange} onBlur={handlePhoneBlur} placeholder="Enter 10-digit number" disabled={isSubmitting}/>
+                                            {isCheckingPhone && <InputGroup.Text><Spinner animation="border" size="sm" /></InputGroup.Text>}
+                                        </InputGroup>
                                     </Form.Group>
                                 </Row>
                                 <Row className="mb-4">
                                     <Form.Group as={Col} md={6} controlId="formCustomerEmail">
-                                        <Form.Label><FaEnvelope className="me-1 text-muted"/>Email Address</Form.Label>
-                                        <Form.Control type="email" name="email" value={formData.email} onChange={handleChange} placeholder="Enter email (optional)" disabled={isSubmitting}/>
+                                        <Form.Label><FaEnvelope className="me-1 text-muted"/>Email</Form.Label>
+                                        <Form.Control type="email" name="email" value={customer.email} onChange={handleCustomerChange} placeholder="Email (optional)" disabled={isSubmitting}/>
                                     </Form.Group>
                                     <Form.Group as={Col} md={6} controlId="formCustomerCity">
                                         <Form.Label><FaCity className="me-1 text-muted"/>City</Form.Label>
-                                        <Form.Control type="text" name="city" value={formData.city} onChange={handleChange} placeholder="Enter city (optional)" disabled={isSubmitting}/>
+                                        <Form.Control type="text" name="city" value={customer.city} onChange={handleCustomerChange} placeholder="City (optional)" disabled={isSubmitting}/>
                                     </Form.Group>
-                                     <Form.Group as={Col} xs={12} className="mt-3" controlId="formCustomerAddress">
+                                    <Form.Group as={Col} xs={12} className="mt-3" controlId="formCustomerAddress">
                                         <Form.Label><FaMapMarkerAlt className="me-1 text-muted"/>Address</Form.Label>
-                                        <Form.Control as="textarea" rows={2} name="address" value={formData.address} onChange={handleChange} placeholder="Enter full address (optional)" disabled={isSubmitting}/>
+                                        <Form.Control as="textarea" rows={2} name="address" value={customer.address} onChange={handleCustomerChange} placeholder="Full address (optional)" disabled={isSubmitting}/>
                                     </Form.Group>
                                 </Row>
 
-                                {/* Vehicle Information Section */}
+                                {/* --- VEHICLE INFO --- */}
                                 <h5 className="text-secondary mb-3 border-bottom pb-2"><FaCar className="me-2"/>Vehicle Information</h5>
                                 <Row className="mb-3">
-                                     <Form.Group as={Col} md={6} controlId="formVehicleNumber">
+                                    <Form.Group as={Col} md={6} controlId="formVehicleNumber">
                                         <Form.Label>Vehicle Number <span className="text-danger">*</span></Form.Label>
-                                        {/* Conditional ReadOnly/Disabled */}
-                                        <Form.Control
-                                            type="text"
-                                            name="carNumber"
-                                            required
-                                            value={formData.carNumber} // Value from state
-                                            onChange={handleChange} // Handler to update state
-                                            placeholder={isCarNumberEditable ? "e.g., GJ01AB1234" : ""} // Placeholder only if editable
-                                            readOnly={!isCarNumberEditable} // ReadOnly if NOT editable
-                                            disabled={isSubmitting} // Always disable during submit
-                                            className={!isCarNumberEditable ? "fw-bold bg-light" : ""} // Style if pre-filled
-                                        />
+                                        <Form.Control type="text" name="carNumber" required value={vehicle.carNumber} onChange={handleVehicleChange} readOnly={!isCarNumberEditable} disabled={isSubmitting} className={!isCarNumberEditable ? "fw-bold bg-light" : ""} />
                                     </Form.Group>
-                                     <Form.Group as={Col} md={6} controlId="formVehicleMake">
+                                    <Form.Group as={Col} md={6} controlId="formVehicleMake">
                                         <Form.Label>Vehicle Make <span className="text-danger">*</span></Form.Label>
-                                        <Form.Control type="text" name="vehicleMake" required value={formData.vehicleMake} onChange={handleChange} placeholder="e.g., Maruti Suzuki, Honda" disabled={isSubmitting}/>
+                                        <Form.Select name="make_id" required value={vehicle.make_id} onChange={handleMakeChange} disabled={isSubmitting}>
+                                            <option value="">-- Select Make --</option>
+                                            {makes.map(make => <option key={make.id} value={make.id}>{make.name}</option>)}
+                                        </Form.Select>
                                     </Form.Group>
                                 </Row>
                                 <Row className="mb-4">
-                                   <Form.Group as={Col} md={6} controlId="formVehicleModel">
+                                    <Form.Group as={Col} md={6} controlId="formVehicleModel">
                                         <Form.Label>Vehicle Model <span className="text-danger">*</span></Form.Label>
-                                        <Form.Control type="text" name="vehicleModel" required value={formData.vehicleModel} onChange={handleChange} placeholder="e.g., Swift VXi, Civic" disabled={isSubmitting}/>
+                                        <Form.Select name="model_id" required value={vehicle.model_id} onChange={handleModelChange} disabled={!vehicle.make_id || isSubmitting}>
+                                            <option value="">-- Select Model --</option>
+                                            {models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+                                        </Form.Select>
                                     </Form.Group>
-                                     <Form.Group as={Col} md={6} controlId="formVehicleYear">
+                                    <Form.Group as={Col} md={6} controlId="formVehicleYear">
                                         <Form.Label>Manufacturing Year</Form.Label>
-                                        <Form.Control type="number" name="vehicleYear" min="1980" max={new Date().getFullYear() + 1} value={formData.vehicleYear} onChange={handleChange} placeholder="e.g., 2019 (optional)" disabled={isSubmitting}/>
+                                        <Form.Select name="vehicleYear" value={vehicle.vehicleYear} onChange={handleVehicleChange} disabled={!vehicle.model_id || isSubmitting}>
+                                            <option value="">-- Select Year --</option>
+                                            {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
+                                        </Form.Select>
                                     </Form.Group>
-                                    <Form.Group as={Col} xs={12} className="mt-3" controlId="formVehicleVin">
+                                    <Form.Group as={Col} md={6} className="mt-3" controlId="formFuelType">
+                                        <Form.Label>Fuel Type</Form.Label>
+                                        <Form.Select name="fuel_type" value={vehicle.fuel_type} onChange={handleVehicleChange} disabled={!vehicle.model_id || isSubmitting}>
+                                            <option value="">-- Select Fuel Type --</option>
+                                            {selectedModelInfo?.available_fuel_types?.map(fuel => <option key={fuel} value={fuel}>{fuel}</option>)}
+                                        </Form.Select>
+                                    </Form.Group>
+                                    <Form.Group as={Col} md={6} className="mt-3" controlId="formVehicleVin">
                                         <Form.Label>VIN (Chassis Number)</Form.Label>
-                                        <Form.Control type="text" name="vehicleVin" value={formData.vehicleVin} onChange={handleChange} placeholder="Enter VIN (optional)" disabled={isSubmitting} maxLength={17}/>
+                                        <Form.Control type="text" name="vehicleVin" value={vehicle.vehicleVin} onChange={handleVehicleChange} placeholder="VIN (optional)" disabled={isSubmitting} maxLength={17}/>
                                     </Form.Group>
                                 </Row>
 
-                                {/* Footer */}
-                                <div className="d-flex justify-content-between align-items-center mt-4 pt-3 border-top">
-                                     <small className="text-muted">Fields marked with <span className="text-danger">*</span> are required.</small>
-                                     <div className="d-flex gap-2">
-                                         <Button variant="outline-secondary" type="button" onClick={handleCancel} disabled={isSubmitting}>
-                                             <FaTimes className="me-1" /> Cancel
-                                         </Button>
-                                         <Button variant="primary" type="submit" disabled={isSubmitting}>
-                                             {isSubmitting ? (
-                                                 <><Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-1"/> Saving...</>
-                                             ) : (
-                                                  // Change button text based on context
-                                                 <><FaSave className="me-1" /> {carNumberFromState ? 'Save & Check-in' : 'Save Customer & Vehicle'}</>
-                                             )}
-                                         </Button>
-                                     </div>
+                                <div className="d-flex justify-content-end align-items-center mt-4 pt-3 border-top">
+                                     <Button variant="outline-secondary" type="button" onClick={handleCancel} className="me-2" disabled={isSubmitting}>Cancel</Button>
+                                     <Button variant="primary" type="submit" disabled={isSubmitting}>
+                                         {isSubmitting ? <><Spinner as="span" animation="border" size="sm" className="me-1"/> Saving...</> : <><FaSave className="me-1" /> {carNumberFromState ? 'Save & Check-in' : 'Save Customer & Vehicle'}</>}
+                                     </Button>
                                 </div>
                             </Form>
                         </Card.Body>
@@ -227,6 +339,7 @@ const AddCustomerPage = () => {
             </Row>
         </Container>
     );
+    
 };
 
 export default AddCustomerPage;

@@ -1,79 +1,59 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Container, Card, Badge, Button, Alert, Row, Col } from 'react-bootstrap'; // Added Row, Col
+import { Link } from 'react-router-dom';
+import { Container, Card, Badge, Button, Alert, Row, Col, Spinner, Modal, Tooltip, OverlayTrigger } from 'react-bootstrap';
 import {
-    FaEye, FaWrench, FaFileAlt, FaCar, FaUser, FaCalendarAlt, FaClipboardList, FaArrowRight // Added more icons
+    FaEye, FaWrench, FaFileAlt, FaCar, FaUser, FaCalendarAlt, FaClipboardList, FaTrash, FaExclamationTriangle
 } from 'react-icons/fa';
-import { initialJobSheets } from '../data/staticData'; // Keep for simulation
-
-// --- Custom CSS (Add this to your App.css or a dedicated CSS file) ---
-/*
-// Add this to your App.css or a dedicated CSS file
-
-
-*/
+import api from '../api/api.js';
 
 const ActiveJobSheets = () => {
-    const location = useLocation();
-    const navigate = useNavigate();
+    // --- State Management ---
     const [activeJobSheets, setActiveJobSheets] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // --- Data Loading Logic (Keep as is) ---
+    // State for delete functionality
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [jobSheetToDelete, setJobSheetToDelete] = useState(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    // --- Data Loading Logic ---
     useEffect(() => {
-        // Try to load from localStorage first? Or fetch from API?
-        // Simulating initial load from static data for now
-        try {
-            // In a real app, you'd fetch from an API endpoint:
-            // fetch('/api/jobsheets?status=Draft&status=InProgress')
-            //   .then(res => res.json())
-            //   .then(data => setActiveJobSheets(data))
-            //   .catch(err => setError("Failed to load active job sheets."));
-
-            // Simulation:
-            const loadedSheets = initialJobSheets.filter(
-                js => js.status === 'Draft' || js.status === 'In Progress'
-            );
-            // Sort by creation date maybe? Newest first?
-            loadedSheets.sort((a, b) => new Date(b.dateCreated) - new Date(a.dateCreated));
-            setActiveJobSheets(loadedSheets);
-            console.log("Simulated loading initial active job sheets.");
-
-        } catch (err) {
-             console.error("Error loading job sheets:", err);
-             setError("An unexpected error occurred while loading job sheets.");
-        }
-
-    }, []); // Run once on mount
-
-    // Effect to handle potential new job sheets passed via navigation state
-    // (This is less common now that Dashboard doesn't redirect, but kept for flexibility)
-     useEffect(() => {
-        if (location.state?.newJobSheet) {
-            const newJobSheet = location.state.newJobSheet;
-            // Add if not already present (prevent duplicates on refresh/back navigation)
-            if (!activeJobSheets.some(js => js.id === newJobSheet.id)) {
-                 // Add to the top for visibility
-                 setActiveJobSheets(prev => [newJobSheet, ...prev]);
+        const fetchActiveJobs = async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+                const res = await api.get('/jobsheets/active');
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({}));
+                    throw new Error(errorData.message || 'Failed to load active job sheets from the server.');
+                }
+                const result = await res.json();
+                setActiveJobSheets(result.data);
+            } catch (err) {
+                console.error("Error loading job sheets:", err);
+                setError(err.message || "An unexpected error occurred.");
+            } finally {
+                setIsLoading(false);
             }
-            // Clear the state from navigation history
-            navigate(location.pathname, { replace: true, state: {} });
-        }
-    }, [location.state, navigate, location.pathname, activeJobSheets]);
+        };
 
-    // --- Helper Function for Status Badge ---
+        fetchActiveJobs();
+    }, []); // Run once on component mount
+
+    // --- Helper Functions ---
     const getStatusBadge = (status) => {
         switch (status?.toLowerCase()) {
             case 'draft':
                 return (
                     <Badge pill bg="light" text="dark" className="badge-status badge-status-draft">
-                        <FaFileAlt /> Draft
+                        <FaFileAlt className="me-1" /> Draft
                     </Badge>
                 );
             case 'in progress':
                 return (
                     <Badge pill bg="warning" text="dark" className="badge-status badge-status-inprogress">
-                        <FaWrench /> In Progress
+                        <FaWrench className="me-1" /> In Progress
                     </Badge>
                 );
             default:
@@ -81,49 +61,90 @@ const ActiveJobSheets = () => {
         }
     };
 
-    // --- Render Component ---
+    // --- Delete Functionality Handlers ---
+    const handleOpenDeleteModal = (jobSheet) => {
+        setJobSheetToDelete(jobSheet);
+        setShowDeleteModal(true);
+    };
+
+    const handleCloseDeleteModal = () => {
+        setJobSheetToDelete(null);
+        setShowDeleteModal(false);
+    };
+
+    const handleDeleteJobSheet = async () => {
+        if (!jobSheetToDelete) return;
+        
+        setIsDeleting(true);
+        setError(null);
+        try {
+            const response = await api.delete(`/jobsheets/${jobSheetToDelete.id}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Failed to delete the job sheet.' }));
+                throw new Error(errorData.message);
+            }
+
+            // Remove the deleted job sheet from the local state to update UI instantly
+            setActiveJobSheets(prevSheets => prevSheets.filter(js => js.id !== jobSheetToDelete.id));
+            handleCloseDeleteModal();
+
+        } catch (err) {
+            console.error("Error deleting job sheet:", err);
+            setError(err.message);
+            handleCloseDeleteModal(); // Close modal even on error
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    // --- Render Logic ---
+    if (isLoading) {
+        return (
+            <Container fluid className="d-flex justify-content-center align-items-center" style={{ minHeight: '60vh' }}>
+                <Spinner animation="border" variant="primary" />
+                <span className="ms-3 fs-5 text-muted">Loading Active Jobs...</span>
+            </Container>
+        );
+    }
+    
     return (
         <Container fluid className="py-4 px-lg-5 px-md-4 px-sm-3">
-            {/* Page Header */}
             <h2 className="page-title-active">
-                <FaClipboardList />
+                <FaClipboardList className="me-2" />
                 Active Job Sheets
             </h2>
 
-            {/* Error Alert */}
             {error && <Alert variant="danger" onClose={() => setError(null)} dismissible>{error}</Alert>}
 
-            {/* Job Sheet Grid */}
             {activeJobSheets.length > 0 ? (
                 <Row className="job-sheet-grid">
                     {activeJobSheets.map((js) => (
-                        <Col key={js.id} lg={4} md={6} sm={12}> {/* Responsive Grid */}
-                            <Card className="job-sheet-card h-100"> {/* h-100 for equal height cards */}
-                                <Card.Header>
-                                    <span className="job-sheet-number">
-                                        <FaFileAlt /> {js.jobSheetNumber}
+                        <Col key={js.id} lg={4} md={6} sm={12} className="mb-4">
+                            <Card className="job-sheet-card h-100 d-flex flex-column">
+                                <Card.Header className="d-flex justify-content-between align-items-center">
+                                    <span className="job-sheet-number fw-bold">
+                                        <FaFileAlt className="me-1" /> {js.jobSheetNumber}
                                     </span>
                                     {getStatusBadge(js.status)}
                                 </Card.Header>
-                                <Card.Body>
+                                <Card.Body className="flex-grow-1">
                                     <div className="card-detail-row">
                                         <FaCar className="card-icon" />
                                         Vehicle: <strong>{js.vehicleNumber}</strong>
                                     </div>
+                                    {/* --- UPDATED LINE --- */}
                                     <div className="card-detail-row">
-                                        {/* Placeholder icon or leave blank */}
-                                        <span className="card-icon" style={{ visibility: 'hidden' }}><FaCar /></span>
+                                        <FaCar className="card-icon text-secondary" /> 
                                         Model: <strong>{js.vehicleModel || 'N/A'}</strong>
                                     </div>
                                     <div className="card-detail-row">
                                         <FaUser className="card-icon" />
                                         Customer: <strong>{js.customerName || 'N/A'}</strong>
                                     </div>
-                                     {/* Display initial problems if available */}
-                                     {js.notes?.includes("Key Problems:") && (
+                                     {js.notes && (
                                          <div className="card-detail-row fst-italic" style={{ fontSize: '0.9rem' }}>
-                                            <FaWrench className="card-icon" style={{ color: '#dc3545' }}/> {/* Red icon */}
-                                            Issue: <strong>{js.notes.split("Key Problems:")[1]?.split('.')[0]?.trim() || 'See details'}</strong>
+                                            <FaWrench className="card-icon" style={{ color: '#dc3545' }}/>
+                                            Issue: <strong>{js.notes.includes("Key Problems:") ? js.notes.split("Key Problems:")[1]?.trim() : js.notes}</strong>
                                          </div>
                                      )}
                                     <div className="card-detail-row">
@@ -131,18 +152,30 @@ const ActiveJobSheets = () => {
                                         Created: <strong>{new Date(js.dateCreated).toLocaleDateString()}</strong>
                                     </div>
                                 </Card.Body>
-                                <Card.Footer>
-                                    <Link to={`/jobsheet/${js.id}`} className="btn btn-primary btn-sm btn-view-job">
-                                        Open Job Sheet <FaArrowRight />
+                                <Card.Footer className="d-flex justify-content-between align-items-center">
+                                    <Link to={`/jobsheet/${js.id}`} className="btn btn-outline-primary btn-sm">
+                                        <FaEye className="me-1" /> View Details
                                     </Link>
+                                    <OverlayTrigger
+                                        placement="top"
+                                        overlay={<Tooltip id={`tooltip-delete-${js.id}`}>Delete Job Sheet</Tooltip>}
+                                    >
+                                        <Button
+                                            variant="link"
+                                            className="p-0 text-danger delete-icon-button"
+                                            onClick={() => handleOpenDeleteModal(js)}
+                                            disabled={isDeleting}
+                                        >
+                                            <FaTrash />
+                                        </Button>
+                                    </OverlayTrigger>
                                 </Card.Footer>
                             </Card>
                         </Col>
                     ))}
                 </Row>
             ) : (
-                // Empty State Display
-                !error && ( // Only show empty state if there's no loading error
+                !error && (
                     <Container className="empty-state-container">
                         <div className="empty-state-icon">
                             <FaWrench />
@@ -152,13 +185,26 @@ const ActiveJobSheets = () => {
                             Job sheets currently being worked on will appear here. <br/>
                             Start a repair from the Dashboard to create one.
                         </p>
-                         {/* Optional: Button to navigate back to Dashboard */}
-                         {/* <Button variant="outline-primary" size="sm" as={Link} to="/dashboard" className="mt-3">
-                            Go to Dashboard
-                         </Button> */}
                     </Container>
                 )
             )}
+
+            {/* Delete Confirmation Modal */}
+            <Modal show={showDeleteModal} onHide={handleCloseDeleteModal} centered>
+                <Modal.Header closeButton>
+                    <Modal.Title><FaExclamationTriangle className="text-danger me-2" />Confirm Deletion</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    Are you sure you want to permanently delete job sheet s<strong>{jobSheetToDelete?.jobSheetNumber}</strong>?
+                    This action cannot be undone.
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={handleCloseDeleteModal} disabled={isDeleting}>Cancel</Button>
+                    <Button variant="danger" onClick={handleDeleteJobSheet} disabled={isDeleting}>
+                        {isDeleting ? <><Spinner as="span" size="sm" animation="border" className="me-1" /> Deleting...</> : "Yes, Delete It"}
+                    </Button>
+                </Modal.Footer>
+            </Modal>
         </Container>
     );
 };
