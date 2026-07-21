@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link } from 'react-router-dom';
-import { Container, Row, Col, Card, Form, Button, InputGroup, Table, Alert, Spinner, Modal } from 'react-bootstrap';
-import { FaFileInvoiceDollar, FaHistory,FaSearch, FaTimes, FaEye, FaCalendarAlt, FaArrowLeft, FaSort, FaSortUp, FaSortDown } from 'react-icons/fa';
-import { getPurchaseBills, findMasterItemById } from '../data/staticData'; // Get data fetching functions
+import { Container, Row, Col, Form, Button, InputGroup, Table, Alert, Spinner, Modal } from 'react-bootstrap';
+import { FaFileInvoiceDollar, FaHistory, FaSearch, FaTimes, FaEye, FaSort, FaSortUp, FaSortDown } from 'react-icons/fa';
 
-// Import shared CSS or define specific styles if needed
-import '../PurchaseEntryPage.css'; // Reuse the styles for now
+// Import custom API wrapper instead of static data
+import api from '../api/api';
 
-// Helpers (can be moved to a utils file)
+import '../PurchaseEntryPage.css'; // Reuse the styles
+
+// Helpers
 const formatCurrency = (amount, minimumFractionDigits = 2) => {
     if (amount == null || isNaN(Number(amount))) return 'N/A';
     return Number(amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits, maximumFractionDigits: 2 });
@@ -22,26 +22,54 @@ const formatDate = (dateString) => {
 
 const PurchaseHistoryPage = () => {
     const [purchaseBills, setPurchaseBills] = useState([]);
+    const [masterItems, setMasterItems] = useState([]); // Added to replace findMasterItemById
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
-    const [viewingBill, setViewingBill] = useState(null); // State for viewing details modal
+    const [viewingBill, setViewingBill] = useState(null); 
     const [sortConfig, setSortConfig] = useState({ key: 'billDate', direction: 'descending' });
 
-    // --- Load Data ---
+    // --- Load Data from Database ---
     useEffect(() => {
-        setIsLoading(true);
-        setError('');
-        try {
-            setTimeout(() => {
-                setPurchaseBills(getPurchaseBills()); // Get raw data
+        const fetchHistoryData = async () => {
+            setIsLoading(true);
+            setError('');
+            try {
+                // Fetch both bills and master items concurrently
+                const [billsRes, itemsRes] = await Promise.all([
+                    api.get('/purchase-bills'),
+                    api.get('/master-items')
+                ]);
+
+                if (billsRes.ok && itemsRes.ok) {
+                    const rawBills = await billsRes.json();
+                    const itemsData = await itemsRes.json();
+                    
+                    // Normalize the data safely in case the backend uses snake_case
+                    const formattedBills = rawBills.map(bill => ({
+                        ...bill,
+                        billDate: bill.bill_date || bill.billDate,
+                        supplierName: bill.supplier_name || bill.supplierName || 'Unknown Supplier',
+                        billNumber: bill.bill_number || bill.billNumber,
+                        totalAmount: bill.total_amount || bill.totalAmount,
+                        dateRecorded: bill.created_at || bill.dateRecorded,
+                        items: bill.items || bill.purchase_bill_items || []
+                    }));
+
+                    setPurchaseBills(formattedBills);
+                    setMasterItems(itemsData);
+                } else {
+                    setError("Failed to fetch data from the server.");
+                }
+            } catch (err) {
+                console.error("Error loading purchase history:", err);
+                setError("Failed to load purchase history. Please check your connection.");
+            } finally {
                 setIsLoading(false);
-            }, 300);
-        } catch (err) {
-            console.error("Error loading purchase history:", err);
-            setError("Failed to load purchase history. Please try again.");
-            setIsLoading(false);
-        }
+            }
+        };
+
+        fetchHistoryData();
     }, []);
 
     // --- Filtering ---
@@ -49,12 +77,17 @@ const PurchaseHistoryPage = () => {
         let bills = [...purchaseBills];
         if (searchTerm) {
             const lowerSearch = searchTerm.toLowerCase();
-            bills = bills.filter(bill =>
-                bill.supplierName?.toLowerCase().includes(lowerSearch) ||
-                bill.billNumber?.toLowerCase().includes(lowerSearch) ||
-                bill.id?.toLowerCase().includes(lowerSearch) ||
-                bill.notes?.toLowerCase().includes(lowerSearch)
-            );
+            bills = bills.filter(bill => {
+                const supName = bill.supplierName || '';
+                const billNo = bill.billNumber || '';
+                const notes = bill.notes || '';
+                const idStr = String(bill.id || '');
+                
+                return supName.toLowerCase().includes(lowerSearch) ||
+                       billNo.toLowerCase().includes(lowerSearch) ||
+                       idStr.toLowerCase().includes(lowerSearch) ||
+                       notes.toLowerCase().includes(lowerSearch);
+            });
         }
         return bills;
     }, [purchaseBills, searchTerm]);
@@ -69,8 +102,8 @@ const PurchaseHistoryPage = () => {
 
                 // Handle date sorting
                 if (sortConfig.key === 'billDate' || sortConfig.key === 'dateRecorded') {
-                    aValue = new Date(aValue);
-                    bValue = new Date(bValue);
+                    aValue = new Date(aValue || 0);
+                    bValue = new Date(bValue || 0);
                 }
                 // Handle numeric sorting (e.g., totalAmount)
                 else if (sortConfig.key === 'totalAmount') {
@@ -82,7 +115,6 @@ const PurchaseHistoryPage = () => {
                     aValue = aValue.toLowerCase();
                     bValue = bValue.toLowerCase();
                  }
-
 
                 if (aValue < bValue) {
                     return sortConfig.direction === 'ascending' ? -1 : 1;
@@ -101,20 +133,17 @@ const PurchaseHistoryPage = () => {
         if (sortConfig.key === key && sortConfig.direction === 'ascending') {
             direction = 'descending';
         } else if (sortConfig.key === key && sortConfig.direction === 'descending') {
-             // Optional: Cycle back to unsorted or default sort (e.g., date descending)
-             // For now, just toggle between asc/desc for the clicked column
              direction = 'ascending';
-             // Or to reset: key = 'billDate'; direction = 'descending';
         }
         setSortConfig({ key, direction });
     };
 
-    // --- Modal Handler ---
+    // --- Modal Handlers ---
     const handleViewDetails = (bill) => setViewingBill(bill);
     const handleCloseDetails = () => setViewingBill(null);
 
-     // Helper to render sort icons
-     const getSortIcon = (key) => {
+    // Helper to render sort icons
+    const getSortIcon = (key) => {
         if (sortConfig.key !== key) {
             return <FaSort className="ms-1 text-muted" size="0.8em" />;
         }
@@ -123,7 +152,6 @@ const PurchaseHistoryPage = () => {
         }
         return <FaSortDown className="ms-1" size="0.8em" />;
     };
-
 
     // --- Render ---
     return (
@@ -157,7 +185,6 @@ const PurchaseHistoryPage = () => {
                     </InputGroup>
                 </Col>
             </Row>
-
 
             {/* History Table */}
             <div className="history-table-wrapper">
@@ -209,7 +236,7 @@ const PurchaseHistoryPage = () => {
                  </Table>
              </div>
 
-             {/* View Bill Details Modal (Copied/Adapted from original page) */}
+             {/* View Bill Details Modal */}
              <Modal show={!!viewingBill} onHide={handleCloseDetails} centered size="lg" backdrop="static" keyboard={false}>
                  <Modal.Header closeButton>
                      <Modal.Title><FaFileInvoiceDollar className="me-2" />Purchase Bill Details</Modal.Title>
@@ -235,16 +262,21 @@ const PurchaseHistoryPage = () => {
                                      </tr>
                                  </thead>
                                  <tbody>
-                                     {viewingBill.items.map((item, index) => {
-                                         const master = findMasterItemById(item.masterItemId); // Reuse finder
+                                     {viewingBill.items && viewingBill.items.map((item, index) => {
+                                         // Dynamic Lookup from our fetched masterItems state
+                                         const masterId = item.masterItemId || item.master_item_id;
+                                         const master = masterItems.find(m => m.id === masterId); 
+                                         const qty = Number(item.quantity) || 0;
+                                         const price = Number(item.purchasePrice || item.purchase_price) || 0;
+
                                          return (
                                              <tr key={index}>
                                                  <td>{index + 1}</td>
-                                                 <td>{master?.name || <span className='text-muted fst-italic'>Item ID: {item.masterItemId}</span>}</td>
-                                                 <td>{master?.partNo || '-'}</td>
-                                                 <td className="text-center">{item.quantity}</td>
-                                                 <td className="text-end">{formatCurrency(item.purchasePrice)}</td>
-                                                 <td className="text-end fw-semibold">{formatCurrency(item.quantity * item.purchasePrice)}</td>
+                                                 <td>{master?.name || item.name || <span className='text-muted fst-italic'>Item ID: {masterId}</span>}</td>
+                                                 <td>{master?.partNo || item.partNo || item.part_no || '-'}</td>
+                                                 <td className="text-center">{qty}</td>
+                                                 <td className="text-end">{formatCurrency(price)}</td>
+                                                 <td className="text-end fw-semibold">{formatCurrency(qty * price)}</td>
                                              </tr>
                                          );
                                      })}

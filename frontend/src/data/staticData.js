@@ -479,7 +479,7 @@ export let initialInvoices = [
 ];
 
 // --- Tasks ---
-export const initialTasks = [
+export let initialTasks = [
     { id: 'T001', title: 'Order more Air Filters', description: 'Stock is low for P001', assignedTo: 'Admin', status: 'Todo', dueDate: '2024-03-20' },
     { id: 'T002', title: 'Follow up with Savan Moradiya payment', description: 'Invoice INV-2024-102 overdue', assignedTo: 'Admin', status: 'In Progress', dueDate: '2024-03-18' },
 ];

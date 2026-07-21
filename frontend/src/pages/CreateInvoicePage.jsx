@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Table, Form, InputGroup, Alert, Badge, Spinner, ListGroup, Modal } from 'react-bootstrap';
 import { FaFileInvoiceDollar, FaCheck, FaTimes, FaUser, FaCar, FaPlus, FaInfoCircle } from 'react-icons/fa';
 import api from '../api/api';
+import { useGlobalDate } from '../contexts/GlobalDateContext';
 
 // Robust currency formatter to gracefully accept numeric data types and string allocations alike
 const formatCurrency = (amount) => {
@@ -32,6 +33,7 @@ const formatDate = (dateString) => {
 };
 
 const CreateInvoicePage = () => {
+    const { workingDate, today } = useGlobalDate();
     const location = useLocation();
     const navigate = useNavigate();
 
@@ -50,6 +52,7 @@ const CreateInvoicePage = () => {
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [createdInvoiceData, setCreatedInvoiceData] = useState(null);
+
 
     useEffect(() => {
         const fetchReadyJobSheets = async () => {
@@ -130,7 +133,7 @@ const CreateInvoicePage = () => {
         const draft = {
             jobSheetId: jobSheet.id,
             jobSheetNumber: jobSheet.jobSheetNumber || jobSheet.job_sheet_number,
-            dateIssued: new Date().toISOString().split('T')[0],
+            dateIssued: workingDate,
             items: normalizedItems,
             totalParts,
             totalLubes,

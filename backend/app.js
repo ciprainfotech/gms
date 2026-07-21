@@ -14,6 +14,8 @@ const customerRoutes = require('./routes/customerRoutes');
 const masterItemRoutes = require('./routes/masterItemRoutes');
 const invoiceRoutes = require('./routes/invoiceRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const supplierRoutes = require('./routes/supplierRoutes');
+const purchaseBillRoutes = require('./routes/purchaseBillRoutes');
 
 // Import other routes here as you build them
 // e.g., const dashboardRoutes = require('./routes/dashboardRoutes');
@@ -25,7 +27,7 @@ const app = express();
 // Configure CORS to allow your React app to communicate with the backend
 // and to allow credentials (cookies) to be sent.
 app.use(cors({
-  origin: 'http://localhost:5173', // Your React app's URL
+  origin: ['http://localhost:5173', 'http://localhost:3005'], // Your React app's URL
   credentials: true,
 }));
 
@@ -49,6 +51,8 @@ app.use('/api/meta', makeModelRoutes);     // Add this line
 app.use('/api/master-items', masterItemRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/purchase-bills', purchaseBillRoutes);
 
 
 

@@ -141,8 +141,9 @@ exports.getActiveJobSheets = async (req, res) => {
  * @access  Private
  */
 exports.createCheckIn = async (req, res) => {
-    const { vehicle_id, customer_id, km_reading, notes } = req.body;
+    const { vehicle_id, customer_id, km_reading, notes, dateCreated} = req.body;
     const garageId = req.garageId;
+    const finalDate = dateCreated || new Date();
 
     if (!vehicle_id) {
         return res.status(400).json({ success: false, message: 'Vehicle ID is required.' });
@@ -181,7 +182,7 @@ exports.createCheckIn = async (req, res) => {
             customer_id,
             vehicle_id,
             km_reading,
-            new Date(),
+            finalDate,
             'Waiting', 
             notes
         ]);
@@ -204,7 +205,6 @@ exports.createCheckIn = async (req, res) => {
 // @desc    Update a job sheet's status
 // @route   PUT /api/jobsheets/:id/status
 // @access  Private
-// --- THIS IS THE FUNCTION TO REPLACE ---
 exports.updateJobSheetStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
@@ -215,14 +215,20 @@ exports.updateJobSheetStatus = async (req, res) => {
         return res.status(400).json({ success: false, message: 'A valid status is required.' });
     }
     
+    // We MUST use a transaction client here because we are fetching and updating settings
+    const client = await db.getClient();
+
     try {
-        // --- NEW LOGIC: First, get the current state of the job sheet ---
-        const currentStateQuery = await db.query(
+        await client.query('BEGIN');
+
+        // --- First, get the current state of the job sheet ---
+        const currentStateQuery = await client.query(
             'SELECT status, job_sheet_number FROM job_sheets WHERE id = $1 AND garage_id = $2 AND is_deleted = FALSE',
             [id, garageId]
         );
 
         if (currentStateQuery.rowCount === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ success: false, message: 'Job Sheet not found in your garage.' });
         }
         
@@ -230,25 +236,49 @@ exports.updateJobSheetStatus = async (req, res) => {
         let newJobSheetNumber = currentJobSheet.job_sheet_number; // Default to the existing number
 
         // --- NEW LOGIC: Check if we are promoting a "Waiting" job ---
-        // If so, generate the official job sheet number.
+        // If so, generate the official job sheet number from garage_settings.
         if (currentJobSheet.status === 'Waiting' && status === 'In Progress') {
+            
+            // 1. Fetch settings and lock the row to prevent duplicate numbers during high traffic
+            const settingsRes = await client.query(
+                `SELECT job_sheet_prefix, job_sheet_next_number FROM garage_settings WHERE garage_id = $1 FOR UPDATE`,
+                [garageId]
+            );
+
+            if (settingsRes.rows.length === 0) {
+                throw new Error('Garage settings not configured. Please contact support.');
+            }
+
+            const settings = settingsRes.rows[0];
+
+            // 2. Format the Dynamic Number
             const currentYear = new Date().getFullYear();
-            const paddedId = padWithZeros(id, 4);
-            newJobSheetNumber = `JS-${currentYear}-${paddedId}`;
+            const dynamicPrefix = settings.job_sheet_prefix.replace('{YYYY}', currentYear);
+            const paddedNumber = String(settings.job_sheet_next_number).padStart(4, '0');
+            newJobSheetNumber = `${dynamicPrefix}${paddedNumber}`; // e.g., SM-JS-2026-0001
+
+            // 3. Increment the counter for the next vehicle
+            await client.query(
+                `UPDATE garage_settings SET job_sheet_next_number = job_sheet_next_number + 1 WHERE garage_id = $1`,
+                [garageId]
+            );
         }
         
-        // --- MODIFIED QUERY: Update both status AND the job sheet number ---
-        const updateResult = await db.query(
+        // --- Update both status AND the job sheet number ---
+        const updateResult = await client.query(
             'UPDATE job_sheets SET status = $1, job_sheet_number = $2 WHERE id = $3 AND garage_id = $4',
             [status, newJobSheetNumber, id, garageId]
         );
 
         if (updateResult.rowCount === 0) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ success: false, message: 'Job Sheet not found during update.' });
         }
         
+        // Commit the transaction BEFORE fetching the full updated object
+        await client.query('COMMIT');
+        
         // Fetch the fully updated job sheet to send back to the frontend.
-        // This ensures the dashboard card updates with the new job sheet number.
         const updatedJobSheet = await getFullJobSheetById(id, garageId);
         
         if (!updatedJobSheet) {
@@ -259,8 +289,12 @@ exports.updateJobSheetStatus = async (req, res) => {
         res.status(200).json({ success: true, data: updatedJobSheet });
 
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error(`Error updating status for job sheet ${id}:`, err);
-        res.status(500).json({ success: false, message: 'Server Error during status update.' });
+        res.status(500).json({ success: false, message: err.message || 'Server Error during status update.' });
+    } finally {
+        // Always release the client connection back to the pool
+        client.release();
     }
 };
 

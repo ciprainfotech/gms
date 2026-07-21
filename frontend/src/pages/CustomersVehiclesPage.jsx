@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom'; // Assuming you use React Router for Add Customer link
+import { Link, useNavigate } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, InputGroup, Form, Modal, Alert, Tooltip, OverlayTrigger, Badge, Image, Dropdown, Spinner } from 'react-bootstrap';
 import {
     FaUserPlus, FaSearch, FaCar, FaPlus, FaEdit, FaTrashAlt, FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaIdCardAlt, FaInfoCircle, FaEllipsisV, FaHistory, FaWrench, FaCarSide, FaUserCircle, FaTimes, FaBuilding, FaCity, FaClipboardList, FaUsers, FaGasPump, FaPalette, FaPlug // Added more icons
@@ -40,6 +40,8 @@ const getVehicleBrandColor = (make) => {
 
 
 const CustomersVehiclesPage = () => {
+    const navigate = useNavigate();
+
     // --- State ---
     const [allCustomers, setAllCustomers] = useState([]);
     const [allVehicles, setAllVehicles] = useState([]);
@@ -189,8 +191,7 @@ const CustomersVehiclesPage = () => {
 
     const clearSearch = () => setSearchTerm('');
 
-    // --- Modal Management ---
-    // --- Modal Management ---
+ // --- Modal Management ---
     const showModal = (type, data = null) => {
         setFormError('');
         let initialFormData = {};
@@ -198,11 +199,6 @@ const CustomersVehiclesPage = () => {
         if (type === 'addVehicle') {
             initialFormData = { carNumber: '', make: '', model: '', year: '', vin: '', color: '', fuelType: '', customerId: selectedCustomer?.id };
             setAvailableModels([]); // Clear it for new vehicles
-        } else if (type === 'editVehicle' && data) {
-            initialFormData = { ...data, year: data.year ?? '', color: data.color ?? '', fuelType: data.fuelType ?? '' };
-            // 👉 THE FIX: We removed the staticData function here! 
-            // We temporarily clear it, and let our useEffect fetch the live objects!
-            setAvailableModels([]); 
         } else if (type === 'editCustomer' && data) {
             initialFormData = { ...data, email: data.email ?? '', address: data.address ?? '', city: data.city ?? '' };
         }
@@ -452,11 +448,19 @@ const CustomersVehiclesPage = () => {
         );
     };
 
-    const renderVehicleCard = (vehicle) => {
+const renderVehicleCard = (vehicle) => {
          const logoSrc = getVehicleLogo(vehicle.make);
          const brandColor = getVehicleBrandColor(vehicle.make);
          const isHighlighted = searchTerm && vehicle.carNumber.toLowerCase().includes(searchTerm.toLowerCase());
-         const getFuelIcon = (fuel) => { /* ... same as before ... */ };
+         
+         const getFuelIcon = (fuel) => {
+             if (!fuel) return null;
+             const fuelLower = fuel.toLowerCase();
+             if (fuelLower.includes('electric') || fuelLower.includes('ev')) {
+                 return <FaPlug className="me-1" />;
+             }
+             return <FaGasPump className="me-1" />;
+         };
 
          return (
              <Col key={vehicle.id} xs={12} md={6} xl={6} className="mb-4 vehicle-card-col">
@@ -475,9 +479,12 @@ const CustomersVehiclesPage = () => {
                              <Dropdown className="cv-vehicle-actions" onClick={(e) => e.stopPropagation()} align="end">
                                 <Dropdown.Toggle variant="link" bsPrefix="p-0" className="action-toggle"><FaEllipsisV /></Dropdown.Toggle>
                                 <Dropdown.Menu>
-                                    <Dropdown.Item onClick={() => showModal('editVehicle', vehicle)}><FaEdit className="me-2"/> Edit</Dropdown.Item>
-                                    {/* Change handleDeleteVehicle to handleDeleteVehicleClick */}
-<Dropdown.Item onClick={() => handleDeleteVehicleClick(vehicle.id, vehicle.carNumber)} className="text-danger"><FaTrashAlt className="me-2"/> Delete</Dropdown.Item>
+                                    {/* 👉 THE FIX: Now navigates to a new page and passes the vehicle data hidden in the background state */}
+                                    <Dropdown.Item onClick={() => navigate(`/edit-vehicle/${vehicle.id}`, { state: { vehicleData: vehicle } })}>
+                                        <FaEdit className="me-2"/> Edit
+                                    </Dropdown.Item>
+
+                                    <Dropdown.Item onClick={() => handleDeleteVehicleClick(vehicle.id, vehicle.carNumber)} className="text-danger"><FaTrashAlt className="me-2"/> Delete</Dropdown.Item>
                                     <Dropdown.Divider />
                                     <Dropdown.Item onClick={() => alert(`History: ${vehicle.carNumber}`)}><FaHistory className="me-2"/> History</Dropdown.Item>
                                     <Dropdown.Item onClick={() => alert(`New Job: ${vehicle.carNumber}`)}><FaWrench className="me-2"/> New Job</Dropdown.Item>
@@ -502,10 +509,26 @@ const CustomersVehiclesPage = () => {
             <div className="cv-layout">
                 {/* --- Left Panel --- */}
                 <div className="cv-list-panel shadow-sm">
-                    <div className="cv-panel-header">
-                        <h5 className="cv-panel-title"><FaUsers className="me-2" />Customers</h5>
+                    <div className="cv-panel-header align-items-center">
+                        
+                        {/* 1. Wrap the title and badges in a div to keep them on the left side */}
+                        <div>
+                            <h5 className="cv-panel-title mb-1"><FaUsers className="me-2" />Directory</h5>
+                            
+                            {/* 2. Add the dynamic counters using Bootstrap Badges */}
+                            <div className="d-flex gap-2 mt-1" style={{ fontSize: '0.8rem' }}>
+                                <Badge bg="primary" pill className="fw-normal shadow-sm">
+                                    {allCustomers.length} Customers
+                                </Badge>
+                                <Badge bg="info" text="dark" pill className="fw-normal shadow-sm">
+                                    <FaCarSide className="me-1" /> {allVehicles.length} Vehicles
+                                </Badge>
+                            </div>
+                        </div>
+
+                        {/* 3. The Add button remains on the right side */}
                         <Link to="/add-customer">
-                            <Button variant="outline-primary" size="sm" className="cv-add-customer-btn" title="Add New Customer">
+                            <Button variant="outline-primary" size="sm" className="cv-add-customer-btn mt-n3" title="Add New Customer">
                                 <FaUserPlus />
                             </Button>
                         </Link>

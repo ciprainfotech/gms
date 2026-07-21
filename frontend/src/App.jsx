@@ -22,6 +22,7 @@ import AnalyticsReportsPage from './pages/AnalyticsReportsPage';
 import AccountsReceivablePage from './pages/AccountsReceivablePage';
 import RemindersPage from './pages/RemindersPage';
 import AuthPage from './pages/AuthPage';
+import {GlobalDateProvider} from './contexts/GlobalDateContext';
 
 // --- CSS and FontAwesome Imports (Unchanged) ---
 import 'bootstrap/dist/css/bootstrap.min.css';
@@ -87,7 +88,6 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true); // ADDED: To handle initial auth check
   const [isTransitioning, setIsTransitioning] = useState(false);
-
   // ADDED: useEffect to check auth status on app load
   useEffect(() => {
     const checkAuthStatus = async () => {
@@ -136,6 +136,7 @@ function App() {
       setTimeout(() => {
         setIsAuthenticated(false);
         setCurrentUser(null);
+        localStorage.removeItem('masterWorkingDate');
         // ProtectedRoute will handle redirect
         setTimeout(() => {
           setIsTransitioning(false);
@@ -156,6 +157,7 @@ function App() {
   }
 
   return (
+    <GlobalDateProvider key={isAuthenticated ? 'logged-in' : 'logged-out'}>
     <BrowserRouter>
       <TransitionOverlay isVisible={isTransitioning} />
 
@@ -199,6 +201,7 @@ function App() {
           <Route path="purchase-entry" element={<PurchaseEntryPage />} />
           <Route path="purchase-history" element={<PurchaseHistoryPage />} />
           <Route path="analytics-reports" element={<AnalyticsReportsPage />} />
+          <Route path="edit-vehicle/:id" element={<AddCustomerPage />} />
           
           <Route index element={<Navigate replace to="/dashboard" />} />
           
@@ -206,6 +209,7 @@ function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </GlobalDateProvider>
   );
 }
 

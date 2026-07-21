@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Select from 'react-select';
 import {
@@ -9,6 +9,7 @@ import {
     FaMapMarkerAlt, FaPhone, FaEnvelope, FaCalendarAlt, FaTachometerAlt, FaStickyNote, FaBarcode, FaHashtag, FaExclamationTriangle, FaInfoCircle
 } from 'react-icons/fa';
 import api from '../api/api'; 
+import { useGlobalDate } from '../contexts/GlobalDateContext';
 
 // --- HELPER FUNCTIONS ---
 const formatCurrency = (amount) => {
@@ -20,7 +21,6 @@ const formatCurrency = (amount) => {
     });
 };
 
-// Strict DD/MM/YYYY Formatter
 const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
@@ -34,8 +34,13 @@ const formatDate = (dateString) => {
 };
 
 const JobSheetDetailPage = () => {
+    const { today } = useGlobalDate();
     const { jobSheetId } = useParams();
     const navigate = useNavigate();
+
+    // --- UX REFS FOR KEYBOARD NAVIGATION ---
+    const selectRef = useRef(null);
+    const qtyRef = useRef(null);
 
     // --- STATE MANAGEMENT ---
     const [jobSheetDetails, setJobSheetDetails] = useState(null);
@@ -62,17 +67,13 @@ const JobSheetDetailPage = () => {
 
     // --- MODAL STATES ---
     const [showDeleteModal, setShowDeleteModal] = useState(false);
-    
     const [showItemRemoveModal, setShowItemRemoveModal] = useState(false);
     const [itemToRemove, setItemToRemove] = useState(null);
-
     const [showValidationModal, setShowValidationModal] = useState(false);
     const [validationMessage, setValidationMessage] = useState('');
-
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
     const [successNavigation, setSuccessNavigation] = useState(null);
-
 
     // --- DATA FETCHING & INITIALIZATION ---
     useEffect(() => {
@@ -116,7 +117,6 @@ const JobSheetDetailPage = () => {
         fetchData();
     }, [jobSheetId]); 
 
-
     // --- MEMOIZED DERIVED STATE ---
     const isReadOnly = useMemo(() =>
         jobSheetDetails?.status === 'Completed' || jobSheetDetails?.status === 'Invoiced',
@@ -136,7 +136,9 @@ const JobSheetDetailPage = () => {
         const price = parseFloat(masterItemData.unit_price || masterItemData.unitPrice) || 0;
         const lube = parseFloat(masterItemData.lube_charge || masterItemData.lubeCharge) || 0;
         const labour = parseFloat(masterItemData.labour_charge || masterItemData.labourCharge) || 0;
-        const q = parseInt(qty) || 0;
+        
+        // Changed to parseFloat to support decimal quantities
+        const q = parseFloat(qty) || 0; 
         
         const lineParts = q * price;
         const lineLubes = q > 0 ? lube : 0;
@@ -156,7 +158,6 @@ const JobSheetDetailPage = () => {
         }, { totalParts: 0, totalLubes: 0, totalLabour: 0, grandTotal: 0 });
     }, [addedItems]);
 
-    // Updated validation to return errors synchronously
     const validateForm = (isFinalizingAction) => {
         const errors = {};
         const kmNum = Number(kmReading);
@@ -180,8 +181,32 @@ const JobSheetDetailPage = () => {
 
 
     // --- LOCAL ITEM MANIPULATION HANDLERS ---
+    
+    // Auto-focus quantity field when an item is selected
+    const handleSelectChange = (selectedOption) => {
+        setSelectedMasterItem(selectedOption);
+        if (selectedOption) {
+            setTimeout(() => {
+                if (qtyRef.current) {
+                    qtyRef.current.focus();
+                    qtyRef.current.select(); // Highlights '1' so user can just type to overwrite
+                }
+            }, 0);
+        }
+    };
+
+    // Auto-trigger add when Enter is pressed in Quantity field
+    const handleQuantityKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleAddItem();
+        }
+    };
+
     const handleAddItem = () => {
-        if (!selectedMasterItem || quantity <= 0 || isReadOnly) return;
+        const parsedQty = parseFloat(quantity);
+        if (!selectedMasterItem || isNaN(parsedQty) || parsedQty <= 0 || isReadOnly) return;
+        
         const masterItemData = masterItems.find(item => item.id === selectedMasterItem.value);
         if (!masterItemData) return;
 
@@ -191,7 +216,7 @@ const JobSheetDetailPage = () => {
         if (existingItemIndex > -1) { 
             updatedItems = addedItems.map((item, index) => {
                 if (index === existingItemIndex) {
-                    const newQuantity = item.quantity + parseInt(quantity);
+                    const newQuantity = item.quantity + parsedQty;
                     return { ...item, quantity: newQuantity, ...calculateLineTotals(masterItemData, newQuantity) };
                 }
                 return item;
@@ -199,15 +224,23 @@ const JobSheetDetailPage = () => {
         } else { 
             const newItem = {
                 masterItemId: masterItemData.id, name: masterItemData.name, partNo: masterItemData.part_no,
-                quantity: parseInt(quantity), unitPrice: masterItemData.unit_price,
+                quantity: parsedQty, unitPrice: masterItemData.unit_price,
                 lubeCharge: masterItemData.lube_charge, labourCharge: masterItemData.labour_charge,
-                ...calculateLineTotals(masterItemData, quantity)
+                ...calculateLineTotals(masterItemData, parsedQty)
             };
             updatedItems = [...addedItems, newItem];
         }
+        
         setAddedItems(updatedItems);
         setSelectedMasterItem(null);
         setQuantity(1);
+
+        // Return focus to the search dropdown for the next item
+        setTimeout(() => {
+            if (selectRef.current) {
+                selectRef.current.focus();
+            }
+        }, 0);
     };
 
     const promptRemoveItem = (itemId) => {
@@ -235,7 +268,7 @@ const JobSheetDetailPage = () => {
 
     const saveEditing = (itemId) => {
         if (isReadOnly) return;
-        const newQty = parseInt(editingQuantity);
+        const newQty = parseFloat(editingQuantity);
         if (isNaN(newQty) || newQty <= 0) {
             setValidationMessage("Please enter a valid quantity greater than 0.");
             setShowValidationModal(true);
@@ -251,7 +284,6 @@ const JobSheetDetailPage = () => {
         ));
         cancelEditing();
     };
-
 
     // --- API SUBMISSION HANDLERS ---
     const handleSaveOrFinalize = async (isFinalizingAction) => {
@@ -289,7 +321,6 @@ const JobSheetDetailPage = () => {
 
             setJobSheetDetails(prev => ({ ...prev, ...updatedData.jobSheet }));
             
-            // Set Success Flow
             setSuccessMessage(`Job Sheet ${isFinalizingAction ? 'Finalized' : 'Saved'} Successfully!`);
             
             if (isFinalizingAction) {
@@ -395,7 +426,6 @@ const JobSheetDetailPage = () => {
         }
     };
 
-
     // --- RENDER LOGIC ---
     if (loading) {
         return (
@@ -426,7 +456,6 @@ const JobSheetDetailPage = () => {
     return (
         <Container fluid className="py-4 px-lg-5 job-sheet-detail-page">
             
-            {/* ========================== Print-Only Header ========================== */}
             <div className="d-none d-print-block mb-4 border-bottom pb-3">
                 <Row className="align-items-center">
                     <Col xs={6}>
@@ -439,7 +468,6 @@ const JobSheetDetailPage = () => {
                 </Row>
             </div>
 
-            {/* ========================== Header ========================== */}
             <Row className="mb-4 align-items-center d-print-none">
                 <Col xs="auto">
                     <Button variant="link" className="text-secondary text-decoration-none p-0" onClick={() => navigate(-1)} title="Go Back">
@@ -462,14 +490,12 @@ const JobSheetDetailPage = () => {
             {error && <Alert variant="danger" onClose={() => setError(null)} dismissible className="shadow-sm d-print-none">{error}</Alert>}
 
             <div className="printable-section">
-                {/* ========================== Customer & Vehicle Info ========================== */}
                 <Card className="mb-4 shadow-sm border-print-0">
                     <Card.Header className="bg-light-subtle d-print-none">
                         <FaUser className="me-2 text-primary" />Customer & <FaCar className="ms-3 me-2 text-primary" />Vehicle Information
                     </Card.Header>
                     <Card.Body>
                         <Row>
-                            {/* Uses xs={12} sm={6} to force side-by-side even in print scaling */}
                             <Col xs={12} sm={6} className="border-end mb-3 mb-sm-0">
                                 <h5 className="h6 text-muted mb-3 text-uppercase fw-bold">Customer Details</h5>
                                 <ListGroup variant="flush">
@@ -492,7 +518,6 @@ const JobSheetDetailPage = () => {
                     </Card.Body>
                 </Card>
 
-                {/* ========================== Job Details (KM & Notes) ========================== */}
                 <Card className="mb-4 shadow-sm border-print-0">
                     <Card.Header className="bg-light-subtle d-print-none"><FaTachometerAlt className="me-2 text-primary" />Job Details</Card.Header>
                     <Card.Body>
@@ -513,7 +538,6 @@ const JobSheetDetailPage = () => {
                                         />
                                         <Form.Control.Feedback type="invalid">{validationErrors.kmReading}</Form.Control.Feedback>
                                     </InputGroup>
-                                    {/* Print-only clean display */}
                                     <div className="d-none d-print-block fs-5 border rounded px-3 py-2">
                                         {kmReading || 'N/A'} KM
                                     </div>
@@ -535,7 +559,6 @@ const JobSheetDetailPage = () => {
                                             style={{ minHeight: '38px' }} 
                                         />
                                     </InputGroup>
-                                    {/* Print-only clean display for notes to avoid input box styling */}
                                     <div className="d-none d-print-block border rounded px-3 py-2" style={{ minHeight: '80px' }}>
                                         {notes || <span className="text-muted fst-italic">No additional notes provided.</span>}
                                     </div>
@@ -545,7 +568,6 @@ const JobSheetDetailPage = () => {
                     </Card.Body>
                 </Card>
 
-                {/* ========================== Items Section (Add + Table) ========================== */}
                 <Card className="shadow-sm border-print-0">
                     {!isReadOnly && (
                         <div className="d-print-none">
@@ -555,10 +577,11 @@ const JobSheetDetailPage = () => {
                                     <Col lg={6} md={12} sm={12} className="mb-2 mb-lg-0">
                                         <Form.Label htmlFor="itemSelect" className="visually-hidden">Select Item</Form.Label>
                                         <Select 
+                                            ref={selectRef}
                                             id="itemSelect" 
                                             options={selectOptions} 
                                             value={selectedMasterItem} 
-                                            onChange={setSelectedMasterItem} 
+                                            onChange={handleSelectChange} 
                                             placeholder="Search or select an item..." 
                                             isClearable 
                                             isDisabled={isSavingDraft || isFinalizing} 
@@ -568,11 +591,14 @@ const JobSheetDetailPage = () => {
                                     <Col lg={2} md={4} sm={5}>
                                         <Form.Label htmlFor="quantityInput" className="visually-hidden">Quantity</Form.Label>
                                         <Form.Control 
+                                            ref={qtyRef}
                                             id="quantityInput" 
                                             type="number" 
-                                            min="1" 
+                                            min="0.01" 
+                                            step="any"
                                             value={quantity} 
                                             onChange={(e) => setQuantity(e.target.value)} 
+                                            onKeyDown={handleQuantityKeyDown}
                                             disabled={!selectedMasterItem || isSavingDraft || isFinalizing} 
                                             placeholder="Qty" 
                                         />
@@ -599,7 +625,6 @@ const JobSheetDetailPage = () => {
                                         <th className="py-2 px-3 border-bottom border-dark" style={{ width: '55%' }}>Description</th>
                                         <th className="py-2 px-3 text-center border-bottom border-dark" style={{ width: '15%' }}>Qty</th>
                                         
-                                        {/* 👉 d-print-none entirely hides these from the printer */}
                                         <th className="py-2 px-3 text-end d-print-none" style={{ width: '10%' }}>Parts</th>
                                         <th className="py-2 px-3 text-end d-print-none" style={{ width: '10%' }}>Lubes</th>
                                         <th className="py-2 px-3 text-end d-print-none" style={{ width: '10%' }}>Labour</th>
@@ -619,7 +644,7 @@ const JobSheetDetailPage = () => {
                                                 <td className="px-3 text-center fw-bold">
                                                     {editingItemId === item.masterItemId ? (
                                                         <InputGroup size="sm" className="w-auto mx-auto d-print-none" style={{ maxWidth: '150px' }}>
-                                                            <Form.Control type="number" min="1" value={editingQuantity} onChange={(e) => setEditingQuantity(e.target.value)} autoFocus onKeyDown={(e) => { if (e.key === 'Enter') saveEditing(item.masterItemId); if (e.key === 'Escape') cancelEditing(); }} />
+                                                            <Form.Control type="number" step="any" min="0.01" value={editingQuantity} onChange={(e) => setEditingQuantity(e.target.value)} autoFocus onKeyDown={(e) => { if (e.key === 'Enter') saveEditing(item.masterItemId); if (e.key === 'Escape') cancelEditing(); }} />
                                                             <OverlayTrigger placement="top" overlay={<Tooltip>Save</Tooltip>}><Button variant="outline-success" size="sm" onClick={() => saveEditing(item.masterItemId)}><FaCheck /></Button></OverlayTrigger>
                                                             <OverlayTrigger placement="top" overlay={<Tooltip>Cancel</Tooltip>}><Button variant="outline-secondary" size="sm" onClick={cancelEditing}><FaTimes /></Button></OverlayTrigger>
                                                         </InputGroup>
@@ -631,7 +656,6 @@ const JobSheetDetailPage = () => {
                                                     )}
                                                 </td>
                                                 
-                                                {/* 👉 d-print-none hides financial data from the mechanic's copy */}
                                                 <td className="px-3 text-end small d-print-none">{formatCurrency(item.lineParts)}</td>
                                                 <td className="px-3 text-end small d-print-none">{formatCurrency(item.lineLubes)}</td>
                                                 <td className="px-3 text-end small d-print-none">{formatCurrency(item.lineLabour)}</td>
@@ -666,7 +690,6 @@ const JobSheetDetailPage = () => {
                     </Card.Body>
                 </Card>
 
-                {/* Print-Only Signature Footer */}
                 <div className="d-none d-print-block mt-5 pt-5">
                     <Row>
                         <Col xs={6} className="text-center">
@@ -683,7 +706,6 @@ const JobSheetDetailPage = () => {
                 </div>
             </div>
 
-            {/* ========================== Action Buttons Footer ========================== */}
             <div className="mt-4 d-flex justify-content-between align-items-center gap-2 flex-wrap d-print-none">
                 <div>
                     {!isReadOnly && (
@@ -708,8 +730,6 @@ const JobSheetDetailPage = () => {
             </div>
 
             {/* ========================== MODALS ========================== */}
-
-            {/* 1. Item Removal Confirmation Modal */}
             <Modal show={showItemRemoveModal} onHide={() => setShowItemRemoveModal(false)} centered backdrop="static" size="sm">
                 <Modal.Header closeButton className="border-0 pb-0">
                     <Modal.Title className="h6 text-danger"><FaTrash className="me-2"/>Remove Item?</Modal.Title>
@@ -723,7 +743,6 @@ const JobSheetDetailPage = () => {
                 </Modal.Footer>
             </Modal>
 
-            {/* 2. Validation Warning Modal */}
             <Modal show={showValidationModal} onHide={() => setShowValidationModal(false)} centered backdrop="static" size="sm">
                 <Modal.Header closeButton className="bg-warning text-dark border-0">
                     <Modal.Title className="h6"><FaExclamationTriangle className="me-2"/>Missing Information</Modal.Title>
@@ -736,7 +755,6 @@ const JobSheetDetailPage = () => {
                 </Modal.Footer>
             </Modal>
 
-            {/* 3. Delete Confirmation Modal (Full Job Sheet) */}
             <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)} centered backdrop="static">
                 <Modal.Header closeButton className="bg-light border-0">
                     <Modal.Title className="h5 text-danger"><FaExclamationTriangle className="me-2"/>Confirm Deletion</Modal.Title>
@@ -755,7 +773,6 @@ const JobSheetDetailPage = () => {
                 </Modal.Footer>
             </Modal>
 
-            {/* 4. Global Success Modal */}
             <Modal show={showSuccessModal} onHide={closeSuccessModal} centered backdrop="static">
                 <Modal.Body className="text-center py-5">
                     <div className="mb-3">

@@ -9,8 +9,10 @@ import {
 } from 'react-icons/fa';
 
 import api from '../api/api.js';
-import CheckinCard from '../components/CheckinCard'; 
+import CheckinCard from '../components/CheckinCard';
+import MasterDateController from '../components/MasterDateController'; 
 import "../App.css";
+import { useGlobalDate } from '../contexts/GlobalDateContext'; 
 
 // --- Helper Functions ---
 const formatDate = (dateString) => {
@@ -57,6 +59,8 @@ const Dashboard = () => {
     const [carSuggestions, setCarSuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
 
+    const { workingDate } = useGlobalDate();
+
     // --- Auto-Suggest Effect (Debounced) ---
     useEffect(() => {
         const fetchSuggestions = async () => {
@@ -90,6 +94,9 @@ const Dashboard = () => {
             setIsLoading(true);
             setError(null);
             
+            console.group("🛠️ [FRONTEND DEBUG] Dashboard Initialization");
+            console.log("👉 1. Raw workingDate from context:", workingDate);
+
             try {
                 const meResponse = await api.get('/auth/me');
                 if (!meResponse.ok) throw new Error('Could not verify your session. Please log in again.');
@@ -97,34 +104,58 @@ const Dashboard = () => {
                 const meData = await meResponse.json();
                 if (meData.garages && meData.garages.length > 0) {
                     const defaultGarageId = meData.garages[0].id;
-                    const selectResponse = await api.post('/auth/select-garage', { garageId: defaultGarageId });
-                    if (!selectResponse.ok) throw new Error('There was a problem selecting your default garage.');
-                } else {
-                    throw new Error('You are not assigned to any garage. Please contact an administrator.');
+                    await api.post('/auth/select-garage', { garageId: defaultGarageId });
                 }
 
-                const kanbanResponse = await api.get('/dashboard/kanban-data');
-                if (!kanbanResponse.ok) {
-                    const errData = await kanbanResponse.json();
-                    throw new Error(errData.message || 'Could not fetch dashboard data.');
+                let url = '/dashboard/kanban-data';
+                
+                if (workingDate) {
+                    const d = new Date(workingDate);
+                    const formattedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    url = `/dashboard/kanban-data?date=${formattedDate}`;
+                    console.log("👉 2. Formatted Date string to send to API:", formattedDate);
                 }
+
+                console.log("👉 3. Fetching from API:", url);
+                const kanbanResponse = await api.get(url);
+                
+                if (!kanbanResponse.ok) {
+                    throw new Error('Could not fetch dashboard data.');
+                }
+                
                 const kanbanResult = await kanbanResponse.json();
+                console.log("👉 4. Raw API Response Data:", kanbanResult.data);
+                
                 setJobs(kanbanResult.data);
 
             } catch (err) {
+                console.error("❌ [FRONTEND ERROR]:", err.message);
                 setError(err.message);
             } finally {
                 setIsLoading(false);
+                console.groupEnd();
             }
         };
 
         initializeDashboard();
-    }, [location.state]); 
+    }, [workingDate, location.state]); 
 
-    // --- Derived State for Kanban Columns ---
+    // --- Derived State for Kanban Columns (DECLARED ONLY ONCE) ---
     const waitingJobs = jobs.filter(j => j.status === 'Waiting');
     const inProgressJobs = jobs.filter(j => j.status === 'In Progress');
-    const completedJobs = jobs.filter(j => j.status === 'Completed');
+    
+    const completedJobs = jobs.filter(j => {
+        const isMatch = j.status === 'Completed' || j.status === 'Invoiced';
+        return isMatch;
+    });
+
+    // Run a quick trace whenever jobs update
+    useEffect(() => {
+        console.log("📊 [FRONTEND RENDER TRACE] State updated:");
+        console.log(`   - Waiting Jobs: ${waitingJobs.length}`);
+        console.log(`   - In Progress Jobs: ${inProgressJobs.length}`);
+        console.log(`   - Completed/Invoiced Jobs: ${completedJobs.length}`);
+    }, [jobs, waitingJobs.length, inProgressJobs.length, completedJobs.length]);
 
     // --- State Update Helpers ---
     const updateJobInState = (updatedJob) => setJobs(prev => prev.map(j => (j.id === updatedJob.id ? { ...j, ...updatedJob } : j)));
@@ -155,7 +186,8 @@ const Dashboard = () => {
                 const jobSheetData = {
                     vehicle_id: result.data.id,
                     customer_id: result.data.customer_id,
-                    notes: checkInKeyProblems || 'No problems specified on check-in.'
+                    notes: checkInKeyProblems || 'No problems specified on check-in.',
+                    dateCreated: workingDate
                 };
                 const jobRes = await api.post('/jobsheets/check-in', jobSheetData);
                 const jobResult = await jobRes.json();
@@ -269,16 +301,22 @@ const Dashboard = () => {
                 <div className="dashboard-action-bar">
                     <div className="action-bar-left">
                         <h1 className="page-title mb-0 d-none d-md-block">Workshop Flow</h1>
-                        <h3 className="page-title mb-0 d-block d-md-none">Flow</h3>
                     </div>
-                    <div className="action-bar-right">
-                        <Button variant="outline-secondary" className="btn-history-lookup me-2" onClick={handleHistoryLookupClick}>
-                            <FaHistory className="me-1 me-md-2" /> <span className="d-none d-md-inline">History Lookup</span>
-                        </Button>
-                        <Button className="btn-checkin-primary" onClick={handleNewCheckInClick}>
-                            <FaPlus className="me-1" /> <span className="d-none d-md-inline">New Check-in</span><span className="d-inline d-md-none">Check In</span>
-                        </Button>
-                    </div>
+                    <Row className="align-items-center g-2 flex-grow-1 justify-content-end">
+                        <Col xs="auto" style={{ minWidth: '300px' }}>
+                            <MasterDateController />
+                        </Col>
+                        <Col xs="auto">
+                            <div className="d-flex gap-2">
+                                <Button variant="outline-secondary" className="btn-history-lookup" onClick={handleHistoryLookupClick}>
+                                    <FaHistory className="me-1" /> History Lookup
+                                </Button>
+                                <Button className="btn-checkin-primary" onClick={handleNewCheckInClick}>
+                                    <FaPlus className="me-1" /> New Check-in
+                                </Button>
+                            </div>
+                        </Col>
+                    </Row>
                 </div>
                 
                 {apiMessage.text && apiMessage.type === 'danger' && (
@@ -306,7 +344,6 @@ const Dashboard = () => {
                 </div>
             </div>
 
-            {/* Corporate Branding & Software Licence Footer */}
             <footer className="mt-5 pt-3 pb-2 text-center text-muted border-top d-print-none small">
                 <Row className="align-items-center g-2">
                     <Col sm={6} className="text-sm-start text-center">
@@ -362,7 +399,6 @@ const Dashboard = () => {
                 <Modal.Header closeButton className="modal-header-custom border-0 pb-0 pt-3 px-4"><Modal.Title className="history-modal-title"><FaHistory className="me-2" /> Vehicle Service History</Modal.Title></Modal.Header>
                 <Modal.Body className="history-modal-body p-4">
                     
-                     {/* Auto-Suggest Search Input Group */}
                      <div className="position-relative mb-4">
                         <InputGroup className="history-search-group">
                             <Form.Control 
@@ -381,7 +417,6 @@ const Dashboard = () => {
                             </Button>
                         </InputGroup>
 
-                        {/* 👉 THE FIX: Populates the input and hides dropdown WITHOUT executing the search */}
                         {showSuggestions && carSuggestions.length > 0 && (
                             <ListGroup className="position-absolute w-100 shadow-sm border" style={{ top: '100%', left: 0, zIndex: 1050, maxHeight: '250px', overflowY: 'auto' }}>
                                 {carSuggestions.map((car, idx) => (
@@ -389,9 +424,9 @@ const Dashboard = () => {
                                         key={idx}
                                         action
                                         onMouseDown={(e) => {
-                                            e.preventDefault(); // Prevents input focus loss so onBlur doesn't fire instantly
-                                            setHistorySearchCar(car.car_number); // Populates the search bar
-                                            setShowSuggestions(false); // Closes the dropdown
+                                            e.preventDefault(); 
+                                            setHistorySearchCar(car.car_number); 
+                                            setShowSuggestions(false); 
                                         }}
                                         className="d-flex justify-content-between align-items-center"
                                     >

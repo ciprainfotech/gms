@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, Badge, Button } from 'react-bootstrap';
 import { FaArrowRight, FaStickyNote, FaTrashAlt, FaCar, FaUser } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
-import '../App.css'; // Ensure this file contains styles for .checkin-card, .card-title-clickable, etc.
+import '../App.css'; 
 
 const CheckinCard = ({ job, onStartRepair, onDelete }) => {
     const navigate = useNavigate();
@@ -12,12 +12,13 @@ const CheckinCard = ({ job, onStartRepair, onDelete }) => {
             case 'Waiting': return 'secondary';
             case 'In Progress': return 'warning';
             case 'Completed': return 'success';
+            case 'Invoiced': return 'info'; // <-- ADDED: Proper color for invoiced jobs
             default: return 'light';
         }
     };
 
     const handleViewDetails = () => {
-        // For 'In Progress' and 'Completed' jobs, this navigates to the full job sheet editor/viewer.
+        // Navigates to the full job sheet editor/viewer
         navigate(`/jobsheet/${job.id}`);
     };
 
@@ -49,7 +50,8 @@ const CheckinCard = ({ job, onStartRepair, onDelete }) => {
                                 Update Details
                             </Button>
                         )}
-                         {job.status === 'Completed' && (
+                         {/* <-- ADDED: Ensure BOTH Completed and Invoiced jobs show the view button --> */}
+                         {(job.status === 'Completed' || job.status === 'Invoiced') && (
                              <Button variant="info" size="sm" onClick={handleViewDetails}>
                                 View Details
                             </Button>

@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom'; // Link is used now
+import { useNavigate, Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Form, Button, InputGroup, Table, Alert, Spinner, Badge, Modal } from 'react-bootstrap';
-import { FaFileInvoiceDollar, FaBox, FaPlus, FaTrashAlt, FaTimes, FaSave, FaListAlt, FaCalendarAlt, FaDollarSign, FaInfoCircle, FaEye, FaBuilding, FaUserTie, FaKeyboard, FaHistory } from 'react-icons/fa';
-import { getMasterItems, addPurchaseBill, getSuppliers, addSupplier, findMasterItemById } from '../data/staticData'; // Removed getPurchaseBills
+import { FaFileInvoiceDollar, FaBox, FaPlus, FaTrashAlt, FaTimes, FaSave, FaKeyboard, FaHistory, FaUserTie } from 'react-icons/fa';
 import Select, { createFilter } from 'react-select';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// Import the refined CSS
-import '../App.css'; // Keep global styles if needed
-import '../PurchaseEntryPage.css'; // Load the specific styles
+// Completely replaced staticData with your custom API wrapper
+import api from '../api/api';
+
+import '../App.css';
+import '../PurchaseEntryPage.css';
 
 // Helpers
 const formatCurrency = (amount, minimumFractionDigits = 2) => {
@@ -29,7 +30,6 @@ const PurchaseEntryPage = () => {
     // --- State ---
     const [masterItems, setMasterItems] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
-    // Removed purchaseBills state, it's handled by the history page
     const [isLoading, setIsLoading] = useState(true);
     const [billDetails, setBillDetails] = useState({ supplierId: '', billNumber: '', billDate: new Date().toISOString().split('T')[0], notes: '' });
     const [billItems, setBillItems] = useState([]);
@@ -37,11 +37,11 @@ const PurchaseEntryPage = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
-    // Removed historySearchTerm, viewingBill (will be on history page)
+    
+    // Modals
     const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
     const [newSupplierData, setNewSupplierData] = useState({ name: '', phone: '', contactPerson: '', city: '' });
     const [supplierFormError, setSupplierFormError] = useState('');
-    // Removed showHistoryModal state
 
     // --- Refs ---
     const itemSelectRef = useRef(null);
@@ -50,22 +50,33 @@ const PurchaseEntryPage = () => {
     const supplierSelectRef = useRef(null);
     const billNumberRef = useRef(null);
 
-    // --- Load Initial Data (Simpler now) ---
+    // --- Load Initial Data from Database ---
     useEffect(() => {
-        setIsLoading(true);
-        setError('');
-        try {
-            // Simulate fetching only necessary data for this page
-            setTimeout(() => {
-                setMasterItems(getMasterItems());
-                setSuppliers(getSuppliers());
+        const loadInitialData = async () => {
+            setIsLoading(true);
+            setError('');
+            try {
+                // Fetch items and suppliers simultaneously for faster loading
+                const [itemsRes, suppliersRes] = await Promise.all([
+                    api.get('/master-items'),
+                    api.get('/suppliers')
+                ]);
+
+                if (itemsRes.ok && suppliersRes.ok) {
+                    setMasterItems(await itemsRes.json());
+                    setSuppliers(await suppliersRes.json());
+                } else {
+                    setError("Failed to fetch data from the server.");
+                }
+            } catch (err) {
+                console.error("Error loading initial data:", err);
+                setError("Failed to connect to the database. Please check your connection.");
+            } finally {
                 setIsLoading(false);
-            }, 300);
-        } catch (err) {
-            console.error("Error loading initial data:", err);
-            setError("Failed to load necessary data. Please refresh.");
-            setIsLoading(false);
-        }
+            }
+        };
+
+        loadInitialData();
     }, []);
 
     // --- Memoized Options & Calculations ---
@@ -85,13 +96,12 @@ const PurchaseEntryPage = () => {
         return billItems.reduce((total, item) => total + (Number(item.lineTotal) || 0), 0);
     }, [billItems]);
 
-    // --- Handlers (Logic mostly unchanged, but removed history parts) ---
+    // --- Handlers ---
     const handleBillDetailChange = (e) => setBillDetails({ ...billDetails, [e.target.name]: e.target.value });
     const handleSupplierSelect = (selectedOption) => setBillDetails({ ...billDetails, supplierId: selectedOption ? selectedOption.value : '' });
     const handleMasterItemSelectChange = (selectedOption) => setSelectedMasterItem(selectedOption);
 
     const addItemToBill = useCallback((itemToAdd) => {
-        // ... (same logic as before)
         if (!itemToAdd || !itemToAdd.value || !itemToAdd.itemData) {
             setError("Please select a valid item first.");
              setTimeout(() => setError(''), 3500);
@@ -132,7 +142,6 @@ const PurchaseEntryPage = () => {
     }, [billItems]);
 
     const handleItemInputChange = (index, field, value) => {
-        // ... (same logic as before)
         const updatedItems = [...billItems];
         const item = updatedItems[index];
         if (!item) return;
@@ -154,7 +163,6 @@ const PurchaseEntryPage = () => {
     };
 
     const handleItemInputKeyDown = (e, index, currentField) => {
-        // ... (same logic as before)
         if (e.key === 'Enter') {
             e.preventDefault();
             const currentItem = billItems[index];
@@ -177,47 +185,60 @@ const PurchaseEntryPage = () => {
     };
 
     const handleRemoveItem = (index) => {
-        // ... (same logic as before)
         setBillItems(prevItems => prevItems.filter((_, i) => i !== index));
         itemSelectRef.current?.focus();
     };
 
-    const openAddSupplierModal = () => { /* ... (same) */ setShowAddSupplierModal(true); };
+    const openAddSupplierModal = () => { setShowAddSupplierModal(true); };
     const closeAddSupplierModal = () => setShowAddSupplierModal(false);
     const handleNewSupplierChange = (e) => setNewSupplierData({ ...newSupplierData, [e.target.name]: e.target.value });
 
-    const handleAddSupplierSubmit = (e) => {
-        // ... (same logic as before)
+    // --- Database Add Supplier ---
+    const handleAddSupplierSubmit = async (e) => {
         e.preventDefault();
         setSupplierFormError('');
+        
         if (!newSupplierData.name || !newSupplierData.phone) {
             setSupplierFormError("Supplier Name and Phone are required."); return;
         }
         if (!/^\d{10}$/.test(newSupplierData.phone)) {
             setSupplierFormError("Please enter a valid 10-digit phone number."); return;
         }
-        const addedSupplier = addSupplier(newSupplierData);
-        if (addedSupplier) {
-            setSuppliers(getSuppliers());
-            setBillDetails(prev => ({ ...prev, supplierId: addedSupplier.id }));
-            closeAddSupplierModal();
-            setTimeout(() => billNumberRef.current?.focus(), 100);
-            setSuccess(`Supplier "${addedSupplier.name}" added successfully.`);
-            setTimeout(() => setSuccess(''), 4000);
-        } else {
-            setSupplierFormError("Error adding supplier. Please check console or try again.");
+
+        try {
+            const response = await api.post('/suppliers', newSupplierData);
+            const addedSupplier = await response.json();
+
+            if (response.ok) {
+                // Refresh suppliers list
+                const suppliersRes = await api.get('/suppliers');
+                if (suppliersRes.ok) setSuppliers(await suppliersRes.json());
+                
+                setBillDetails(prev => ({ ...prev, supplierId: addedSupplier.id }));
+                closeAddSupplierModal();
+                setNewSupplierData({ name: '', phone: '', contactPerson: '', city: '' });
+                
+                setTimeout(() => billNumberRef.current?.focus(), 100);
+                setSuccess(`Supplier "${addedSupplier.name}" added successfully.`);
+                setTimeout(() => setSuccess(''), 4000);
+            } else {
+                setSupplierFormError(addedSupplier.message || "Error adding supplier.");
+            }
+        } catch (error) {
+            setSupplierFormError("Server error while connecting to the database.");
         }
     };
 
+    // --- Database Save Purchase Bill ---
     const handleSavePurchase = async () => {
-        // ... (same validation and saving logic as before)
         setError(''); setSuccess('');
         if (!billDetails.supplierId) { setError("Please select a Supplier."); supplierSelectRef.current?.focus(); return; }
         if (!billDetails.billNumber.trim()) { setError("Please enter the Bill/Invoice No."); billNumberRef.current?.focus(); return; }
         if (!billDetails.billDate) { setError("Please select the Bill Date."); return; }
         if (billItems.length === 0) { setError("Please add at least one item to the bill."); itemSelectRef.current?.focus(); return; }
+        
         let invalidItemFound = false;
-        for (let i = 0; i < billItems.length; i++) { /* ... item validation ... */
+        for (let i = 0; i < billItems.length; i++) {
             const item = billItems[i];
             if (item.masterItem.type === 'Spare') {
                 const qty = Number(item.quantity); const price = Number(item.purchasePrice);
@@ -231,9 +252,11 @@ const PurchaseEntryPage = () => {
                 }
             }
         }
+        
         if (invalidItemFound) return;
         setIsSaving(true);
-        const billDataToSave = { /* ... bill data ... */
+        
+        const billDataToSave = { 
              supplierId: billDetails.supplierId,
             billNumber: billDetails.billNumber.trim(),
             billDate: billDetails.billDate,
@@ -244,23 +267,32 @@ const PurchaseEntryPage = () => {
                 purchasePrice: Number(item.purchasePrice) || 0
             }))
         };
-        await new Promise(resolve => setTimeout(resolve, 600));
-        const result = addPurchaseBill(billDataToSave);
-        setIsSaving(false);
-        if (result?.bill) {
-            setSuccess(`Bill ${result.bill.id} saved successfully! Stock & cost prices updated.`);
-            // Don't need to update local history state anymore
-            setMasterItems(getMasterItems()); // Still refresh master items for cost price updates
-            setBillDetails({ supplierId: '', billNumber: '', billDate: new Date().toISOString().split('T')[0], notes: '' });
-            setBillItems([]);
-            setSelectedMasterItem(null);
-            supplierSelectRef.current?.focus();
-            setTimeout(() => setSuccess(''), 6000);
-            if (result.errors && result.errors.length > 0) {
-                setError(`Bill saved, but with warnings: ${result.errors.join('. ')}`);
+
+        try {
+            const response = await api.post('/purchase-bills', billDataToSave);
+            const result = await response.json();
+
+            if (response.ok) {
+                setSuccess(`Bill saved successfully! Stock & cost prices updated.`);
+                
+                // Refresh master items so the component has the newest stock quantities
+                const itemsRes = await api.get('/master-items');
+                if (itemsRes.ok) setMasterItems(await itemsRes.json());
+
+                // Reset form
+                setBillDetails({ supplierId: '', billNumber: '', billDate: new Date().toISOString().split('T')[0], notes: '' });
+                setBillItems([]);
+                setSelectedMasterItem(null);
+                supplierSelectRef.current?.focus();
+                
+                setTimeout(() => setSuccess(''), 6000);
+            } else {
+                setError(`Save failed: ${result.message || 'An unknown error occurred.'}`);
             }
-        } else {
-            setError(`Save failed: ${result?.errors?.join('. ') || 'An unknown error occurred.'}`);
+        } catch (error) {
+            setError("Server error while saving the purchase bill.");
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -273,7 +305,6 @@ const PurchaseEntryPage = () => {
                     <h2 className="page-title mb-0"><FaFileInvoiceDollar className="me-2" />Record Purchase Bill</h2>
                 </Col>
                 <Col xs="auto" className="d-flex gap-2">
-                    {/* Link to the new history page */}
                     <Link to="/purchase-history">
                         <Button variant="outline-secondary" size="sm">
                             <FaHistory className="me-1" /> View History
@@ -299,7 +330,6 @@ const PurchaseEntryPage = () => {
                         <Card className="shadow-sm mb-4 entry-card">
                              <Card.Header>1. Bill Information</Card.Header>
                             <Card.Body>
-                                {/* ... (Supplier, Bill No, Date, Notes Inputs - same as before) ... */}
                                 <Row className="g-3">
                                     {/* Supplier Select */}
                                     <Col md={6}>
@@ -359,11 +389,10 @@ const PurchaseEntryPage = () => {
                                                 className="react-select-container item-select-purchase"
                                                 classNamePrefix="react-select"
                                                 filterOption={createFilter({ ignoreAccents: false })}
-                                                // IMPORTANT: Portal the menu to avoid clipping issues
                                                 menuPortalTarget={document.body}
                                                 styles={{
-                                                    menuPortal: base => ({ ...base, zIndex: 9999 }), // Ensure portal is high z-index
-                                                    menu: base => ({ ...base, zIndex: 9999 }) // Also style menu itself if needed
+                                                    menuPortal: base => ({ ...base, zIndex: 9999 }), 
+                                                    menu: base => ({ ...base, zIndex: 9999 })
                                                 }}
                                                 onKeyDown={(e) => { if (e.key === 'Enter' && selectedMasterItem) { e.preventDefault(); addItemToBill(selectedMasterItem); } }}
                                             />
@@ -377,17 +406,16 @@ const PurchaseEntryPage = () => {
                         </Card>
                     </motion.div>
 
-                    {/* Bill Items Table Section (No Card, just wrapper) */}
+                    {/* Bill Items Table Section */}
                     <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
                          <Card className="shadow-sm entry-card">
                             <Card.Header className="d-flex justify-content-between align-items-center">
                                 <span>3. Purchased Items List</span>
                                 <span className="total-amount-display">Bill Total: {formatCurrency(calculateGrandTotal)}</span>
                             </Card.Header>
-                            {/* Removed Card.Body, table wrapper is directly inside */}
                             <div className="purchase-items-table-wrapper elegant-scrollbar">
                                 <Table hover className="purchase-items-table">
-                                    <thead> {/* Removed table-header-fixed class, handled by wrapper */}
+                                    <thead> 
                                         <tr>
                                             <th className='col-item'>Item</th>
                                             <th className="col-qty">Qty* <span className="text-muted d-none d-md-inline">(Spares)</span></th>
@@ -405,7 +433,6 @@ const PurchaseEntryPage = () => {
                                         ) : (
                                             billItems.map((item, index) => (
                                                 <tr key={item.masterItem.id} className={item.masterItem.type === 'Service' ? 'table-row-service' : ''}>
-                                                    {/* Table Cells (td) - same structure as before */}
                                                      <td className='col-item'>
                                                         <div className="item-name-purchase" title={item.masterItem.name}>{item.masterItem.name}</div>
                                                         <div className="item-partno-purchase">{item.masterItem.partNo || '-'} <Badge bg="secondary" text="light" pill size="sm" className="ms-1 fw-normal">{item.masterItem.type}</Badge></div>
@@ -444,9 +471,8 @@ const PurchaseEntryPage = () => {
                 </Col>
             </Row>
 
-            {/* --- Modals (Only Add Supplier remains here) --- */}
+            {/* --- Modals --- */}
             <Modal show={showAddSupplierModal} onHide={closeAddSupplierModal} centered backdrop="static" keyboard={false}>
-                {/* ... (Add Supplier Modal Content - same as before) ... */}
                  <Modal.Header closeButton> <Modal.Title><FaUserTie className="me-2" />Add New Supplier</Modal.Title> </Modal.Header>
                  <Form onSubmit={handleAddSupplierSubmit}>
                      <Modal.Body>
