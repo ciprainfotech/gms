@@ -44,6 +44,8 @@ async function getFullInvoiceWithPaymentsAndVehicleDetails(clientId, invoiceId =
         SELECT
             i.id,
             i.invoice_number,
+            i.customer_id,
+            i.vehicle_id,
             js.job_sheet_number,
             i.grand_total,
             i.status,
@@ -240,9 +242,24 @@ exports.createInvoice = async (req, res) => {
         console.log('[createInvoice] FINAL Calculated Grand Total (before INSERT):', grandTotal); // DEBUG
 
         // ======================================================
-        // STEP 3: CREATE THE INVOICE RECORD
+        // STEP 3: CREATE THE INVOICE RECORD (Dynamic Numbering)
         // ======================================================
-        const invoiceNumber = `INV-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
+        const settingsRes = await client.query(
+            `SELECT invoice_prefix, invoice_next_num FROM garages WHERE id = $1 FOR UPDATE`,
+            [garageId]
+        );
+        const settings = settingsRes.rows[0] || {};
+        const currentYear = new Date().getFullYear();
+        const rawPrefix = settings.invoice_prefix || 'INV-';
+        const dynamicPrefix = rawPrefix.replace('{YYYY}', currentYear);
+        const nextNum = settings.invoice_next_num || 1;
+        const paddedNumber = String(nextNum).padStart(4, '0');
+        const invoiceNumber = `${dynamicPrefix}${paddedNumber}`;
+
+        await client.query(
+            `UPDATE garages SET invoice_next_num = COALESCE(invoice_next_num, 1) + 1 WHERE id = $1`,
+            [garageId]
+        );
         
         const dueDate = new Date(dateIssued);
         dueDate.setDate(dueDate.getDate() + 15);
@@ -337,6 +354,7 @@ exports.getAllInvoices = async (req, res) => {
                 i.due_date,
                 c.id AS customer_id,
                 c.name AS customer_name,
+                c.phone AS customer_phone,
                 v.car_number AS vehicle_number,
                 m.name AS vehicle_make,
                 mo.name AS vehicle_model,

@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 // Completely replaced staticData with your custom API wrapper
 import api from '../api/api';
+import CustomToast from '../components/CustomToast';
 
 import '../App.css';
 import '../PurchaseEntryPage.css';
@@ -35,8 +36,7 @@ const PurchaseEntryPage = () => {
     const [billItems, setBillItems] = useState([]);
     const [selectedMasterItem, setSelectedMasterItem] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
-    const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
+    const [toast, setToast] = useState(null);
     
     // Modals
     const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
@@ -51,26 +51,29 @@ const PurchaseEntryPage = () => {
     const billNumberRef = useRef(null);
 
     // --- Load Initial Data from Database ---
+    const [isModuleLocked, setIsModuleLocked] = useState(false);
+
     useEffect(() => {
         const loadInitialData = async () => {
             setIsLoading(true);
-            setError('');
             try {
-                // Fetch items and suppliers simultaneously for faster loading
                 const [itemsRes, suppliersRes] = await Promise.all([
                     api.get('/master-items'),
                     api.get('/suppliers')
                 ]);
 
-                if (itemsRes.ok && suppliersRes.ok) {
+                if (itemsRes.status === 403 || suppliersRes.status === 403) {
+                    setIsModuleLocked(true);
+                } else if (itemsRes.ok && suppliersRes.ok) {
                     setMasterItems(await itemsRes.json());
                     setSuppliers(await suppliersRes.json());
+                    setIsModuleLocked(false);
                 } else {
-                    setError("Failed to fetch data from the server.");
+                    setToast({ type: 'error', title: 'Error', message: "Failed to fetch data from the server." });
                 }
             } catch (err) {
                 console.error("Error loading initial data:", err);
-                setError("Failed to connect to the database. Please check your connection.");
+                setToast({ type: 'error', title: 'Error', message: "Failed to connect to the database. Please check your connection." });
             } finally {
                 setIsLoading(false);
             }
@@ -103,13 +106,11 @@ const PurchaseEntryPage = () => {
 
     const addItemToBill = useCallback((itemToAdd) => {
         if (!itemToAdd || !itemToAdd.value || !itemToAdd.itemData) {
-            setError("Please select a valid item first.");
-             setTimeout(() => setError(''), 3500);
+            setToast({ type: 'warning', title: 'Invalid Selection', message: "Please select a valid item first." });
             return;
         }
         if (billItems.some(item => item.masterItem.id === itemToAdd.value)) {
-            setError(`"${itemToAdd.itemData.name}" is already added. Adjust quantity below.`);
-            setTimeout(() => setError(''), 3500);
+            setToast({ type: 'warning', title: 'Item Exists', message: `"${itemToAdd.itemData.name}" is already added. Adjust quantity below.` });
             const existingIndex = billItems.findIndex(i => i.masterItem.id === itemToAdd.value);
             if (existingIndex !== -1 && quantityInputRefs.current[itemToAdd.value]) {
                 quantityInputRefs.current[itemToAdd.value]?.focus();
@@ -128,7 +129,6 @@ const PurchaseEntryPage = () => {
         };
         setBillItems(prevItems => [...prevItems, newItem]);
         setSelectedMasterItem(null);
-        setError('');
         if (itemToAdd.itemData.type === 'Spare') {
             setTimeout(() => {
                 if (quantityInputRefs.current[newItem.masterItem.id]) {
@@ -219,8 +219,7 @@ const PurchaseEntryPage = () => {
                 setNewSupplierData({ name: '', phone: '', contactPerson: '', city: '' });
                 
                 setTimeout(() => billNumberRef.current?.focus(), 100);
-                setSuccess(`Supplier "${addedSupplier.name}" added successfully.`);
-                setTimeout(() => setSuccess(''), 4000);
+                setToast({ type: 'success', title: 'Success', message: `Supplier "${addedSupplier.name}" added successfully.` });
             } else {
                 setSupplierFormError(addedSupplier.message || "Error adding supplier.");
             }
@@ -231,11 +230,10 @@ const PurchaseEntryPage = () => {
 
     // --- Database Save Purchase Bill ---
     const handleSavePurchase = async () => {
-        setError(''); setSuccess('');
-        if (!billDetails.supplierId) { setError("Please select a Supplier."); supplierSelectRef.current?.focus(); return; }
-        if (!billDetails.billNumber.trim()) { setError("Please enter the Bill/Invoice No."); billNumberRef.current?.focus(); return; }
-        if (!billDetails.billDate) { setError("Please select the Bill Date."); return; }
-        if (billItems.length === 0) { setError("Please add at least one item to the bill."); itemSelectRef.current?.focus(); return; }
+        if (!billDetails.supplierId) { setToast({ type: 'error', title: 'Validation', message: "Please select a Supplier." }); supplierSelectRef.current?.focus(); return; }
+        if (!billDetails.billNumber.trim()) { setToast({ type: 'error', title: 'Validation', message: "Please enter the Bill/Invoice No." }); billNumberRef.current?.focus(); return; }
+        if (!billDetails.billDate) { setToast({ type: 'error', title: 'Validation', message: "Please select the Bill Date." }); return; }
+        if (billItems.length === 0) { setToast({ type: 'error', title: 'Validation', message: "Please add at least one item to the bill." }); itemSelectRef.current?.focus(); return; }
         
         let invalidItemFound = false;
         for (let i = 0; i < billItems.length; i++) {
@@ -243,11 +241,11 @@ const PurchaseEntryPage = () => {
             if (item.masterItem.type === 'Spare') {
                 const qty = Number(item.quantity); const price = Number(item.purchasePrice);
                 if (isNaN(qty) || qty <= 0) {
-                    setError(`Invalid Quantity (> 0 required) for "${item.masterItem.name}".`);
+                    setToast({ type: 'error', title: 'Invalid Quantity', message: `Invalid Quantity (> 0 required) for "${item.masterItem.name}".` });
                     quantityInputRefs.current[item.masterItem.id]?.focus(); invalidItemFound = true; break;
                 }
                 if (isNaN(price) || price < 0) {
-                    setError(`Invalid Cost/Unit (>= 0 required) for "${item.masterItem.name}".`);
+                    setToast({ type: 'error', title: 'Invalid Cost', message: `Invalid Cost/Unit (>= 0 required) for "${item.masterItem.name}".` });
                     costInputRefs.current[item.masterItem.id]?.focus(); invalidItemFound = true; break;
                 }
             }
@@ -273,7 +271,7 @@ const PurchaseEntryPage = () => {
             const result = await response.json();
 
             if (response.ok) {
-                setSuccess(`Bill saved successfully! Stock & cost prices updated.`);
+                setToast({ type: 'success', title: 'Saved!', message: `Bill saved successfully! Stock & cost prices updated.` });
                 
                 // Refresh master items so the component has the newest stock quantities
                 const itemsRes = await api.get('/master-items');
@@ -284,19 +282,37 @@ const PurchaseEntryPage = () => {
                 setBillItems([]);
                 setSelectedMasterItem(null);
                 supplierSelectRef.current?.focus();
-                
-                setTimeout(() => setSuccess(''), 6000);
             } else {
-                setError(`Save failed: ${result.message || 'An unknown error occurred.'}`);
+                setToast({ type: 'error', title: 'Save Failed', message: `Save failed: ${result.message || 'An unknown error occurred.'}` });
             }
         } catch (error) {
-            setError("Server error while saving the purchase bill.");
+            setToast({ type: 'error', title: 'Server Error', message: "Server error while saving the purchase bill." });
         } finally {
             setIsSaving(false);
         }
     };
 
     // --- Render ---
+    if (isModuleLocked) {
+        return (
+            <Container fluid className="p-5 text-center">
+                <Card className="border-0 shadow-lg p-5 rounded-4 mx-auto mt-4" style={{ maxWidth: '650px', backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
+                    <div className="mx-auto mb-4 p-3 rounded-circle text-danger d-flex align-items-center justify-content-center" style={{ backgroundColor: '#fef2f2', width: '80px', height: '80px' }}>
+                        <FaTimes size={44} />
+                    </div>
+                    <h3 className="fw-bold text-dark mb-2">Module Access Locked</h3>
+                    <p className="text-muted mb-4 fs-6">
+                        The <strong>Purchase Entry & Supplier Bills</strong> module has been disabled for your garage account by Cipra Infotech Super Admin.
+                    </p>
+                    <Alert variant="warning" className="border-0 rounded-3 text-start mb-4">
+                        <FaFileInvoiceDollar className="me-2 text-warning" />
+                        To activate this module or upgrade your subscription plan, please contact <strong>admin@ciprainfotech.com</strong>.
+                    </Alert>
+                </Card>
+            </Container>
+        );
+    }
+
     return (
         <Container fluid className="py-4 px-md-4 purchase-entry-page">
             {/* Page Header */}
@@ -319,8 +335,7 @@ const PurchaseEntryPage = () => {
             </Row>
 
             {/* Alerts */}
-            <AnimatePresence>{error && ( <motion.div><Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert></motion.div> )}</AnimatePresence>
-            <AnimatePresence>{success && ( <motion.div><Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert></motion.div> )}</AnimatePresence>
+            {toast && <CustomToast type={toast.type} title={toast.title} message={toast.message} onClose={() => setToast(null)} />}
 
             {/* Single Column Layout */}
             <Row>

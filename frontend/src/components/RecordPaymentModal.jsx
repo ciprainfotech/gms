@@ -95,12 +95,6 @@ const RecordPaymentModal = ({ show, onHide, invoice, onPaymentActionSuccess }) =
 
     // Handler for saving a new payment or updating an existing one
     const handleSave = async () => {
-        // Prevent adding new payments if invoice is fully paid, unless editing an existing one
-        if (isInvoiceFullyPaid && !editingPayment) {
-            setError('This invoice is already fully paid. Cannot add new payments.');
-            return;
-        }
-
         setError(''); // Clear previous errors
         const paidAmount = parseFloat(amount);
 

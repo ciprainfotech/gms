@@ -55,3 +55,63 @@ exports.authorizeGarage = [
         }
     }
 ];
+
+// Super Admin Access Guard
+exports.requireSuperAdmin = [
+    exports.authenticate,
+    async (req, res, next) => {
+        try {
+            const { rows } = await db.query('SELECT is_super_admin FROM users WHERE id = $1', [req.user.id]);
+            if (rows.length === 0 || !rows[0].is_super_admin) {
+                return res.status(403).json({ success: false, message: 'Access denied: Super Admin credentials required.' });
+            }
+            req.user.isSuperAdmin = true;
+            next();
+        } catch (err) {
+            console.error("SuperAdmin Auth Error:", err);
+            return res.status(500).json({ success: false, message: 'Server error verifying admin credentials.' });
+        }
+    }
+];
+
+// Active License Guard (Blocks data mutations if garage account is suspended)
+exports.requireActiveLicense = [
+    ...exports.authorizeGarage,
+    async (req, res, next) => {
+        try {
+            const { rows } = await db.query('SELECT is_active, subscription_status FROM garages WHERE id = $1', [req.garageId]);
+            if (rows.length === 0 || rows[0].is_active === false || rows[0].subscription_status === 'suspended') {
+                return res.status(403).json({ 
+                    success: false, 
+                    code: 'ACCOUNT_SUSPENDED',
+                    message: 'Account Suspended: Read-Only mode enabled. You can view past histories, but creation of new cars, job sheets, or invoices is locked. Contact Cipra Infotech support.' 
+                });
+            }
+            next();
+        } catch (err) {
+            console.error("Active License Check Error:", err);
+            return res.status(500).json({ success: false, message: 'Server error checking account license status.' });
+        }
+    }
+];
+
+// Modular Feature Guard
+exports.requireFeature = (featureColumn) => [
+    ...exports.authorizeGarage,
+    async (req, res, next) => {
+        try {
+            const { rows } = await db.query(`SELECT ${featureColumn} FROM garages WHERE id = $1`, [req.garageId]);
+            if (rows.length === 0 || rows[0][featureColumn] === false) {
+                return res.status(403).json({ 
+                    success: false, 
+                    code: 'FEATURE_DISABLED',
+                    message: `Module Locked: The requested feature is disabled for your garage account by Cipra Infotech Admin.` 
+                });
+            }
+            next();
+        } catch (err) {
+            console.error("Feature Check Error:", err);
+            return res.status(500).json({ success: false, message: 'Server error checking module permissions.' });
+        }
+    }
+];

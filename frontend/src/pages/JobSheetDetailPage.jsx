@@ -57,6 +57,7 @@ const JobSheetDetailPage = () => {
     const [isSavingDraft, setIsSavingDraft] = useState(false);
     const [isFinalizing, setIsFinalizing] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const { workingDate } = useGlobalDate();
     const [validationErrors, setValidationErrors] = useState({});
 
     // Forms
@@ -101,7 +102,7 @@ const JobSheetDetailPage = () => {
                 setJobSheetDetails(detailsData.jobSheetDetails);
                 setCustomerDetails(detailsData.customerDetails);
                 setVehicleDetails(detailsData.vehicleDetails);
-                setAddedItems(detailsData.addedItems.map(item => ({ ...item, ...calculateLineTotals(item, item.quantity) })));
+                setAddedItems((detailsData.addedItems || []).map(item => ({ ...item, ...calculateLineTotals(item, item.quantity) })));
                 setKmReading(detailsData.jobSheetDetails.kmReading || '');
                 setNotes(detailsData.jobSheetDetails.notes || '');
                 setMasterItems(masterItemsData);
@@ -123,9 +124,9 @@ const JobSheetDetailPage = () => {
         [jobSheetDetails?.status]
     );
 
-    const selectOptions = useMemo(() => masterItems.map(item => ({
+    const selectOptions = useMemo(() => (Array.isArray(masterItems) ? masterItems : []).map(item => ({
         value: item.id,
-        label: `${item.name} (${item.part_no || 'SVC'}) - [${formatCurrency(item.unit_price)}]`,
+        label: `${item.name} (${item.partNo || item.part_no || 'SVC'}) - [${formatCurrency(item.unitPrice ?? item.unit_price ?? 0)}]`,
         ...item 
     })), [masterItems]);
 
@@ -133,9 +134,9 @@ const JobSheetDetailPage = () => {
     // --- CALCULATIONS ---
     const calculateLineTotals = (masterItemData, qty) => {
         if (!masterItemData) return { lineParts: 0, lineLubes: 0, lineLabour: 0, lineTotal: 0 };
-        const price = parseFloat(masterItemData.unit_price || masterItemData.unitPrice) || 0;
-        const lube = parseFloat(masterItemData.lube_charge || masterItemData.lubeCharge) || 0;
-        const labour = parseFloat(masterItemData.labour_charge || masterItemData.labourCharge) || 0;
+        const price = parseFloat(masterItemData.unitPrice ?? masterItemData.unit_price ?? 0);
+        const lube = parseFloat(masterItemData.lubeCharge ?? masterItemData.lube_charge ?? 0);
+        const labour = parseFloat(masterItemData.labourCharge ?? masterItemData.labour_charge ?? 0);
         
         // Changed to parseFloat to support decimal quantities
         const q = parseFloat(qty) || 0; 
@@ -149,7 +150,8 @@ const JobSheetDetailPage = () => {
     };
     
     const totals = useMemo(() => {
-        return addedItems.reduce((acc, item) => {
+        const list = Array.isArray(addedItems) ? addedItems : [];
+        return list.reduce((acc, item) => {
             acc.totalParts += item.lineParts || 0;
             acc.totalLubes += item.lineLubes || 0;
             acc.totalLabour += item.lineLabour || 0;
@@ -166,7 +168,7 @@ const JobSheetDetailPage = () => {
             if (!kmReading || String(kmReading).trim() === '') {
                 errors.kmReading = 'KM Reading is required to finalize a job sheet.';
             }
-            if (addedItems.length === 0) {
+            if (!addedItems || addedItems.length === 0) {
                 errors.items = 'At least one item or service must be added to finalize.';
             }
         }
@@ -210,11 +212,12 @@ const JobSheetDetailPage = () => {
         const masterItemData = masterItems.find(item => item.id === selectedMasterItem.value);
         if (!masterItemData) return;
 
-        const existingItemIndex = addedItems.findIndex(item => item.masterItemId === selectedMasterItem.value);
+        const currentItems = Array.isArray(addedItems) ? addedItems : [];
+        const existingItemIndex = currentItems.findIndex(item => item.masterItemId === selectedMasterItem.value);
         let updatedItems;
 
         if (existingItemIndex > -1) { 
-            updatedItems = addedItems.map((item, index) => {
+            updatedItems = currentItems.map((item, index) => {
                 if (index === existingItemIndex) {
                     const newQuantity = item.quantity + parsedQty;
                     return { ...item, quantity: newQuantity, ...calculateLineTotals(masterItemData, newQuantity) };
@@ -222,13 +225,24 @@ const JobSheetDetailPage = () => {
                 return item;
             });
         } else { 
+            const unitPrice = parseFloat(masterItemData.unitPrice ?? masterItemData.unit_price ?? 0);
+            const lubeCharge = parseFloat(masterItemData.lubeCharge ?? masterItemData.lube_charge ?? 0);
+            const labourCharge = parseFloat(masterItemData.labourCharge ?? masterItemData.labour_charge ?? 0);
             const newItem = {
-                masterItemId: masterItemData.id, name: masterItemData.name, partNo: masterItemData.part_no,
-                quantity: parsedQty, unitPrice: masterItemData.unit_price,
-                lubeCharge: masterItemData.lube_charge, labourCharge: masterItemData.labour_charge,
+                masterItemId: masterItemData.id,
+                master_item_id: masterItemData.id,
+                name: masterItemData.name,
+                partNo: masterItemData.partNo || masterItemData.part_no || '',
+                quantity: parsedQty,
+                unitPrice,
+                unit_price: unitPrice,
+                lubeCharge,
+                lube_charge: lubeCharge,
+                labourCharge,
+                labour_charge: labourCharge,
                 ...calculateLineTotals(masterItemData, parsedQty)
             };
-            updatedItems = [...addedItems, newItem];
+            updatedItems = [...currentItems, newItem];
         }
         
         setAddedItems(updatedItems);
@@ -307,7 +321,7 @@ const JobSheetDetailPage = () => {
             kmReading: kmReading,
             notes: notes,
             status: newStatus,
-            dateCompleted: isFinalizingAction ? new Date().toISOString().split('T')[0] : null,
+            dateCompleted: isFinalizingAction ? (workingDate || new Date().toISOString().split('T')[0]) : null,
             items: addedItems.map(({ name, partNo, lineParts, lineLubes, lineLabour, lineTotal, ...rest }) => rest)
         };
 
@@ -633,10 +647,10 @@ const JobSheetDetailPage = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {addedItems.length === 0 ? (
+                                    {(!addedItems || addedItems.length === 0) ? (
                                         <tr><td colSpan={isReadOnly ? 8 : 9} className="text-center text-muted py-5"><i>No items or services have been added yet.</i></td></tr>
                                     ) : (
-                                        addedItems.map((item, index) => (
+                                        (addedItems || []).map((item, index) => (
                                             <tr key={item.masterItemId || index}>
                                                 <td className="px-3 text-center text-muted small">{index + 1}</td>
                                                 <td className="px-3 small">{item.partNo || '-'}</td>

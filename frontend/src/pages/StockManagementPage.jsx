@@ -46,6 +46,8 @@ const StockManagementPage = () => {
         setAlertModal({ ...alertModal, show: false });
     };
 
+    const [isModuleLocked, setIsModuleLocked] = useState(false);
+
     // --- Data Fetching ---
     const fetchMasterItems = async () => {
         setIsLoading(true);
@@ -54,6 +56,9 @@ const StockManagementPage = () => {
             if (response.ok) {
                 const data = await response.json();
                 setMasterItems(data);
+                setIsModuleLocked(false);
+            } else if (response.status === 403) {
+                setIsModuleLocked(true);
             } else {
                 console.error("Failed to fetch master items");
             }
@@ -233,191 +238,266 @@ const StockManagementPage = () => {
          </tr>
      );
 
+    if (isModuleLocked) {
+        return (
+            <Container fluid className="p-5 text-center">
+                <Card className="border-0 shadow-lg p-5 rounded-4 mx-auto mt-4" style={{ maxWidth: '650px', backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
+                    <div className="mx-auto mb-4 p-3 rounded-circle text-danger d-flex align-items-center justify-content-center" style={{ backgroundColor: '#fef2f2', width: '80px', height: '80px' }}>
+                        <FaTimesCircle size={44} />
+                    </div>
+                    <h3 className="fw-bold text-dark mb-2">Module Access Locked</h3>
+                    <p className="text-muted mb-4 fs-6">
+                        The <strong>Stock & Inventory Management</strong> module has been disabled for your garage account by Cipra Infotech Super Admin.
+                    </p>
+                    <Alert variant="warning" className="border-0 rounded-3 text-start mb-4">
+                        <FaExclamationTriangle className="me-2 text-warning" />
+                        To activate this module or upgrade your subscription plan, please contact <strong>admin@ciprainfotech.com</strong>.
+                    </Alert>
+                </Card>
+            </Container>
+        );
+    }
+
     // --- Main Render ---
     return (
-        <Container fluid className="py-4 px-md-4 stock-management-page">
-            <Row className="mb-3 align-items-center page-header-row">
-                <Col>
-                    <h2 className="page-title mb-0"><FaBox className="me-2"/>Stock Management</h2>
-                </Col>
-                <Col xs="auto">
-                     <Button variant="primary" onClick={() => showModal('add')} className="add-item-btn shadow-sm">
-                        <FaPlus className="me-1" /> Add New Item
-                    </Button>
-                </Col>
-            </Row>
+        <Container fluid className="py-4">
+            <div className="page-header-row mb-4 d-flex justify-content-between align-items-center">
+                <h2 className="page-title-active mb-0">
+                    <FaBox className="me-2 text-primary"/> Stock Management
+                </h2>
+                <Button variant="primary" onClick={() => showModal('add')} className="shadow-sm d-flex align-items-center">
+                    <FaPlus className="me-2" /> Add New Item
+                </Button>
+            </div>
 
-             <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} id="stock-tabs" className="mb-3 stock-nav-tabs" fill>
+             <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} id="stock-tabs" className="mb-4 stock-nav-tabs">
                 
                 {/* INVENTORY TAB */}
-                <Tab eventKey="inventory" title={<><FaClipboardList className="me-1"/> Full Inventory ({filteredItems.length})</>}>
-                    <Card className="shadow-sm inventory-card">
-                        <Card.Header className="inventory-controls">
-                            <Row className="g-2 align-items-center">
-                                <Col md={6} lg={7}>
-                                    <InputGroup size="sm">
-                                        <InputGroup.Text><FaSearch /></InputGroup.Text>
-                                        <Form.Control
-                                            placeholder="Search by Item Name or Part No..."
-                                            value={searchTerm}
-                                            onChange={e => setSearchTerm(e.target.value)}
-                                        />
-                                    </InputGroup>
-                                </Col>
-                                <Col md={6} lg={5}>
-                                    <InputGroup size="sm">
-                                        <InputGroup.Text><FaFilter /></InputGroup.Text>
-                                        <Form.Select value={filterType} onChange={e => setFilterType(e.target.value)}>
+                <Tab eventKey="inventory" title={<><FaClipboardList className="me-2"/> Full Inventory ({filteredItems.length})</>}>
+                    <div className="main-content pt-0">
+                        <Card className="mb-4 shadow-sm border-0 saas-card">
+                            <Card.Body>
+                                <Row className="g-3 align-items-center">
+                                    <Col md={5} lg={4}>
+                                        <div className="saas-search-pill d-flex align-items-center bg-light rounded-pill px-3 py-2 border">
+                                            <FaSearch className="text-muted me-2" />
+                                            <Form.Control
+                                                className="border-0 shadow-none bg-transparent p-0"
+                                                placeholder="Search by Item Name or Part No..."
+                                                value={searchTerm}
+                                                onChange={e => setSearchTerm(e.target.value)}
+                                            />
+                                        </div>
+                                    </Col>
+                                    <Col md={3} lg={3}>
+                                        <Form.Select 
+                                            className="saas-select shadow-none border-light rounded-3 bg-light"
+                                            value={filterType} 
+                                            onChange={e => setFilterType(e.target.value)}
+                                        >
                                             <option value="">All Item Types</option>
                                             <option value="Spare">Spares Only</option>
                                             <option value="Service">Services Only</option>
                                         </Form.Select>
-                                    </InputGroup>
-                                </Col>
-                            </Row>
-                        </Card.Header>
-                        <Card.Body className="p-0">
-                             <div className="table-responsive inventory-table-wrapper">
-                                <Table striped hover responsive className="mb-0 inventory-table align-middle">
-                                     <thead className="sticky-top inventory-table-header">
+                                    </Col>
+                                </Row>
+                            </Card.Body>
+                        </Card>
+
+                        <div className="saas-table-wrapper shadow-sm bg-white rounded-4 overflow-hidden border border-light">
+                            {isLoading ? (
+                                <div className="text-center py-5">
+                                    <Spinner animation="border" variant="primary" />
+                                    <p className="mt-2 text-muted">Loading Inventory...</p>
+                                </div>
+                            ) : (
+                                <table className="saas-table w-100">
+                                    <thead>
                                         <tr>
-                                            <th style={{ width: '40px' }}>#</th>
-                                            <th>Part No.</th>
-                                            <th>Item Name & Type</th>
-                                            <th className="text-center">Stock Qty</th>
-                                            <th className="text-end">Unit Price</th>
-                                            <th className="text-end">Lube Chg</th>
-                                            <th className="text-end">Labour Chg</th>
-                                            <th className="text-center">Actions</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold" style={{ width: '40px' }}>#</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold">Part No.</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold">Item Name & Type</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-center">Stock Qty</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-end">Unit Price</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-end">Lube Chg</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-end">Labour Chg</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-center">Actions</th>
                                          </tr>
                                     </thead>
                                     <tbody>
-                                        {isLoading ? (
-                                            <tr><td colSpan="8" className="text-center p-5"><Spinner animation="border" size="sm" className="me-2" /> Loading Inventory...</td></tr>
-                                        ) : filteredItems.length === 0 ? (
-                                            <tr><td colSpan="8" className="text-center text-muted p-5"><FaInfoCircle className="me-1"/> No items match your criteria.</td></tr>
+                                        {filteredItems.length === 0 ? (
+                                            <tr><td colSpan="8" className="text-center text-muted py-5"><FaInfoCircle className="me-1"/> No items match your criteria.</td></tr>
                                          ) : (
-                                             filteredItems.map((item, index) => renderInventoryRow(item, index))
+                                             filteredItems.map((item, index) => (
+                                                <tr key={item.id} className={`align-middle border-bottom border-light ${item.type === 'Spare' && item.stockQty < LOW_STOCK_THRESHOLD && item.stockQty > 0 ? 'bg-warning bg-opacity-10' : ''}`}>
+                                                    <td className="px-4 py-3 text-muted fw-bold">{index + 1}</td>
+                                                    <td className="px-4 py-3 fw-medium text-dark">{item.partNo || '-'}</td>
+                                                    <td className="px-4 py-3">
+                                                        <div className="fw-bold text-dark">{item.name}</div>
+                                                        <span className={`saas-badge ${item.type === 'Spare' ? 'saas-badge-info' : 'saas-badge-secondary'} mt-1`}>
+                                                            {item.type === 'Spare' ? <FaCube className="me-1"/> : <FaTools className="me-1"/>} {item.type}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center">{renderStockBadge(item)}</td>
+                                                    <td className="px-4 py-3 text-end fw-medium">{formatCurrency(item.unitPrice)}</td>
+                                                    <td className="px-4 py-3 text-end text-secondary">{formatCurrency(item.lubeCharge)}</td>
+                                                    <td className="px-4 py-3 text-end text-secondary">{formatCurrency(item.labourCharge)}</td>
+                                                    <td className="px-4 py-3 text-center">
+                                                        <div className="d-flex justify-content-center gap-3">
+                                                            <button className="btn btn-link text-primary p-0 border-0 hover-primary" onClick={() => showModal('edit', item)} title="Edit">
+                                                                <FaEdit size={18} />
+                                                            </button>
+                                                            <button className="btn btn-link text-danger p-0 border-0 hover-danger" onClick={() => handleDeleteClick(item.id, item.name)} title="Delete">
+                                                                <FaTrashAlt size={18} />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                             ))
                                          )}
                                     </tbody>
-                                </Table>
-                            </div>
-                         </Card.Body>
-                    </Card>
+                                </table>
+                            )}
+                        </div>
+                    </div>
                 </Tab>
 
                 {/* LOW STOCK TAB */}
                 <Tab eventKey="lowStock" title={
-                    <span className="d-flex align-items-center justify-content-center">
-                        <FaExclamationTriangle className="me-1 text-warning"/> Low Stock
-                        {lowStockItems.length > 0 && <Badge pill bg="danger" className="ms-2">{lowStockItems.length}</Badge>}
+                    <span className="d-flex align-items-center justify-content-center text-danger fw-medium">
+                        <FaExclamationTriangle className="me-2"/> Low Stock
+                        {lowStockItems.length > 0 && <span className="badge bg-danger ms-2 rounded-pill">{lowStockItems.length}</span>}
                     </span>
                     }>
-                     <Card className="shadow-sm low-stock-card">
-                         <Card.Header className="low-stock-header">
-                             <FaExclamationTriangle className="me-2 text-warning"/> Items Below Threshold ({LOW_STOCK_THRESHOLD} units)
-                         </Card.Header>
-                         <Card.Body className="p-0">
-                            <div className="table-responsive low-stock-table-wrapper">
-                                 <Table striped hover className="mb-0 low-stock-table align-middle">
-                                      <thead>
+                     <div className="main-content pt-0">
+                        <div className="saas-table-wrapper shadow-sm bg-white rounded-4 overflow-hidden border border-light mt-4">
+                            <div className="bg-danger bg-opacity-10 px-4 py-3 border-bottom border-danger border-opacity-25 d-flex align-items-center">
+                                <FaExclamationTriangle className="text-danger me-2 fs-5" />
+                                <strong className="text-danger">Items Below Threshold ({LOW_STOCK_THRESHOLD} units)</strong>
+                            </div>
+                            
+                            {isLoading ? (
+                                <div className="text-center py-5">
+                                    <Spinner animation="border" variant="danger" />
+                                    <p className="mt-2 text-muted">Loading...</p>
+                                </div>
+                            ) : (
+                                <table className="saas-table w-100">
+                                    <thead>
                                          <tr>
-                                            <th style={{ width: '40px' }}>#</th>
-                                            <th>Part No.</th>
-                                            <th>Item Name</th>
-                                            <th className="text-center">Current Stock</th>
-                                            <th className="text-end">Unit Price</th>
-                                            <th className="text-center">Actions</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold" style={{ width: '40px' }}>#</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold">Part No.</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold">Item Name</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-center">Current Stock</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-end">Unit Price</th>
+                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-center">Actions</th>
                                          </tr>
                                      </thead>
                                      <tbody>
-                                         {isLoading ? (
-                                             <tr><td colSpan="6" className="text-center p-5"><Spinner animation="border" size="sm" className="me-2" /> Loading...</td></tr>
-                                         ): lowStockItems.length === 0 ? (
-                                             <tr><td colSpan="6" className="text-center text-muted p-4"><FaCheckCircle className="me-1 text-success"/> All spare items are sufficiently stocked.</td></tr>
+                                         {lowStockItems.length === 0 ? (
+                                             <tr><td colSpan="6" className="text-center text-muted py-5"><FaCheckCircle className="me-2 text-success fs-4 align-middle"/> All spare items are sufficiently stocked.</td></tr>
                                          ) : (
                                              lowStockItems.map((item, index) => ( 
-                                                 <tr key={item.id}>
-                                                     <td className="text-muted fw-bold">{index + 1}</td>
-                                                     <td>{item.partNo || '-'}</td>
-                                                     <td>{item.name}</td>
-                                                     <td className="text-center fw-bold text-danger">{item.stockQty}</td>
-                                                     <td className="text-end">{formatCurrency(item.unitPrice)}</td>
-                                                     <td className="text-center">
-                                                        <Button variant="outline-primary" size="sm" onClick={() => showModal('edit', item)} title="Edit Item">
-                                                            <FaEdit />
-                                                        </Button>
+                                                 <tr key={item.id} className="align-middle border-bottom border-light">
+                                                     <td className="px-4 py-3 text-muted fw-bold">{index + 1}</td>
+                                                     <td className="px-4 py-3 fw-medium text-dark">{item.partNo || '-'}</td>
+                                                     <td className="px-4 py-3 fw-bold text-dark">{item.name}</td>
+                                                     <td className="px-4 py-3 text-center fw-bold text-danger fs-5">{item.stockQty}</td>
+                                                     <td className="px-4 py-3 text-end fw-medium">{formatCurrency(item.unitPrice)}</td>
+                                                     <td className="px-4 py-3 text-center">
+                                                        <button className="btn btn-link text-primary p-0 border-0 hover-primary" onClick={() => showModal('edit', item)} title="Edit Item">
+                                                            <FaEdit size={18} />
+                                                        </button>
                                                      </td>
                                                  </tr>
                                              ))
                                          )}
                                      </tbody>
-                                 </Table>
-                             </div>
-                         </Card.Body>
-                     </Card>
+                                 </table>
+                            )}
+                        </div>
+                     </div>
                  </Tab>
              </Tabs>
 
              {/* --- Add/Edit Form Modal --- */}
-              <Modal show={modalState.show} onHide={closeModal} centered size="lg">
-                    <Modal.Header closeButton>
-                        <Modal.Title className="fs-5">
+              <Modal show={modalState.show} onHide={closeModal} centered size="lg" className="saas-modal">
+                    <Modal.Header closeButton className="border-0 pb-0">
+                        <Modal.Title className="h5 fw-bold text-dark d-flex align-items-center">
                             {modalState.type === 'add' ? <><FaPlus className="me-2 text-primary" />Add New Master Item</> : <><FaEdit className="me-2 text-primary" />Edit Item: {modalState.data?.name}</>}
                          </Modal.Title>
                     </Modal.Header>
                     <Form onSubmit={modalState.type === 'add' ? handleAddItemSubmit : handleEditItemSubmit}>
-                        <Modal.Body>
+                        <Modal.Body className="py-4">
                             {formError && <Alert variant="danger" size="sm" onClose={() => setFormError('')} dismissible>{formError}</Alert>}
-                             <Row>
+                             <Row className="g-3 mb-3">
                                 <Col md={8}>
-                                    <Form.Group className="mb-3"><Form.Label className="fw-semibold">Item Name*</Form.Label><Form.Control size="sm" type="text" name="name" value={formData.name || ''} onChange={handleFormChange} required /></Form.Group>
+                                    <Form.Group>
+                                        <Form.Label className="fw-semibold text-dark small">Item Name*</Form.Label>
+                                        <Form.Control className="shadow-none border-light bg-light" type="text" name="name" value={formData.name || ''} onChange={handleFormChange} required />
+                                    </Form.Group>
                                 </Col>
                                 <Col md={4}>
-                                    <Form.Group className="mb-3"><Form.Label className="fw-semibold">Part No.</Form.Label><Form.Control size="sm" type="text" name="partNo" value={formData.partNo || ''} onChange={handleFormChange} placeholder="Optional code"/></Form.Group>
+                                    <Form.Group>
+                                        <Form.Label className="fw-semibold text-dark small">Part No.</Form.Label>
+                                        <Form.Control className="shadow-none border-light bg-light" type="text" name="partNo" value={formData.partNo || ''} onChange={handleFormChange} placeholder="Optional code"/>
+                                    </Form.Group>
                                 </Col>
                             </Row>
-                             <Row>
+                             <Row className="g-3 mb-3">
                                  <Col md={4}>
-                                    <Form.Group className="mb-3"><Form.Label className="fw-semibold">Item Type*</Form.Label>
-                                        <Form.Select size="sm" name="type" value={formData.type || 'Spare'} onChange={handleFormChange} required>
+                                    <Form.Group>
+                                        <Form.Label className="fw-semibold text-dark small">Item Type*</Form.Label>
+                                        <Form.Select className="shadow-none border-light bg-light" name="type" value={formData.type || 'Spare'} onChange={handleFormChange} required>
                                              <option value="Spare">Spare Part</option>
                                              <option value="Service">Service</option>
                                         </Form.Select>
                                     </Form.Group>
                                 </Col>
                                 <Col md={4}>
-                                     <Form.Group className="mb-3"><Form.Label className="fw-semibold">Unit Price (Sale)</Form.Label><Form.Control size="sm" type="number" step="0.01" name="unitPrice" value={formData.unitPrice || ''} onChange={handleFormChange} placeholder="e.g., 450.00"/></Form.Group>
+                                     <Form.Group>
+                                         <Form.Label className="fw-semibold text-dark small">Unit Price (Sale)</Form.Label>
+                                         <Form.Control className="shadow-none border-light bg-light" type="number" step="0.01" name="unitPrice" value={formData.unitPrice || ''} onChange={handleFormChange} placeholder="e.g., 450.00"/>
+                                     </Form.Group>
                                  </Col>
                                  <Col md={4}>
                                     {formData.type === 'Spare' && (
-                                        <Form.Group className="mb-3"><Form.Label className="fw-semibold">Current Stock Qty</Form.Label><Form.Control size="sm" type="number" name="stockQty" value={formData.stockQty || ''} onChange={handleFormChange} placeholder="e.g., 25"/></Form.Group>
+                                        <Form.Group>
+                                            <Form.Label className="fw-semibold text-dark small">Current Stock Qty</Form.Label>
+                                            <Form.Control className="shadow-none border-light bg-light" type="number" name="stockQty" value={formData.stockQty || ''} onChange={handleFormChange} placeholder="e.g., 25"/>
+                                        </Form.Group>
                                      )}
                                  </Col>
                              </Row>
-                             <Row>
+                             <Row className="g-3 mb-4">
                                  <Col md={6}>
-                                     <Form.Group className="mb-3"><Form.Label className="fw-semibold">Default Lube Charge</Form.Label><Form.Control size="sm" type="number" step="0.01" name="lubeCharge" value={formData.lubeCharge || ''} onChange={handleFormChange} placeholder="If applicable"/></Form.Group>
+                                     <Form.Group>
+                                         <Form.Label className="fw-semibold text-dark small">Default Lube Charge</Form.Label>
+                                         <Form.Control className="shadow-none border-light bg-light" type="number" step="0.01" name="lubeCharge" value={formData.lubeCharge || ''} onChange={handleFormChange} placeholder="If applicable"/>
+                                     </Form.Group>
                                  </Col>
                                  <Col md={6}>
-                                     <Form.Group className="mb-3"><Form.Label className="fw-semibold">Default Labour Charge</Form.Label><Form.Control size="sm" type="number" step="0.01" name="labourCharge" value={formData.labourCharge || ''} onChange={handleFormChange} placeholder="If applicable"/></Form.Group>
+                                     <Form.Group>
+                                         <Form.Label className="fw-semibold text-dark small">Default Labour Charge</Form.Label>
+                                         <Form.Control className="shadow-none border-light bg-light" type="number" step="0.01" name="labourCharge" value={formData.labourCharge || ''} onChange={handleFormChange} placeholder="If applicable"/>
+                                     </Form.Group>
                                  </Col>
                              </Row>
-                              <small className="text-muted">* Required fields</small>
+                              <div className="text-muted small">* Required fields</div>
                         </Modal.Body>
-                        <Modal.Footer className="bg-light">
-                            <Button variant="outline-secondary" onClick={closeModal}>Cancel</Button>
-                            <Button variant="primary" type="submit" className="px-4">
-                                {modalState.type === 'add' ? <><FaPlus className="me-1"/> Add Item</> : <><FaEdit className="me-1"/> Save Changes</>}
+                        <Modal.Footer className="border-0 pt-0">
+                            <Button variant="light" onClick={closeModal}>Cancel</Button>
+                            <Button variant="primary" type="submit" className="px-4 d-flex align-items-center">
+                                {modalState.type === 'add' ? <><FaPlus className="me-2"/> Add Item</> : <><FaEdit className="me-2"/> Save Changes</>}
                             </Button>
                         </Modal.Footer>
                     </Form>
                </Modal>
 
                {/* --- Universal Custom Alert & Confirmation Modal --- */}
-               <Modal show={alertModal.show} onHide={closeAlert} centered backdrop="static" keyboard={false}>
-                    <Modal.Header closeButton className={`text-white ${alertModal.type === 'error' ? 'bg-danger' : alertModal.type === 'confirm' ? 'bg-warning text-dark' : 'bg-success'}`}>
-                        <Modal.Title className="fs-5 d-flex align-items-center">
+               <Modal show={alertModal.show} onHide={closeAlert} centered backdrop="static" keyboard={false} className="saas-modal">
+                    <Modal.Header closeButton className="border-0 pb-0">
+                        <Modal.Title className={`h5 fw-bold d-flex align-items-center ${alertModal.type === 'error' ? 'text-danger' : alertModal.type === 'confirm' ? 'text-warning' : 'text-success'}`}>
                             {alertModal.type === 'error' && <FaTimesCircle className="me-2" />}
                             {alertModal.type === 'success' && <FaCheckCircle className="me-2" />}
                             {alertModal.type === 'confirm' && <FaQuestionCircle className="me-2" />}
@@ -425,12 +505,12 @@ const StockManagementPage = () => {
                         </Modal.Title>
                     </Modal.Header>
                     <Modal.Body className="py-4">
-                        <p className="mb-0 fs-6" style={{ whiteSpace: 'pre-line' }}>{alertModal.message}</p>
+                        <p className="mb-0 fs-6 text-secondary" style={{ whiteSpace: 'pre-line' }}>{alertModal.message}</p>
                     </Modal.Body>
-                    <Modal.Footer className="bg-light">
+                    <Modal.Footer className="border-0 pt-0">
                         {alertModal.type === 'confirm' ? (
                             <>
-                                <Button variant="outline-secondary" onClick={closeAlert}>Cancel</Button>
+                                <Button variant="light" onClick={closeAlert}>Cancel</Button>
                                 <Button variant="danger" className="px-4" onClick={alertModal.confirmAction}>Yes, Delete</Button>
                             </>
                         ) : (

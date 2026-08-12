@@ -81,7 +81,7 @@ const AuthPage = ({ onLoginSuccess }) => {
                     // The onLoginSuccess prop is called after the internal success animation starts.
                     // It now passes the user data up to App.jsx.
                     setTimeout(() => {
-                        onLoginSuccess(data.user);
+                        onLoginSuccess(data);
                     }, 1500); // This delay allows the user to see the success message
                 } else {
                     // Handle API-level errors (e.g., invalid credentials from backend)

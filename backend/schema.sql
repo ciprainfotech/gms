@@ -22,12 +22,53 @@ $$ LANGUAGE plpgsql;
 -- 2. SCHEMA CREATION (ALL TABLES)
 -- =====================================================================
 
+-- SaaS Subscription Tiers
+CREATE TABLE plans (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    monthly_price DECIMAL(10,2) DEFAULT 0,
+    max_users INTEGER DEFAULT 5,
+    max_vehicles INTEGER DEFAULT 1000,
+    whatsapp_enabled BOOLEAN DEFAULT TRUE,
+    analytics_enabled BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Core tenancy and user tables
 CREATE TABLE garages (
     id SERIAL PRIMARY KEY,
     name VARCHAR(150) NOT NULL UNIQUE,
     address TEXT,
     phone VARCHAR(20),
+    email VARCHAR(100),
+    logo_url VARCHAR(255),
+    gst_number VARCHAR(50),
+    terms_and_conditions TEXT,
+    invoice_prefix VARCHAR(20) DEFAULT 'INV-',
+    invoice_next_num INTEGER DEFAULT 1,
+    jobsheet_prefix VARCHAR(20) DEFAULT 'JS-',
+    jobsheet_next_num INTEGER DEFAULT 1,
+    plan_id INTEGER REFERENCES plans(id) ON DELETE SET NULL,
+    custom_monthly_price DECIMAL(10,2) DEFAULT 0.00,
+    subscription_status VARCHAR(20) DEFAULT 'active',
+    subscription_expires_at TIMESTAMPTZ,
+    whatsapp_credit_balance DECIMAL(10,2) DEFAULT 100.00,
+    whatsapp_cost_per_msg DECIMAL(10,2) DEFAULT 0.15,
+    whatsapp_api_token TEXT,
+    whatsapp_phone_number_id VARCHAR(100),
+    whatsapp_api_url VARCHAR(255),
+    whatsapp_waba_id VARCHAR(100),
+    whatsapp_phone_number VARCHAR(50),
+    whatsapp_status VARCHAR(20) DEFAULT 'disconnected',
+    feature_stock BOOLEAN DEFAULT TRUE,
+    feature_purchase BOOLEAN DEFAULT TRUE,
+    feature_analytics BOOLEAN DEFAULT TRUE,
+    feature_reminders BOOLEAN DEFAULT TRUE,
+    feature_tasks BOOLEAN DEFAULT TRUE,
+    feature_whatsapp BOOLEAN DEFAULT TRUE,
+    feature_whatsapp_utility BOOLEAN DEFAULT TRUE,
+    feature_whatsapp_marketing BOOLEAN DEFAULT TRUE,
+    feature_payroll BOOLEAN DEFAULT TRUE,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -39,6 +80,7 @@ CREATE TABLE users (
     email VARCHAR(100) UNIQUE NOT NULL,
     phone VARCHAR(20),
     password_hash TEXT NOT NULL,
+    is_super_admin BOOLEAN DEFAULT FALSE,
     is_deleted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -62,7 +104,7 @@ CREATE TABLE models (
 
 -- Many-to-many junction table for user-garage roles
 CREATE TABLE garage_users (
-    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
     role VARCHAR(20) NOT NULL CHECK (role IN ('owner', 'manager', 'mechanic')),
     PRIMARY KEY (user_id, garage_id)
@@ -232,6 +274,55 @@ CREATE TABLE tasks (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE whatsapp_logs (
+    id BIGSERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    recipient_phone VARCHAR(20) NOT NULL,
+    message_type VARCHAR(50) NOT NULL,
+    cost_deducted DECIMAL(10,2) DEFAULT 0.15,
+    balance_after DECIMAL(10,2) NOT NULL,
+    status VARCHAR(20) DEFAULT 'sent',
+    error_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+
+CREATE TABLE staff (
+    id SERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    phone VARCHAR(15),
+    role VARCHAR(50) NOT NULL,
+    salary_type VARCHAR(20) DEFAULT 'monthly',
+    base_salary DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE attendance (
+    id SERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(staff_id, date)
+);
+
+CREATE TABLE staff_transactions (
+    id SERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+    type VARCHAR(20) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    date DATE NOT NULL,
+    payment_method VARCHAR(50) DEFAULT 'Cash',
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 
 
 -- =====================================================================

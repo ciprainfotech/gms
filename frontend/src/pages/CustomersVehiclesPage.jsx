@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, InputGroup, Form, Modal, Alert, Tooltip, OverlayTrigger, Badge, Image, Dropdown, Spinner } from 'react-bootstrap';
 import {
     FaUserPlus, FaSearch, FaCar, FaPlus, FaEdit, FaTrashAlt, FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaIdCardAlt, FaInfoCircle, FaEllipsisV, FaHistory, FaWrench, FaCarSide, FaUserCircle, FaTimes, FaBuilding, FaCity, FaClipboardList, FaUsers, FaGasPump, FaPalette, FaPlug // Added more icons
@@ -41,6 +41,7 @@ const getVehicleBrandColor = (make) => {
 
 const CustomersVehiclesPage = () => {
     const navigate = useNavigate();
+    const location = useLocation();
 
     // --- State ---
     const [allCustomers, setAllCustomers] = useState([]);
@@ -77,6 +78,14 @@ const CustomersVehiclesPage = () => {
     const [formData, setFormData] = useState({});
     const [availableModels, setAvailableModels] = useState([]);
     const [formError, setFormError] = useState('');
+
+    // Global search arrives here so a search always leads to a useful, focused result.
+    useEffect(() => {
+        if (location.state?.search) {
+            setSearchTerm(location.state.search);
+            navigate(location.pathname, { replace: true, state: {} });
+        }
+    }, [location.pathname, location.state, navigate]);
 
 
 
@@ -505,46 +514,42 @@ const renderVehicleCard = (vehicle) => {
 
     // --- Main Render ---
     return (
-        <div className="cv-page-container">
-            <div className="cv-layout">
+        <div className="cv-page-container py-4 px-md-4">
+            <div className="cv-layout bg-white rounded-4 shadow-sm border border-light overflow-hidden">
                 {/* --- Left Panel --- */}
-                <div className="cv-list-panel shadow-sm">
-                    <div className="cv-panel-header align-items-center">
-                        
-                        {/* 1. Wrap the title and badges in a div to keep them on the left side */}
+                <div className="cv-list-panel bg-light border-end border-light">
+                    <div className="cv-panel-header align-items-center px-4 py-3 border-bottom border-light bg-white">
                         <div>
-                            <h5 className="cv-panel-title mb-1"><FaUsers className="me-2" />Directory</h5>
+                            <h5 className="cv-panel-title fw-bold text-dark mb-1"><FaUsers className="me-2 text-primary" />Directory</h5>
                             
-                            {/* 2. Add the dynamic counters using Bootstrap Badges */}
-                            <div className="d-flex gap-2 mt-1" style={{ fontSize: '0.8rem' }}>
-                                <Badge bg="primary" pill className="fw-normal shadow-sm">
+                            <div className="d-flex gap-2 mt-2" style={{ fontSize: '0.8rem' }}>
+                                <span className="saas-badge saas-badge-primary">
                                     {allCustomers.length} Customers
-                                </Badge>
-                                <Badge bg="info" text="dark" pill className="fw-normal shadow-sm">
+                                </span>
+                                <span className="saas-badge saas-badge-info">
                                     <FaCarSide className="me-1" /> {allVehicles.length} Vehicles
-                                </Badge>
+                                </span>
                             </div>
                         </div>
 
-                        {/* 3. The Add button remains on the right side */}
                         <Link to="/add-customer">
-                            <Button variant="outline-primary" size="sm" className="cv-add-customer-btn mt-n3" title="Add New Customer">
-                                <FaUserPlus />
+                            <Button variant="primary" size="sm" className="cv-add-customer-btn mt-n3 shadow-sm d-flex align-items-center" title="Add New Customer">
+                                <FaUserPlus className="me-2" /> Add
                             </Button>
                         </Link>
                     </div>
-                    <div className="cv-panel-search">
-                         <InputGroup size="sm">
-                            <InputGroup.Text><FaSearch /></InputGroup.Text>
-                             <Form.Control placeholder="Search Customers..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-                             {searchTerm && <Button variant="light" onClick={clearSearch} size="sm" className="cv-clear-search-btn" title="Clear Search"><FaTimes /></Button>}
-                         </InputGroup>
+                    <div className="cv-panel-search px-3 py-3 bg-white border-bottom border-light">
+                         <div className="saas-search-pill d-flex align-items-center bg-light rounded-pill px-3 py-2 border border-light">
+                            <FaSearch className="text-muted me-2" />
+                             <Form.Control className="border-0 shadow-none bg-transparent p-0" placeholder="Search Customers..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                             {searchTerm && <Button variant="link" onClick={clearSearch} size="sm" className="p-0 text-muted hover-danger"><FaTimes /></Button>}
+                         </div>
                     </div>
-                    <div className="cv-panel-list custom-scrollbar" ref={customerListRef}>
+                    <div className="cv-panel-list custom-scrollbar bg-light" ref={customerListRef}>
                          {isLoading ? (
-                             <div className="loading-state"><Spinner animation="border" size="sm" /> Loading...</div>
+                             <div className="text-center p-4"><Spinner animation="border" variant="primary" size="sm" /> <span className="ms-2 text-muted">Loading...</span></div>
                          ) : filteredCustomers.length === 0 ? (
-                             <div className="empty-list-message"><FaInfoCircle className="me-2" />{searchTerm ? 'No matches found.' : 'No customers yet.'}</div>
+                             <div className="text-center p-4 text-muted"><FaInfoCircle className="me-2 text-secondary" />{searchTerm ? 'No matches found.' : 'No customers yet.'}</div>
                          ) : (
                             filteredCustomers.map(renderCustomerListItem) // Use map directly
                          )}
@@ -552,50 +557,53 @@ const renderVehicleCard = (vehicle) => {
                 </div>
 
                 {/* --- Right Panel --- */}
-                <div className="cv-detail-panel custom-scrollbar">
+                <div className="cv-detail-panel custom-scrollbar bg-white p-4">
                     {!selectedCustomer ? (
-                         <div className="cv-welcome-panel">
-                            <FaClipboardList className="welcome-icon" />
-                            <h4>Customer Details</h4>
-                            <p>Select a customer from the list to view their profile and vehicles.</p>
+                         <div className="text-center p-5 text-muted h-100 d-flex flex-column align-items-center justify-content-center">
+                            <div className="bg-light p-4 rounded-circle mb-3 border border-light"><FaClipboardList size="3em" className="text-secondary" /></div>
+                            <h4 className="fw-bold text-dark">Customer Details</h4>
+                            <p>Select a customer from the directory to view their profile and registered vehicles.</p>
                          </div>
                     ) : (
                         <div className="cv-selected-details">
                             {/* Customer Profile */}
-                            <Card className="mb-4 shadow-sm cv-profile-card">
-                                <Card.Body>
-                                    <div className="cv-profile-header">
-                                        <div className="cv-profile-avatar"><FaUserCircle /></div>
-                                        <div className="cv-profile-info">
-                                            <h4 className="cv-profile-name">{selectedCustomer.name}</h4>
-                                            <div className="cv-profile-contact">
-                                                <span><FaPhoneAlt /> {selectedCustomer.phone}</span>
-                                                <span className="ms-3"><FaEnvelope /> {selectedCustomer.email || 'N/A'}</span>
+                            <Card className="mb-4 shadow-sm border border-light rounded-4 bg-white">
+                                <Card.Body className="p-4">
+                                    <div className="d-flex justify-content-between align-items-start">
+                                        <div className="d-flex align-items-center">
+                                            <div className="bg-primary bg-opacity-10 text-primary p-4 rounded-circle me-4 shadow-sm">
+                                                <FaUserCircle size="2.5em" />
                                             </div>
-                                           <div className="cv-profile-address mt-1">
-                                            <FaMapMarkerAlt /> {
-                                                // This clever array trick removes empty values and only adds a comma if BOTH exist!
-                                                [selectedCustomer.address, selectedCustomer.city].filter(Boolean).join(', ') || 'N/A'
-                                            }
-                                        </div>
+                                            <div>
+                                                <h3 className="fw-bold text-dark mb-2">{selectedCustomer.name}</h3>
+                                                <div className="d-flex align-items-center text-secondary mb-2 fw-medium">
+                                                    <span className="me-4"><FaPhoneAlt className="me-2 text-muted" /> {selectedCustomer.phone}</span>
+                                                    <span><FaEnvelope className="me-2 text-muted" /> {selectedCustomer.email || 'N/A'}</span>
+                                                </div>
+                                               <div className="text-secondary small fw-medium d-flex align-items-center">
+                                                <FaMapMarkerAlt className="me-2 text-muted" /> {
+                                                    [selectedCustomer.address, selectedCustomer.city].filter(Boolean).join(', ') || 'N/A'
+                                                }
+                                            </div>
+                                            </div>
                                         </div>
                                         <div className="cv-profile-actions">
-                                            <Button variant="outline-primary" size="sm" onClick={() => showModal('editCustomer', selectedCustomer)}><FaEdit /> Edit</Button>
+                                            <Button variant="light" size="sm" className="border shadow-sm text-secondary hover-primary px-3" onClick={() => showModal('editCustomer', selectedCustomer)}><FaEdit className="me-2"/> Edit Profile</Button>
                                         </div>
                                     </div>
                                 </Card.Body>
                             </Card>
 
                             {/* Vehicles Section */}
-                            <div className="cv-vehicles-section">
-                                <div className="cv-section-header">
-                                    <h5 className="cv-section-title"><FaCarSide className="me-2" />Vehicles ({selectedCustomerVehicles.length})</h5>
-                                    <Button variant="primary" size="sm" onClick={() => showModal('addVehicle')}><FaPlus className="me-1" /> Add Vehicle</Button>
+                            <div className="cv-vehicles-section mt-5">
+                                <div className="d-flex justify-content-between align-items-center mb-3">
+                                    <h5 className="fw-bold text-dark mb-0"><FaCarSide className="me-2 text-primary" />Registered Vehicles ({selectedCustomerVehicles.length})</h5>
+                                    <Button variant="primary" size="sm" className="shadow-sm d-flex align-items-center px-3" onClick={() => showModal('addVehicle')}><FaPlus className="me-2" /> Add Vehicle</Button>
                                 </div>
                                 {selectedCustomerVehicles.length === 0 ? (
-                                    <Alert variant="light" className="text-center mt-3 border cv-no-vehicles-alert"><FaInfoCircle className="me-2" />No vehicles registered.</Alert>
+                                    <Alert variant="light" className="text-center mt-3 border border-light rounded-4 py-4 text-muted shadow-sm"><FaInfoCircle className="me-2" />No vehicles registered for this customer.</Alert>
                                 ) : (
-                                    <Row className="g-3 mt-1">{selectedCustomerVehicles.map(renderVehicleCard)}</Row>
+                                    <Row className="g-4 mt-1">{selectedCustomerVehicles.map(renderVehicleCard)}</Row>
                                 )}
                             </div>
                         </div>
@@ -604,80 +612,81 @@ const renderVehicleCard = (vehicle) => {
 
                 {/* --- Modals --- */}
                  {/* Add/Edit Vehicle Modal */}
-                 <Modal show={modalState.type === 'addVehicle' || modalState.type === 'editVehicle'} onHide={closeModal} centered size="lg">
-                       <Modal.Header closeButton>
-                           <Modal.Title>
-                               {modalState.type === 'addVehicle' ? <><FaPlus className="me-2" />Add Vehicle for {selectedCustomer?.name}</> : <><FaEdit className="me-2" />Edit Vehicle {modalState.data?.carNumber}</>}
+                 <Modal show={modalState.type === 'addVehicle' || modalState.type === 'editVehicle'} onHide={closeModal} centered size="lg" className="saas-modal">
+                       <Modal.Header closeButton className="border-0 pb-0">
+                           <Modal.Title className="h5 fw-bold text-dark d-flex align-items-center">
+                               {modalState.type === 'addVehicle' ? <><FaPlus className="me-2 text-primary" />Add Vehicle for {selectedCustomer?.name}</> : <><FaEdit className="me-2 text-primary" />Edit Vehicle {modalState.data?.carNumber}</>}
                             </Modal.Title>
                        </Modal.Header>
                        <Form onSubmit={modalState.type === 'addVehicle' ? handleAddVehicleSubmit : handleUpdateVehicleSubmit}>
-                           <Modal.Body>
+                           <Modal.Body className="py-4">
                                {formError && <Alert variant="danger" size="sm" onClose={() => setFormError('')} dismissible>{formError}</Alert>}
-                               <Row>
-                                  <Col md={6}><Form.Group className="mb-3"><Form.Label>Reg No*</Form.Label><Form.Control size="sm" type="text" name="carNumber" value={formData.carNumber || ''} onChange={handleFormChange} required placeholder="e.g., GJ01AB1234" /></Form.Group></Col>
-                                  <Col md={6}><Form.Group className="mb-3"><Form.Label>VIN</Form.Label><Form.Control size="sm" type="text" name="vin" value={formData.vin || ''} onChange={handleFormChange} placeholder="Chassis No."/></Form.Group></Col>
+                               <Row className="g-3 mb-3">
+                                  <Col md={6}><Form.Group><Form.Label className="small fw-bold text-dark">Registration No*</Form.Label><Form.Control className="shadow-none border-light bg-light" type="text" name="carNumber" value={formData.carNumber || ''} onChange={handleFormChange} required placeholder="e.g., GJ01AB1234" /></Form.Group></Col>
+                                  <Col md={6}><Form.Group><Form.Label className="small fw-bold text-dark">VIN</Form.Label><Form.Control className="shadow-none border-light bg-light" type="text" name="vin" value={formData.vin || ''} onChange={handleFormChange} placeholder="Chassis No."/></Form.Group></Col>
                                </Row>
-                               <Row>
-                                   <Col md={6}><Form.Group className="mb-3"><Form.Label>Make*</Form.Label><Form.Select size="sm" name="make" value={formData.make || ''} onChange={handleFormChange} required><option value="">-- Select Make --</option>{masterMakes.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}</Form.Select></Form.Group></Col>
-                                   <Col md={6}><Form.Group className="mb-3"><Form.Label>Model*</Form.Label><Form.Select size="sm" name="model" value={formData.model || ''} onChange={handleFormChange} required disabled={!formData.make || availableModels.length === 0}><option value="">-- Select Model --</option>{availableModels.map(model => <option key={model.id} value={model.name}>{model.name}</option>)}</Form.Select></Form.Group></Col>
+                               <Row className="g-3 mb-3">
+                                   <Col md={6}><Form.Group><Form.Label className="small fw-bold text-dark">Make*</Form.Label><Form.Select className="shadow-none border-light bg-light" name="make" value={formData.make || ''} onChange={handleFormChange} required><option value="">-- Select Make --</option>{masterMakes.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}</Form.Select></Form.Group></Col>
+                                   <Col md={6}><Form.Group><Form.Label className="small fw-bold text-dark">Model*</Form.Label><Form.Select className="shadow-none border-light bg-light" name="model" value={formData.model || ''} onChange={handleFormChange} required disabled={!formData.make || availableModels.length === 0}><option value="">-- Select Model --</option>{availableModels.map(model => <option key={model.id} value={model.name}>{model.name}</option>)}</Form.Select></Form.Group></Col>
                                </Row>
-                               <Row>
-                                   <Col md={4}><Form.Group className="mb-3"><Form.Label>Year</Form.Label><Form.Control size="sm" type="number" name="year" value={formData.year || ''} onChange={handleFormChange} placeholder="YYYY" min="1980" max={new Date().getFullYear() + 1}/></Form.Group></Col>
-                                    <Col md={4}><Form.Group className="mb-3"><Form.Label>Color</Form.Label><Form.Select size="sm" name="color" value={formData.color || ''} onChange={handleFormChange}><option value="">-- Select Color --</option>{masterColors.map((c, index) => <option key={index} value={c}>{c}</option>)}</Form.Select></Form.Group></Col>
-                                    <Col md={4}><Form.Group className="mb-3"><Form.Label>Fuel Type</Form.Label><Form.Select size="sm" name="fuelType" value={formData.fuelType || ''} onChange={handleFormChange}><option value="">-- Select Fuel --</option>{masterFuelTypes.map((f, index) => <option key={index} value={f}>{f}</option>)}</Form.Select></Form.Group></Col>
+                               <Row className="g-3 mb-4">
+                                   <Col md={4}><Form.Group><Form.Label className="small fw-bold text-dark">Year</Form.Label><Form.Control className="shadow-none border-light bg-light" type="number" name="year" value={formData.year || ''} onChange={handleFormChange} placeholder="YYYY" min="1980" max={new Date().getFullYear() + 1}/></Form.Group></Col>
+                                    <Col md={4}><Form.Group><Form.Label className="small fw-bold text-dark">Color</Form.Label><Form.Select className="shadow-none border-light bg-light" name="color" value={formData.color || ''} onChange={handleFormChange}><option value="">-- Select Color --</option>{masterColors.map((c, index) => <option key={index} value={c}>{c}</option>)}</Form.Select></Form.Group></Col>
+                                    <Col md={4}><Form.Group><Form.Label className="small fw-bold text-dark">Fuel Type</Form.Label><Form.Select className="shadow-none border-light bg-light" name="fuelType" value={formData.fuelType || ''} onChange={handleFormChange}><option value="">-- Select Fuel --</option>{masterFuelTypes.map((f, index) => <option key={index} value={f}>{f}</option>)}</Form.Select></Form.Group></Col>
                                </Row>
-                               <small className="text-muted">* Required fields</small>
+                               <div className="text-muted small">* Required fields</div>
                            </Modal.Body>
-                           <Modal.Footer>
-                               <Button variant="outline-secondary" onClick={closeModal}>Cancel</Button>
-                               <Button variant="primary" type="submit" className="px-4">
-                                   {modalState.type === 'addVehicle' ? <><FaPlus className="me-1"/> Add</> : <><FaEdit className="me-1"/> Save</>}
+                           <Modal.Footer className="border-0 pt-0">
+                               <Button variant="light" onClick={closeModal}>Cancel</Button>
+                               <Button variant="primary" type="submit" className="px-4 d-flex align-items-center">
+                                   {modalState.type === 'addVehicle' ? <><FaPlus className="me-2"/> Add</> : <><FaEdit className="me-2"/> Save</>}
                                </Button>
                              </Modal.Footer>
                        </Form>
                  </Modal>
 
                   {/* Edit Customer Modal */}
-                 <Modal show={modalState.type === 'editCustomer'} onHide={closeModal} centered>
-                      <Modal.Header closeButton><Modal.Title><FaEdit className="me-2" />Edit Customer</Modal.Title></Modal.Header>
+                 <Modal show={modalState.type === 'editCustomer'} onHide={closeModal} centered className="saas-modal">
+                      <Modal.Header closeButton className="border-0 pb-0"><Modal.Title className="h5 fw-bold text-dark d-flex align-items-center"><FaEdit className="me-2 text-primary" />Edit Customer</Modal.Title></Modal.Header>
                       <Form onSubmit={handleUpdateCustomerSubmit}>
-                          <Modal.Body>
+                          <Modal.Body className="py-4">
                                {formError && <Alert variant="danger" size="sm" onClose={() => setFormError('')} dismissible>{formError}</Alert>}
-                               <Form.Group className="mb-3"><Form.Label>Name*</Form.Label><Form.Control size="sm" type="text" name="name" value={formData.name || ''} onChange={handleFormChange} required /></Form.Group>
-                               <Row>
-                                 <Col md={6}><Form.Group className="mb-3"><Form.Label>Phone*</Form.Label><Form.Control size="sm" type="tel" name="phone" value={formData.phone || ''} onChange={handleFormChange} required /></Form.Group></Col>
-                                 <Col md={6}><Form.Group className="mb-3"><Form.Label>Email</Form.Label><Form.Control size="sm" type="email" name="email" value={formData.email || ''} onChange={handleFormChange} /></Form.Group></Col>
+                               <Form.Group className="mb-3"><Form.Label className="small fw-bold text-dark">Name*</Form.Label><Form.Control className="shadow-none border-light bg-light" type="text" name="name" value={formData.name || ''} onChange={handleFormChange} required /></Form.Group>
+                               <Row className="g-3 mb-3">
+                                 <Col md={6}><Form.Group><Form.Label className="small fw-bold text-dark">Phone*</Form.Label><Form.Control className="shadow-none border-light bg-light" type="tel" name="phone" value={formData.phone || ''} onChange={handleFormChange} required /></Form.Group></Col>
+                                 <Col md={6}><Form.Group><Form.Label className="small fw-bold text-dark">Email</Form.Label><Form.Control className="shadow-none border-light bg-light" type="email" name="email" value={formData.email || ''} onChange={handleFormChange} /></Form.Group></Col>
                                </Row>
-                               <Form.Group className="mb-3"><Form.Label>Address</Form.Label><Form.Control size="sm" type="text" name="address" value={formData.address || ''} onChange={handleFormChange} /></Form.Group>
-                               <Form.Group className="mb-3"><Form.Label>City</Form.Label><Form.Control size="sm" type="text" name="city" value={formData.city || ''} onChange={handleFormChange} /></Form.Group>
-                               <small className="text-muted">* Required fields</small>
+                               <Form.Group className="mb-3"><Form.Label className="small fw-bold text-dark">Address</Form.Label><Form.Control className="shadow-none border-light bg-light" type="text" name="address" value={formData.address || ''} onChange={handleFormChange} /></Form.Group>
+                               <Form.Group className="mb-4"><Form.Label className="small fw-bold text-dark">City</Form.Label><Form.Control className="shadow-none border-light bg-light" type="text" name="city" value={formData.city || ''} onChange={handleFormChange} /></Form.Group>
+                               <div className="text-muted small">* Required fields</div>
                            </Modal.Body>
-                          <Modal.Footer>
-                               <Button variant="outline-secondary" onClick={closeModal}>Cancel</Button>
-                               <Button variant="primary" type="submit" className="px-4"><FaEdit className="me-1"/> Save</Button>
+                          <Modal.Footer className="border-0 pt-0">
+                               <Button variant="light" onClick={closeModal}>Cancel</Button>
+                               <Button variant="primary" type="submit" className="px-4 d-flex align-items-center"><FaEdit className="me-2"/> Save</Button>
                            </Modal.Footer>
                       </Form>
                  </Modal>
                  {/* --- Custom Notification / Confirm Modal --- */}
-                <Modal show={notification.show} onHide={closeNotification} centered backdrop="static" size="sm">
-                    <Modal.Header className={notification.title === 'Error' ? 'bg-danger text-white' : notification.title === 'Success' ? 'bg-success text-white' : 'bg-white'}>
-                        <Modal.Title className="h6 mb-0">
-                            {notification.title === 'Confirm Deletion' && <FaTrashAlt className="me-2 text-danger" />}
+                <Modal show={notification.show} onHide={closeNotification} centered backdrop="static" className="saas-modal">
+                    <Modal.Header closeButton className="border-0 pb-0">
+                        <Modal.Title className={`h5 fw-bold d-flex align-items-center ${notification.type === 'confirm' ? 'text-warning' : (notification.title === 'Error' ? 'text-danger' : 'text-success')}`}>
+                            {notification.title === 'Confirm Deletion' && <FaTrashAlt className="me-2" />}
                             {notification.title === 'Success' && <FaInfoCircle className="me-2" />}
+                            {notification.title === 'Error' && <FaInfoCircle className="me-2" />}
                             {notification.title}
                         </Modal.Title>
                     </Modal.Header>
-                    <Modal.Body className="text-center py-4">
-                        <p className="mb-0 text-muted">{notification.message}</p>
+                    <Modal.Body className="py-4">
+                        <p className="mb-0 fs-6 text-secondary" style={{ whiteSpace: 'pre-line' }}>{notification.message}</p>
                     </Modal.Body>
-                    <Modal.Footer className="justify-content-center border-0 pt-0">
+                    <Modal.Footer className="border-0 pt-0">
                         {notification.type === 'confirm' ? (
                             <>
-                                <Button variant="light" className="px-4" onClick={closeNotification}>Cancel</Button>
-                                <Button variant="danger" className="px-4 shadow-sm" onClick={notification.onConfirm}>Yes, Delete</Button>
+                                <Button variant="light" onClick={closeNotification}>Cancel</Button>
+                                <Button variant="danger" className="px-4" onClick={notification.onConfirm}>Yes, Delete</Button>
                             </>
                         ) : (
-                            <Button variant="primary" className="px-5 shadow-sm" onClick={closeNotification}>OK</Button>
+                            <Button variant="primary" className="px-4" onClick={closeNotification}>OK</Button>
                         )}
                     </Modal.Footer>
                 </Modal>

@@ -1,10 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import api from './api/api.js'; // IMPORTED: The API service
+import React, { useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import './App.css';
 
-// --- Page & Component Imports (Unchanged) ---
+// Contexts
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { GarageProvider, useGarage } from './contexts/GarageContext';
+import { ToastProvider } from './contexts/ToastContext';
+import { GlobalDateProvider, useGlobalDate } from './contexts/GlobalDateContext';
+
+// UI Loaders
+import GarageLoader from './components/ui/GarageLoader';
+
+// Components & Layout
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
+import SuperAdminLayout from './components/SuperAdminLayout';
+
+// Pages
+import AuthPage from './pages/AuthPage';
 import Dashboard from './pages/Dashboard';
 import ActiveJobSheets from './pages/ActiveJobSheets';
 import JobSheetDetailPage from './pages/JobSheetDetailPage';
@@ -21,41 +35,35 @@ import TaskDashboardPage from './pages/TaskDashboardPage';
 import AnalyticsReportsPage from './pages/AnalyticsReportsPage';
 import AccountsReceivablePage from './pages/AccountsReceivablePage';
 import RemindersPage from './pages/RemindersPage';
-import AuthPage from './pages/AuthPage';
-import {GlobalDateProvider} from './contexts/GlobalDateContext';
-
-// --- CSS and FontAwesome Imports (Unchanged) ---
-import 'bootstrap/dist/css/bootstrap.min.css';
-import './App.css';
-import { library } from '@fortawesome/fontawesome-svg-core';
-import { fas } from '@fortawesome/free-solid-svg-icons';  
-library.add(fas);
+import ProfileSettingsPage from './pages/ProfileSettingsPage';
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import PayrollPage from './pages/PayrollPage';
 
 // ==========================================================================
-// 1. MAIN APPLICATION LAYOUT COMPONENT (MODIFIED to accept user prop)
+// 1. MAIN LAYOUT
 // ==========================================================================
-const MainLayout = ({ onLogout, user }) => {
+const MainLayout = () => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
+  const { user, logout } = useAuth();
+  const { garage, refreshGarage } = useGarage();
 
-  const toggleSidebar = () => {
-    setSidebarOpen(!isSidebarOpen);
-  };
+  const toggleSidebar = () => setSidebarOpen(!isSidebarOpen);
 
   return (
-    <div className={`layout-wrapper is-entering`}>
+    <div className="layout-wrapper">
       <nav className={`sidebar ${isSidebarOpen ? 'is-open' : ''}`}>
-        <Sidebar user={user} />
+        <Sidebar user={user} garage={garage} onClose={() => setSidebarOpen(false)} />
       </nav>
       <div
         className={`sidebar-overlay ${isSidebarOpen ? 'is-visible' : ''}`}
         onClick={toggleSidebar}
-      ></div>
+      />
       <div className="content-wrapper">
         <header className="header">
-           <Header onMenuToggle={toggleSidebar} onLogout={onLogout} user={user} />
+          <Header onMenuToggle={toggleSidebar} onLogout={logout} user={user} garage={garage} />
         </header>
         <main className="main-content">
-          <Outlet /> 
+          <Outlet context={{ onGarageUpdate: refreshGarage, activeGarage: garage }} />
         </main>
       </div>
     </div>
@@ -63,153 +71,146 @@ const MainLayout = ({ onLogout, user }) => {
 };
 
 // ==========================================================================
-// 2. PROTECTED ROUTE COMPONENT (Unchanged)
+// 2. ROUTE GUARDS
 // ==========================================================================
-const ProtectedRoute = ({ isAuthenticated, children }) => {
-  if (!isAuthenticated) {
-    return <Navigate to="/auth" replace />;
+const ProtectedRoute = ({ children }) => {
+  const { isAuthenticated, isLoading } = useAuth();
+  if (isLoading) return <GarageLoader title="Authenticating..." subtext="Verifying security credentials..." />;
+  if (!isAuthenticated) return <Navigate to="/auth" replace />;
+  return children;
+};
+
+const SuperAdminRoute = ({ children }) => {
+  const { isAuthenticated, user, isLoading } = useAuth();
+  if (isLoading) return <GarageLoader title="Verifying Access..." subtext="Checking admin permissions..." />;
+  if (!isAuthenticated) return <Navigate to="/auth" replace />;
+  if (!user?.is_super_admin) return <Navigate to="/dashboard" replace />;
+  return children;
+};
+
+const FeatureRouteGuard = ({ isEnabled, featureName, children }) => {
+  if (isEnabled === false) {
+    return <Navigate to="/dashboard" state={{ featureDenied: featureName }} replace />;
+  }
+  return children;
+};
+
+const ReadonlyAccountGuard = ({ children }) => {
+  const { isSuspended } = useGarage();
+  if (isSuspended) {
+    return <Navigate to="/dashboard" state={{ accountSuspended: true }} replace />;
+  }
+  return children;
+};
+
+const ProfileCompletionGuard = ({ children }) => {
+  const { garage } = useGarage();
+  const location = useLocation();
+  const isProfileIncomplete = garage && (!garage.phone || !garage.address);
+  if (isProfileIncomplete && location.pathname !== '/settings') {
+    return <Navigate to="/settings" state={{ requireProfileSetup: true }} replace />;
   }
   return children;
 };
 
 // ==========================================================================
-// 3. GLOBAL TRANSITION OVERLAY COMPONENT (Unchanged)
+// 3. APP CONTENT & ROUTES
 // ==========================================================================
-const TransitionOverlay = ({ isVisible }) => {
-    return <div className={`transition-overlay ${isVisible ? 'is-visible' : ''}`}></div>;
-};
+function AppContent() {
+  const { isAuthenticated, user, login, logout, isLoading } = useAuth();
+  const { garage, features } = useGarage();
+  const { setWorkingDate, today } = useGlobalDate();
 
-// ==========================================================================
-// 4. MAIN APP COMPONENT (MODIFIED with real auth logic)
-// ==========================================================================
-function App() {
-  // MODIFIED: State is no longer derived from localStorage
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [isLoading, setIsLoading] = useState(true); // ADDED: To handle initial auth check
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  // ADDED: useEffect to check auth status on app load
-  useEffect(() => {
-    const checkAuthStatus = async () => {
-      try {
-        const response = await api.get('/auth/me');
-        if (response.ok) {
-          const data = await response.json();
-          setIsAuthenticated(true);
-          setCurrentUser(data.user);
-        } else {
-          setIsAuthenticated(false);
-          setCurrentUser(null);
-        }
-      } catch (error) {
-        console.error("Auth check failed:", error);
-        setIsAuthenticated(false);
-        setCurrentUser(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    checkAuthStatus();
-  }, []); // Empty array ensures this runs only once on mount
-
-  // MODIFIED: handleLogin now accepts user data and sets state
-  const handleLogin = (userData) => {
-    setIsTransitioning(true);
-    setTimeout(() => {
-      setIsAuthenticated(true);
-      setCurrentUser(userData);
-      // No need to touch localStorage
-      setTimeout(() => {
-        setIsTransitioning(false);
-      }, 100);
-    }, 800);
-  };
-
-  // MODIFIED: handleLogout now calls the backend API
-  const handleLogout = async () => {
-    setIsTransitioning(true);
-    try {
-      await api.post('/auth/logout', {});
-    } catch (error) {
-      console.error("Logout API call failed, but logging out client-side anyway:", error);
-    } finally {
-      setTimeout(() => {
-        setIsAuthenticated(false);
-        setCurrentUser(null);
-        localStorage.removeItem('masterWorkingDate');
-        // ProtectedRoute will handle redirect
-        setTimeout(() => {
-          setIsTransitioning(false);
-        }, 100);
-      }, 800);
-    }
-  };
-
-  // ADDED: Loading state while checking for a session
   if (isLoading) {
-    return (
-      <div className="app-loading">
-        <div className="spinner-border text-primary" style={{ width: '4rem', height: '4rem' }} role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
-      </div>
-    );
+    return <GarageLoader title="Garage Workshop" subtext="Loading your workspace..." />;
   }
 
   return (
-    <GlobalDateProvider key={isAuthenticated ? 'logged-in' : 'logged-out'}>
     <BrowserRouter>
-      <TransitionOverlay isVisible={isTransitioning} />
-
       <Routes>
-        {/* --- Unprotected Authentication Route --- */}
-        <Route 
-          path="/auth" 
+        {/* --- Public Auth Route --- */}
+        <Route
+          path="/auth"
           element={
             isAuthenticated ? (
-              <Navigate to="/dashboard" replace /> 
+              user?.is_super_admin ? <Navigate to="/admin" replace /> : <Navigate to="/dashboard" replace />
             ) : (
-              <AuthPage onLoginSuccess={handleLogin} />
+              <AuthPage onLoginSuccess={(data) => {
+                localStorage.removeItem('masterWorkingDate');
+                setWorkingDate(today);
+                login(data.user, data.activeGarage);
+              }} />
             )
-          } 
+          }
         />
 
         {/* --- Protected Application Routes --- */}
-        <Route 
+        <Route
           path="/*"
           element={
-            <ProtectedRoute isAuthenticated={isAuthenticated}>
-              {/* Pass user data down to the layout */}
-              <MainLayout onLogout={handleLogout} user={currentUser} />
+            <ProtectedRoute>
+              <ProfileCompletionGuard>
+                <MainLayout />
+              </ProfileCompletionGuard>
             </ProtectedRoute>
           }
         >
-          {/* All nested routes remain unchanged */}
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="active-jobsheets" element={<ActiveJobSheets />} />
           <Route path="jobsheet/:jobSheetId" element={<JobSheetDetailPage />} />
-          <Route path="create-invoice" element={<CreateInvoicePage />} />
+          <Route path="create-invoice" element={<ReadonlyAccountGuard><CreateInvoicePage /></ReadonlyAccountGuard>} />
           <Route path="task-dashboard" element={<TaskDashboardPage />} />
           <Route path="job-sheets" element={<JobSheets />} />
           <Route path="invoices" element={<InvoicesPage />} />
           <Route path="invoices/:invoiceId/view" element={<InvoiceViewPage />} />
           <Route path="accounts" element={<AccountsReceivablePage />} />
           <Route path="customers-vehicles" element={<CustomersVehiclesPage />} />
-          <Route path="reminders" element={<RemindersPage />} />
-          <Route path="add-customer" element={<AddCustomerPage />} />
-          <Route path="stock" element={<StockManagementPage />} />
-          <Route path="purchase-entry" element={<PurchaseEntryPage />} />
-          <Route path="purchase-history" element={<PurchaseHistoryPage />} />
-          <Route path="analytics-reports" element={<AnalyticsReportsPage />} />
+          <Route path="reminders" element={<FeatureRouteGuard isEnabled={features.reminders} featureName="Reminders"><RemindersPage /></FeatureRouteGuard>} />
+          <Route path="add-customer" element={<ReadonlyAccountGuard><AddCustomerPage /></ReadonlyAccountGuard>} />
+          <Route path="stock" element={<FeatureRouteGuard isEnabled={features.stock} featureName="Manage Stock"><StockManagementPage /></FeatureRouteGuard>} />
+          <Route path="purchase-entry" element={<FeatureRouteGuard isEnabled={features.purchase} featureName="Record Purchase"><PurchaseEntryPage /></FeatureRouteGuard>} />
+          <Route path="purchase-history" element={<FeatureRouteGuard isEnabled={features.purchase} featureName="Purchase History"><PurchaseHistoryPage /></FeatureRouteGuard>} />
+          <Route path="analytics-reports" element={<FeatureRouteGuard isEnabled={features.analytics} featureName="Analytics & Reports"><AnalyticsReportsPage /></FeatureRouteGuard>} />
+          <Route path="payroll" element={<FeatureRouteGuard isEnabled={features.payroll} featureName="Staff & Payroll"><PayrollPage /></FeatureRouteGuard>} />
           <Route path="edit-vehicle/:id" element={<AddCustomerPage />} />
-          
+          <Route path="settings" element={<ProfileSettingsPage />} />
+
           <Route index element={<Navigate replace to="/dashboard" />} />
-          
-          <Route path="*" element={<div className='text-center mt-5'><h2>404 - Page Not Found</h2><p>The page you requested could not be found within the application.</p></div>} />
+          <Route path="*" element={<div className="text-center mt-5"><h2>404 - Page Not Found</h2><p>The requested page could not be found.</p></div>} />
+        </Route>
+
+        {/* --- Super Admin Portal Routes --- */}
+        <Route
+          path="/admin/*"
+          element={
+            <SuperAdminRoute>
+              <SuperAdminLayout onLogout={logout} user={user} />
+            </SuperAdminRoute>
+          }
+        >
+          <Route index element={<SuperAdminDashboard />} />
+          <Route path="garages" element={<SuperAdminDashboard />} />
+          <Route path="onboard" element={<SuperAdminDashboard />} />
+          <Route path="whatsapp" element={<SuperAdminDashboard />} />
+          <Route path="plans" element={<SuperAdminDashboard />} />
+          <Route path="security" element={<SuperAdminDashboard />} />
         </Route>
       </Routes>
     </BrowserRouter>
-    </GlobalDateProvider>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <GarageProvider>
+        <ToastProvider>
+          <GlobalDateProvider>
+            <AppContent />
+          </GlobalDateProvider>
+        </ToastProvider>
+      </GarageProvider>
+    </AuthProvider>
   );
 }
 

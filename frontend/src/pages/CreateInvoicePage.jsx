@@ -2,8 +2,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Container, Row, Col, Card, Button, Table, Form, InputGroup, Alert, Badge, Spinner, ListGroup, Modal } from 'react-bootstrap';
-import { FaFileInvoiceDollar, FaCheck, FaTimes, FaUser, FaCar, FaPlus, FaInfoCircle } from 'react-icons/fa';
+import { FaFileInvoiceDollar, FaCheck, FaTimes, FaUser, FaCar, FaPlus, FaInfoCircle, FaWhatsapp } from 'react-icons/fa';
 import api from '../api/api';
+import CustomToast from '../components/CustomToast';
 import { useGlobalDate } from '../contexts/GlobalDateContext';
 
 // Robust currency formatter to gracefully accept numeric data types and string allocations alike
@@ -45,9 +46,11 @@ const CreateInvoicePage = () => {
     const [discountType, setDiscountType] = useState('Percent');
     const [discountValue, setDiscountValue] = useState(0);
     const [taxRate, setTaxRate] = useState(18);
+    const [toast, setToast] = useState(null);
     const [error, setError] = useState('');
     const [isFinalizing, setIsFinalizing] = useState(false);
     const [isLoadingSheets, setIsLoadingSheets] = useState(true);
+    const [autoSendWhatsapp, setAutoSendWhatsapp] = useState(true);
 
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -188,7 +191,7 @@ const CreateInvoicePage = () => {
         
         const finalInvoicePayload = {
             jobSheetId: invoiceDraft.jobSheetId,
-            dateIssued: invoiceDraft.dateIssued,
+            dateIssued: workingDate || invoiceDraft.dateIssued || new Date().toISOString().split('T')[0],
             discountType,
             discountValue: parseFloat(discountValue) || 0,
             taxRate: parseFloat(taxRate) || 0,
@@ -207,7 +210,15 @@ const CreateInvoicePage = () => {
             }
             const savedInvoice = await response.json();
             
-            // Replaces the window.alert with a smooth dashboard success window
+            // Auto dispatch WhatsApp if option checked
+            if (autoSendWhatsapp && savedInvoice.id) {
+                try {
+                    await api.post('/whatsapp/send-invoice', { invoiceId: savedInvoice.id });
+                } catch (waErr) {
+                    console.error("Auto WhatsApp dispatch failed:", waErr);
+                }
+            }
+
             setCreatedInvoiceData(savedInvoice);
             setShowSuccessModal(true);
             
@@ -235,8 +246,10 @@ const CreateInvoicePage = () => {
                 </h2>
             </div>
 
+            {toast && <CustomToast type={toast.type} title={toast.title} message={toast.message} onClose={() => setToast(null)} />}
+            {error && <CustomToast type="error" title="Invoice Error" message={error} onClose={() => setError('')} />}
+
             <div className="main-content">
-                {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
                 {!invoiceDraft && (
                     <Card className="shadow-sm border-light mb-4">
                         <Card.Header className="bg-light-subtle fw-semibold">
@@ -429,7 +442,17 @@ const CreateInvoicePage = () => {
                 </Modal.Header>
                 <Modal.Body className="py-4">
                     <p className="mb-0 fs-6">Are you sure you want to finalize this invoice?</p>
-                    <p className="text-muted small mt-2 mb-0">It will be saved permanently and assigned an official Invoice Number.</p>
+                    <p className="text-muted small mt-2 mb-3">It will be saved permanently and assigned an official Invoice Number.</p>
+                    
+                    <div className="p-3 bg-light rounded border">
+                        <Form.Check 
+                            type="checkbox"
+                            id="auto_send_wa"
+                            label={<span className="fw-bold text-success"><FaWhatsapp className="me-1"/> Automatically send Invoice copy to Customer's WhatsApp upon creation</span>}
+                            checked={autoSendWhatsapp}
+                            onChange={(e) => setAutoSendWhatsapp(e.target.checked)}
+                        />
+                    </div>
                 </Modal.Body>
                 <Modal.Footer className="bg-light border-0">
                     <Button variant="outline-secondary" onClick={() => setShowConfirmModal(false)}>Cancel</Button>

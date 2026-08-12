@@ -8,6 +8,17 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      window.fbAsyncInit = function() {
+        FB.init({
+          appId      : '1421167096587266', // App ID for CIPRA GMS
+          cookie     : true,
+          xfbml      : true,
+          version    : 'v20.0'
+        });
+      };
+    </script>
+    <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

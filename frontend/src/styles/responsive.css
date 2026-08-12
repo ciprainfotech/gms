@@ -1,0 +1,111 @@
+/* ==========================================================================
+   GARAGE SaaS DESIGN SYSTEM — RESPONSIVE BREAKPOINTS & PRINT
+   ========================================================================== */
+
+/* --- Tablet / Large Mobile Breakpoint (< 992px) --- */
+@media (max-width: 991.98px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.show,
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .content-wrapper {
+    margin-left: 0 !important;
+  }
+
+  .page-shell {
+    padding: 1.25rem 1rem;
+  }
+
+  .filter-bar-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-bar-left,
+  .filter-bar-right {
+    width: 100%;
+  }
+
+  .search-pill-input {
+    width: 100%;
+  }
+}
+
+/* --- Mobile Breakpoint (< 576px) --- */
+@media (max-width: 575.98px) {
+  .page-header-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .page-header-actions {
+    width: 100%;
+  }
+
+  .page-header-actions .btn-saas {
+    flex: 1;
+  }
+
+  .stat-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .data-table-wrapper {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ==========================================================================
+   A4 PRINT STYLES (Invoices & Job Sheets)
+   ========================================================================== */
+@media print {
+  body {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+    font-size: 12pt;
+  }
+
+  .sidebar,
+  .header,
+  .sidebar-overlay,
+  .page-header-actions,
+  .filter-bar-card,
+  .btn-saas,
+  .custom-toast-container,
+  .no-print {
+    display: none !important;
+  }
+
+  .content-wrapper {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+
+  .page-shell {
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .data-table-wrapper,
+  .data-table {
+    border: 1px solid #000000 !important;
+    box-shadow: none !important;
+  }
+
+  .data-table th,
+  .data-table td {
+    border-bottom: 1px solid #E2E8F0 !important;
+    color: #000000 !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+}

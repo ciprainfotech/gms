@@ -1,10 +1,10 @@
 const express = require('express');
-const { getKanbanData } = require('../controllers/dashboardController'); // Use the real controller
-const { authorizeGarage } = require('../middleware/authMiddleware'); // Add protection back
+const { getKanbanData, getRemindersData } = require('../controllers/dashboardController');
+const { authorizeGarage } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// This is the real, final route definition
 router.get('/kanban-data', authorizeGarage, getKanbanData);
+router.get('/reminders', authorizeGarage, getRemindersData);
 
 module.exports = router;

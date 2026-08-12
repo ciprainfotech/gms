@@ -55,11 +55,23 @@ exports.createPurchaseBill = async (req, res) => {
     try {
         await client.query('BEGIN'); // Start transaction
 
-        // 1. Calculate total amount securely
+        // 1. Calculate total amount securely and validate items
         let totalAmount = 0;
-        items.forEach(item => {
-            totalAmount += (Number(item.quantity) * Number(item.purchasePrice));
-        });
+        if (!items || items.length === 0) {
+            throw new Error("No items provided in the bill.");
+        }
+
+        for (const item of items) {
+            const qty = Number(item.quantity);
+            const price = Number(item.purchasePrice);
+            if (isNaN(qty) || qty <= 0) {
+                throw new Error("Invalid quantity provided. Quantity must be greater than 0.");
+            }
+            if (isNaN(price) || price < 0) {
+                throw new Error("Invalid purchase price provided. Price cannot be negative.");
+            }
+            totalAmount += (qty * price);
+        }
 
         // 2. Insert the main bill record
         const insertBillQuery = `
@@ -97,7 +109,8 @@ exports.createPurchaseBill = async (req, res) => {
     } catch (error) {
         await client.query('ROLLBACK'); // Cancel everything if anything fails
         console.error('Error saving purchase bill:', error);
-        res.status(500).json({ message: 'Server error while saving purchase bill.' });
+        res.status(error.message.includes('Invalid') || error.message.includes('No items') ? 400 : 500)
+           .json({ success: false, message: error.message || 'Server error while saving purchase bill.' });
     } finally {
         client.release();
     }

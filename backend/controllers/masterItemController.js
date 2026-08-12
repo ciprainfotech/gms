@@ -11,11 +11,11 @@ const getMasterItems = async (req, res) => {
         const query = `
             SELECT 
                 id, name, type, 
-                part_no AS "partNo", 
-                unit_price AS "unitPrice", 
-                lube_charge AS "lubeCharge", 
-                labour_charge AS "labourCharge",
-                stock_qty AS "stockQty"
+                part_no AS "partNo", part_no, 
+                unit_price AS "unitPrice", unit_price, 
+                lube_charge AS "lubeCharge", lube_charge, 
+                labour_charge AS "labourCharge", labour_charge,
+                stock_qty AS "stockQty", stock_qty
             FROM master_items
             WHERE garage_id = $1 AND is_deleted = FALSE
             ORDER BY name ASC;

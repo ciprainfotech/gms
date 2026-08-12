@@ -1,0 +1,171 @@
+/* ==========================================================================
+   GARAGE SaaS DESIGN SYSTEM — CORE TOKENS & RESET
+   ========================================================================== */
+
+:root {
+  /* --- Brand & Primary Colors --- */
+  --primary-color: #4F46E5;
+  --primary-color-darker: #3730A3;
+  --primary-color-lighter: #818CF8;
+  --primary-color-soft: rgba(79, 70, 229, 0.08);
+  --primary-gradient: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+  --accent-color: #06B6D4;
+
+  /* --- Status Colors --- */
+  --success-color: #10B981;
+  --success-soft: rgba(16, 185, 129, 0.12);
+  --warning-color: #F59E0B;
+  --warning-soft: rgba(245, 158, 11, 0.12);
+  --danger-color: #EF4444;
+  --danger-soft: rgba(239, 68, 68, 0.12);
+  --info-color: #3B82F6;
+  --info-soft: rgba(59, 130, 246, 0.12);
+
+  /* --- Slate Palette --- */
+  --slate-50:  #F8FAFC;
+  --slate-100: #F1F5F9;
+  --slate-200: #E2E8F0;
+  --slate-300: #CBD5E1;
+  --slate-400: #94A3B8;
+  --slate-500: #64748B;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1E293B;
+  --slate-900: #0F172A;
+
+  /* --- App Surfaces --- */
+  --app-bg: #F8FAFC;
+  --app-content-bg: #F1F5F9;
+  --app-card-bg: #FFFFFF;
+  --app-text: #0F172A;
+  --app-text-secondary: #475569;
+  --app-text-muted: #94A3B8;
+  --app-border: #E2E8F0;
+  --app-border-strong: #CBD5E1;
+  --app-hover-bg: rgba(79, 70, 229, 0.04);
+  --app-active-bg: rgba(79, 70, 229, 0.08);
+
+  /* --- Sidebar — Deep Indigo Command Dock --- */
+  --app-sidebar-bg: linear-gradient(180deg, #0F172A 0%, #1E1B4B 50%, #2E1065 100%);
+  --app-sidebar-border: rgba(255, 255, 255, 0.08);
+  --app-sidebar-text: rgba(226, 232, 240, 0.78);
+  --app-sidebar-text-muted: #A5B4FC;
+  --app-sidebar-active-text: #FFFFFF;
+  --app-sidebar-active-bg: linear-gradient(90deg, rgba(99, 102, 241, 0.28) 0%, rgba(79, 70, 229, 0.12) 100%);
+  --app-sidebar-active-border: #818CF8;
+
+  /* --- Header — Frosted White with Indigo Top Line --- */
+  --app-header-bg: rgba(255, 255, 255, 0.95);
+  --app-header-border: #E2E8F0;
+  --app-header-top-accent: #4F46E5;
+
+  /* --- Typography --- */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* --- Border Radii --- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-2xl: 24px;
+  --radius-pill: 9999px;
+
+  /* --- Shadows --- */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -1px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 24px -4px rgba(15, 23, 42, 0.1), 0 4px 8px -2px rgba(15, 23, 42, 0.04);
+  --shadow-xl: 0 24px 48px -8px rgba(15, 23, 42, 0.14), 0 8px 16px -4px rgba(15, 23, 42, 0.06);
+  --shadow-card: 0 0 0 1px rgba(15, 23, 42, 0.05), 0 2px 8px rgba(15, 23, 42, 0.04);
+  --shadow-primary: 0 4px 14px rgba(79, 70, 229, 0.28);
+  --shadow-primary-hover: 0 6px 20px rgba(79, 70, 229, 0.38);
+
+  /* --- Layout Sizes --- */
+  --sidebar-width: 260px;
+  --header-height: 64px;
+
+  /* --- Transitions --- */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --- Z-Index Hierarchy --- */
+  --z-toast: 9999;
+  --z-modal: 1055;
+  --z-dropdown: 1060;
+  --z-sidebar: 1040;
+  --z-header: 1020;
+}
+
+/* ==========================================================================
+   BASE RESETS & DEFAULTS
+   ========================================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--font-sans);
+  background-color: var(--app-bg);
+  color: var(--app-text);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  height: 100%;
+}
+
+a {
+  color: var(--primary-color);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--primary-color-darker);
+  text-decoration: none;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: 700;
+  color: var(--app-text);
+  letter-spacing: -0.02em;
+}
+
+h1 { font-size: 1.75rem; }
+h2 { font-size: 1.5rem; }
+h3 { font-size: 1.25rem; }
+h4 { font-size: 1.1rem; }
+h5 { font-size: 0.95rem; }
+h6 { font-size: 0.85rem; }
+
+p { margin: 0 0 1rem 0; }
+p:last-child { margin-bottom: 0; }
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--slate-300);
+  border-radius: var(--radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--slate-400);
+}

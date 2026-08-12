@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Container, Row, Col, Form, Button, InputGroup, Table, Alert, Spinner, Modal } from 'react-bootstrap';
-import { FaFileInvoiceDollar, FaHistory, FaSearch, FaTimes, FaEye, FaSort, FaSortUp, FaSortDown } from 'react-icons/fa';
+import { Container, Row, Col, Form, Button, InputGroup, Table, Alert, Spinner, Modal, Card, Badge } from 'react-bootstrap';
+import { FaFileInvoiceDollar, FaHistory, FaSearch, FaTimes, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 'react-icons/fa';
+import { Link } from 'react-router-dom';
 
 // Import custom API wrapper instead of static data
 import api from '../api/api';
@@ -26,8 +27,11 @@ const PurchaseHistoryPage = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
+    const [dateFilter, setDateFilter] = useState('all');
     const [viewingBill, setViewingBill] = useState(null); 
     const [sortConfig, setSortConfig] = useState({ key: 'billDate', direction: 'descending' });
+
+    const [isModuleLocked, setIsModuleLocked] = useState(false);
 
     // --- Load Data from Database ---
     useEffect(() => {
@@ -41,9 +45,14 @@ const PurchaseHistoryPage = () => {
                     api.get('/master-items')
                 ]);
 
-                if (billsRes.ok && itemsRes.ok) {
+                if (billsRes.status === 403 || itemsRes.status === 403) {
+                    setIsModuleLocked(true);
+                } else if (billsRes.ok && itemsRes.ok) {
                     const rawBills = await billsRes.json();
-                    const itemsData = await itemsRes.json();
+                    const rawItems = await itemsRes.json();
+                    
+                    setIsModuleLocked(false);
+                    setMasterItems(rawItems);
                     
                     // Normalize the data safely in case the backend uses snake_case
                     const formattedBills = rawBills.map(bill => ({
@@ -57,7 +66,6 @@ const PurchaseHistoryPage = () => {
                     }));
 
                     setPurchaseBills(formattedBills);
-                    setMasterItems(itemsData);
                 } else {
                     setError("Failed to fetch data from the server.");
                 }
@@ -75,6 +83,26 @@ const PurchaseHistoryPage = () => {
     // --- Filtering ---
     const filteredBills = useMemo(() => {
         let bills = [...purchaseBills];
+
+        // Apply Date Filter
+        if (dateFilter !== 'all') {
+            const today = new Date();
+            bills = bills.filter(bill => {
+                const bDate = new Date(bill.billDate);
+                if (dateFilter === 'today') {
+                    return bDate.toDateString() === today.toDateString();
+                } else if (dateFilter === 'thisMonth') {
+                    return bDate.getMonth() === today.getMonth() && bDate.getFullYear() === today.getFullYear();
+                } else if (dateFilter === 'lastMonth') {
+                    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                    return bDate.getMonth() === lastMonth.getMonth() && bDate.getFullYear() === lastMonth.getFullYear();
+                } else if (dateFilter === 'thisYear') {
+                    return bDate.getFullYear() === today.getFullYear();
+                }
+                return true;
+            });
+        }
+
         if (searchTerm) {
             const lowerSearch = searchTerm.toLowerCase();
             bills = bills.filter(bill => {
@@ -90,7 +118,7 @@ const PurchaseHistoryPage = () => {
             });
         }
         return bills;
-    }, [purchaseBills, searchTerm]);
+    }, [purchaseBills, searchTerm, dateFilter]);
 
     // --- Sorting ---
      const sortedBills = useMemo(() => {
@@ -156,143 +184,199 @@ const PurchaseHistoryPage = () => {
     // --- Render ---
     return (
         <Container fluid className="py-4 px-md-4 purchase-history-page">
+            {isModuleLocked && (
+                <Alert variant="warning" className="shadow-sm border-warning rounded-3 mb-4 d-flex align-items-center bg-warning bg-opacity-10">
+                    <FaHistory className="fs-3 me-3 text-warning" />
+                    <div>
+                        <strong className="d-block text-dark">ℹ️ Read-Only History Mode</strong>
+                        <span className="text-secondary small">Entry of new purchase bills is locked by Cipra Infotech Super Admin. You can browse past purchase records.</span>
+                    </div>
+                </Alert>
+            )}
+            
             {/* Page Header */}
-            <Row className="mb-4 align-items-center page-header-row">
-                <Col>
-                    <h2 className="page-title mb-0 text-right"><FaHistory className="me-2" />Purchase Bill History</h2>
-                </Col>
-            </Row>
+            <div className="page-header-row mb-4 d-flex justify-content-between align-items-center">
+                <h2 className="page-title-active mb-0 d-flex align-items-center">
+                    <FaHistory className="me-2 text-primary" /> Purchase Bill History
+                </h2>
+                {!isModuleLocked && (
+                    <div className="actions">
+                        <Button as={Link} to="/purchase-entry" variant="primary" className="shadow-sm d-flex align-items-center px-3">
+                            <FaPlus className="me-2" /> Add Purchase
+                        </Button>
+                    </div>
+                )}
+            </div>
 
             {/* Alerts */}
-            {error && <Alert variant="danger">{error}</Alert>}
+            {error && <Alert variant="danger" className="border-0 shadow-sm">{error}</Alert>}
 
-            {/* Search Bar */}
-            <Row>
-                <Col>
-                    <InputGroup className="mb-3 search-bar">
-                        <InputGroup.Text><FaSearch /></InputGroup.Text>
-                        <Form.Control
-                            placeholder="Search by Supplier, Bill No, ID, or Notes..."
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                            disabled={isLoading}
-                        />
-                        {searchTerm && (
-                            <Button variant="outline-secondary" size="sm" onClick={() => setSearchTerm('')} title="Clear Search">
-                                <FaTimes />
-                            </Button>
-                        )}
-                    </InputGroup>
-                </Col>
-            </Row>
+            {/* Filters Row */}
+            <Card className="saas-card shadow-sm border-0 mb-4">
+                <Card.Body>
+                    <Row className="g-3">
+                        <Col md={8} lg={9}>
+                            <div className="saas-search-pill d-flex align-items-center bg-light rounded-pill px-3 py-2 border border-light">
+                                <FaSearch className="text-muted me-2" />
+                                <Form.Control
+                                    className="border-0 shadow-none bg-transparent p-0"
+                                    placeholder="Search by Supplier, Bill No, ID, or Notes..."
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    disabled={isLoading}
+                                />
+                                {searchTerm && (
+                                    <Button variant="link" size="sm" onClick={() => setSearchTerm('')} title="Clear Search" className="p-0 text-muted hover-danger">
+                                        <FaTimes />
+                                    </Button>
+                                )}
+                            </div>
+                        </Col>
+                        <Col md={4} lg={3}>
+                            <Form.Select 
+                                value={dateFilter} 
+                                onChange={(e) => setDateFilter(e.target.value)} 
+                                disabled={isLoading} 
+                                className="bg-light border-light shadow-none rounded-pill"
+                            >
+                                <option value="all">All Time</option>
+                                <option value="today">Today</option>
+                                <option value="thisMonth">This Month</option>
+                                <option value="lastMonth">Last Month</option>
+                                <option value="thisYear">This Year</option>
+                            </Form.Select>
+                        </Col>
+                    </Row>
+                </Card.Body>
+            </Card>
 
             {/* History Table */}
-            <div className="history-table-wrapper">
-                 <Table responsive hover className="history-table">
-                     <thead>
-                        <tr>
-                             <th onClick={() => requestSort('billDate')} style={{cursor: 'pointer'}}>
-                                Bill Date {getSortIcon('billDate')}
-                             </th>
-                             <th onClick={() => requestSort('supplierName')} style={{cursor: 'pointer'}}>
-                                Supplier {getSortIcon('supplierName')}
-                             </th>
-                             <th onClick={() => requestSort('billNumber')} style={{cursor: 'pointer'}}>
-                                Bill No {getSortIcon('billNumber')}
-                            </th>
-                            <th className="d-none d-lg-table-cell" onClick={() => requestSort('notes')} style={{cursor: 'pointer'}}>
-                                Notes {getSortIcon('notes')}
-                            </th>
-                            <th className="text-end" onClick={() => requestSort('totalAmount')} style={{cursor: 'pointer'}}>
-                                Total Amount {getSortIcon('totalAmount')}
-                             </th>
-                             <th className="text-center">Actions</th>
-                         </tr>
-                     </thead>
-                     <tbody>
-                        {isLoading ? (
-                             <tr><td colSpan="6" className="text-center p-5"><Spinner animation="border" size="sm" /><span className="ms-2">Loading History...</span></td></tr>
-                        ) : sortedBills.length === 0 ? (
-                             <tr><td colSpan="6" className="text-center text-muted p-4 fst-italic">{purchaseBills.length === 0 ? "No purchase history recorded yet." : "No matching purchase bills found."}</td></tr>
-                        ) : (
-                             sortedBills.map(bill => (
-                                <tr key={bill.id}>
-                                    <td>{formatDate(bill.billDate)}</td>
-                                    <td>{bill.supplierName}</td>
-                                    <td>{bill.billNumber}</td>
-                                    <td className="d-none d-lg-table-cell">
-                                        {bill.notes && <span className='notes-preview' title={bill.notes}>{bill.notes}</span>}
-                                    </td>
-                                    <td className="text-end fw-medium">{formatCurrency(bill.totalAmount)}</td>
-                                    <td className="text-center">
-                                         <Button variant="outline-primary" size="sm" className="action-view" onClick={() => handleViewDetails(bill)} title="View Details">
-                                             <FaEye />
-                                         </Button>
-                                    </td>
-                                </tr>
-                             ))
-                        )}
-                     </tbody>
-                 </Table>
-             </div>
+            <Card className="saas-card shadow-sm border-0">
+                <div className="saas-table-wrapper">
+                     <Table hover responsive className="mb-0 align-middle">
+                         <thead className="bg-light">
+                            <tr>
+                                 <th onClick={() => requestSort('billDate')} style={{cursor: 'pointer'}} className="border-0">
+                                    Bill Date {getSortIcon('billDate')}
+                                 </th>
+                                 <th onClick={() => requestSort('supplierName')} style={{cursor: 'pointer'}} className="border-0">
+                                    Supplier {getSortIcon('supplierName')}
+                                 </th>
+                                 <th onClick={() => requestSort('billNumber')} style={{cursor: 'pointer'}} className="border-0">
+                                    Bill No {getSortIcon('billNumber')}
+                                </th>
+                                <th className="d-none d-lg-table-cell border-0" onClick={() => requestSort('notes')} style={{cursor: 'pointer'}}>
+                                    Notes {getSortIcon('notes')}
+                                </th>
+                                <th className="text-end border-0" onClick={() => requestSort('totalAmount')} style={{cursor: 'pointer'}}>
+                                    Total Amount {getSortIcon('totalAmount')}
+                                 </th>
+                                 <th className="text-center border-0">Actions</th>
+                             </tr>
+                         </thead>
+                         <tbody className="border-top-0">
+                            {isLoading ? (
+                                 <tr><td colSpan="6" className="text-center p-5"><Spinner animation="border" size="sm" variant="primary" /><span className="ms-2 text-muted">Loading History...</span></td></tr>
+                            ) : sortedBills.length === 0 ? (
+                                 <tr><td colSpan="6" className="text-center text-muted p-5 bg-light rounded-bottom-4">
+                                     <div className="mb-2"><FaHistory size="2em" className="text-secondary opacity-50" /></div>
+                                     <div>{purchaseBills.length === 0 ? "No purchase history recorded yet." : "No matching purchase bills found."}</div>
+                                 </td></tr>
+                            ) : (
+                                 sortedBills.map(bill => (
+                                    <tr key={bill.id}>
+                                        <td className="fw-medium text-dark">{formatDate(bill.billDate)}</td>
+                                        <td className="fw-bold text-dark">{bill.supplierName}</td>
+                                        <td><Badge bg="light" text="dark" className="border shadow-sm">{bill.billNumber}</Badge></td>
+                                        <td className="d-none d-lg-table-cell text-muted">
+                                            {bill.notes && <span className='notes-preview text-truncate d-inline-block' style={{maxWidth: '150px'}} title={bill.notes}>{bill.notes}</span>}
+                                        </td>
+                                        <td className="text-end fw-bold text-primary">{formatCurrency(bill.totalAmount)}</td>
+                                        <td className="text-center">
+                                             <Button variant="light" size="sm" className="border shadow-sm text-primary hover-primary" onClick={() => handleViewDetails(bill)} title="View Details">
+                                                 <FaEye />
+                                             </Button>
+                                        </td>
+                                    </tr>
+                                 ))
+                            )}
+                         </tbody>
+                     </Table>
+                 </div>
+            </Card>
 
              {/* View Bill Details Modal */}
-             <Modal show={!!viewingBill} onHide={handleCloseDetails} centered size="lg" backdrop="static" keyboard={false}>
-                 <Modal.Header closeButton>
-                     <Modal.Title><FaFileInvoiceDollar className="me-2" />Purchase Bill Details</Modal.Title>
+             <Modal show={!!viewingBill} onHide={handleCloseDetails} centered size="lg" backdrop="static" keyboard={false} className="saas-modal">
+                 <Modal.Header closeButton className="border-0 pb-0">
+                     <Modal.Title className="h5 fw-bold text-dark d-flex align-items-center"><FaFileInvoiceDollar className="me-2 text-primary" />Purchase Bill Details</Modal.Title>
                  </Modal.Header>
-                 <Modal.Body>
+                 <Modal.Body className="py-4">
                      {viewingBill && (
                          <>
-                             <Row className="mb-3 g-3 p-3 bg-light rounded border">
-                                 <Col md={6}><strong>Supplier:</strong> {viewingBill.supplierName}</Col>
-                                 <Col md={6}><strong>Bill No:</strong> {viewingBill.billNumber}</Col>
-                                 <Col md={6}><strong>Bill Date:</strong> {formatDate(viewingBill.billDate)}</Col>
-                                 <Col md={6}><strong>Recorded:</strong> {formatDate(viewingBill.dateRecorded)}</Col>
-                                 {viewingBill.notes && <Col xs={12} className="mt-2"><small><strong>Notes:</strong> {viewingBill.notes}</small></Col>}
+                             <Row className="mb-4 g-3 p-4 bg-light rounded-4 border border-light">
+                                 <Col md={6} className="d-flex flex-column">
+                                    <span className="text-muted small text-uppercase fw-bold mb-1">Supplier</span>
+                                    <span className="fw-bold text-dark fs-5">{viewingBill.supplierName}</span>
+                                 </Col>
+                                 <Col md={6} className="d-flex flex-column">
+                                    <span className="text-muted small text-uppercase fw-bold mb-1">Bill No</span>
+                                    <span className="fw-bold text-dark fs-5">{viewingBill.billNumber}</span>
+                                 </Col>
+                                 <Col md={6} className="d-flex flex-column">
+                                    <span className="text-muted small text-uppercase fw-bold mb-1">Bill Date</span>
+                                    <span className="text-dark fw-medium">{formatDate(viewingBill.billDate)}</span>
+                                 </Col>
+                                 <Col md={6} className="d-flex flex-column">
+                                    <span className="text-muted small text-uppercase fw-bold mb-1">Recorded</span>
+                                    <span className="text-dark fw-medium">{formatDate(viewingBill.dateRecorded)}</span>
+                                 </Col>
+                                 {viewingBill.notes && <Col xs={12} className="mt-3 pt-3 border-top border-light"><span className="text-muted small fw-bold text-uppercase d-block mb-1">Notes:</span><span className="text-secondary">{viewingBill.notes}</span></Col>}
                              </Row>
-                             <h6 className="mt-3 mb-2">Items Purchased:</h6>
-                             <Table striped bordered hover size="sm" responsive>
-                                 <thead className="table-light">
-                                     <tr>
-                                         <th>#</th><th>Item Name</th><th>Part No</th>
-                                         <th className="text-center">Qty</th>
-                                         <th className="text-end">Cost/Unit</th>
-                                         <th className="text-end">Line Total</th>
-                                     </tr>
-                                 </thead>
-                                 <tbody>
-                                     {viewingBill.items && viewingBill.items.map((item, index) => {
-                                         // Dynamic Lookup from our fetched masterItems state
-                                         const masterId = item.masterItemId || item.master_item_id;
-                                         const master = masterItems.find(m => m.id === masterId); 
-                                         const qty = Number(item.quantity) || 0;
-                                         const price = Number(item.purchasePrice || item.purchase_price) || 0;
+                             <h6 className="fw-bold text-dark mb-3">Items Purchased</h6>
+                             <div className="border border-light rounded-4 overflow-hidden">
+                                 <Table hover responsive className="mb-0">
+                                     <thead className="bg-light">
+                                         <tr>
+                                             <th className="border-0">#</th>
+                                             <th className="border-0">Item Name</th>
+                                             <th className="border-0">Part No</th>
+                                             <th className="text-center border-0">Qty</th>
+                                             <th className="text-end border-0">Cost/Unit</th>
+                                             <th className="text-end border-0">Line Total</th>
+                                         </tr>
+                                     </thead>
+                                     <tbody className="border-top-0">
+                                         {viewingBill.items && viewingBill.items.map((item, index) => {
+                                             const masterId = item.masterItemId || item.master_item_id;
+                                             const master = masterItems.find(m => m.id === masterId); 
+                                             const qty = Number(item.quantity) || 0;
+                                             const price = Number(item.purchasePrice || item.purchase_price) || 0;
 
-                                         return (
-                                             <tr key={index}>
-                                                 <td>{index + 1}</td>
-                                                 <td>{master?.name || item.name || <span className='text-muted fst-italic'>Item ID: {masterId}</span>}</td>
-                                                 <td>{master?.partNo || item.partNo || item.part_no || '-'}</td>
-                                                 <td className="text-center">{qty}</td>
-                                                 <td className="text-end">{formatCurrency(price)}</td>
-                                                 <td className="text-end fw-semibold">{formatCurrency(qty * price)}</td>
-                                             </tr>
-                                         );
-                                     })}
-                                 </tbody>
-                                 <tfoot>
-                                     <tr className="table-light">
-                                         <td colSpan="5" className="text-end fw-bold">Grand Total:</td>
-                                         <td className="text-end fw-bold fs-6">{formatCurrency(viewingBill.totalAmount)}</td>
-                                     </tr>
-                                 </tfoot>
-                             </Table>
+                                             return (
+                                                 <tr key={index}>
+                                                     <td className="text-muted">{index + 1}</td>
+                                                     <td className="fw-medium text-dark">{master?.name || item.name || <span className='text-muted fst-italic'>Item ID: {masterId}</span>}</td>
+                                                     <td className="text-muted">{master?.partNo || item.partNo || item.part_no || '-'}</td>
+                                                     <td className="text-center fw-medium">{qty}</td>
+                                                     <td className="text-end text-muted">{formatCurrency(price)}</td>
+                                                     <td className="text-end fw-bold text-dark">{formatCurrency(qty * price)}</td>
+                                                 </tr>
+                                             );
+                                         })}
+                                     </tbody>
+                                     <tfoot className="bg-light">
+                                         <tr>
+                                             <td colSpan="5" className="text-end fw-bold text-secondary border-0 pt-3">Grand Total:</td>
+                                             <td className="text-end fw-bold fs-5 text-primary border-0 pt-3">{formatCurrency(viewingBill.totalAmount)}</td>
+                                         </tr>
+                                     </tfoot>
+                                 </Table>
+                             </div>
                          </>
                      )}
                  </Modal.Body>
-                 <Modal.Footer>
-                     <Button variant="outline-secondary" onClick={handleCloseDetails}>Close</Button>
+                 <Modal.Footer className="border-0 pt-0">
+                     <Button variant="light" onClick={handleCloseDetails} className="px-4 fw-medium">Close</Button>
                  </Modal.Footer>
              </Modal>
 

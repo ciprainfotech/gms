@@ -1,5 +1,7 @@
 import React from 'react';
 import { Container, Row, Col, Card, Alert, Badge } from 'react-bootstrap';
+import PageShell from '../components/ui/PageShell';
+import StatCard from '../components/ui/StatCard';
 import {
     FaChartPie,
     FaChartBar,
@@ -223,122 +225,92 @@ const doughnutChartOptions = {
 // --- Component ---
 const AnalyticsReportsPage = () => {
     return (
-        // Keep main-content class if used for global layout adjustments
-        <Container fluid className="py-4 px-md-4 main-content">
-            <h2 className="fw-bold text-primary mb-4 d-flex align-items-center">
-                <FaChartPie className="me-3" size="1.5em" />Analytics & Reports
-            </h2>
-
+        <PageShell
+            title="Analytics & Reports"
+            subtitle="Workshop performance metrics, revenue analytics, and service breakdowns"
+            icon={FaChartPie}
+        >
             {/* === Key Performance Indicators (KPIs) === */}
-            <Row className="g-4 mb-4">
-                <Col md={6} lg={3}>
-                    {/* Added kpi-card class */}
-                    <Card className="shadow-sm border-0 h-100 bg-light kpi-card">
-                        <Card.Body className="d-flex align-items-center">
-                            <FaRupeeSign size="2.5em" className="text-success me-3 flex-shrink-0" />
-                            <div>
-                                <div className="text-muted small text-uppercase">Revenue (This Month)</div>
-                                <div className="fs-4 fw-bold">₹{kpiData.totalRevenueMonth.toLocaleString('en-IN')}</div>
-                            </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col md={6} lg={3}>
-                     <Card className="shadow-sm border-0 h-100 bg-light kpi-card">
-                         <Card.Body className="d-flex align-items-center">
-                            <FaTools size="2.5em" className="text-info me-3 flex-shrink-0" />
-                             <div>
-                                <div className="text-muted small text-uppercase">Jobs Completed (Month)</div>
-                                <div className="fs-4 fw-bold">{kpiData.jobsCompletedMonth}</div>
-                            </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                 <Col md={6} lg={3}>
-                    <Card className="shadow-sm border-0 h-100 bg-light kpi-card">
-                         <Card.Body className="d-flex align-items-center">
-                             <FaUsers size="2.5em" className="text-warning me-3 flex-shrink-0" />
-                             <div>
-                                <div className="text-muted small text-uppercase">New Customers (Month)</div>
-                                <div className="fs-4 fw-bold">{kpiData.newCustomersMonth}</div>
-                             </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                 <Col md={6} lg={3}>
-                    <Card className="shadow-sm border-0 h-100 bg-light kpi-card">
-                         <Card.Body className="d-flex align-items-center">
-                             <FaCalendarCheck size="2.5em" className="text-primary me-3 flex-shrink-0" />
-                             <div>
-                                <div className="text-muted small text-uppercase">Upcoming Appointments</div>
-                                <div className="fs-4 fw-bold">{kpiData.upcomingAppointments}</div>
-                            </div>
-                        </Card.Body>
-                    </Card>
-                </Col>
-            </Row>
+            <div className="stat-card-grid mb-4">
+                <StatCard 
+                    icon={FaRupeeSign} 
+                    label="Revenue (Month)" 
+                    value={`₹${kpiData.totalRevenueMonth.toLocaleString('en-IN')}`} 
+                    iconColor="emerald" 
+                />
+                <StatCard 
+                    icon={FaTools} 
+                    label="Jobs Completed (Month)" 
+                    value={kpiData.jobsCompletedMonth} 
+                    iconColor="indigo" 
+                />
+                <StatCard 
+                    icon={FaUsers} 
+                    label="New Customers (Month)" 
+                    value={kpiData.newCustomersMonth} 
+                    iconColor="amber" 
+                />
+                <StatCard 
+                    icon={FaCalendarCheck} 
+                    label="Upcoming Appointments" 
+                    value={kpiData.upcomingAppointments} 
+                    iconColor="rose" 
+                />
+            </div>
 
              {/* === Charts Row 1: Revenue and Job Trends === */}
             <Row className="g-4 mb-4">
                 <Col lg={7}>
-                     <Card className="shadow-sm h-100">
-                         <Card.Header className="bg-white fw-bold">
+                     <Card className="shadow-sm border-0 h-100 saas-card">
+                          <Card.Header className="bg-white border-bottom border-light py-3 fw-bold">
                             <FaChartBar className="me-2 text-primary"/>Monthly Revenue Trend (Last 6 Months)
-                         </Card.Header>
-                         {/* Removed inline style, added className */}
-                        <Card.Body className="chart-container-md">
-                             <Line options={{...lineChartOptions, plugins: {...lineChartOptions.plugins, title: {...lineChartOptions.plugins.title, text: 'Monthly Revenue (₹)' }}}} data={monthlyRevenueData} />
-                        </Card.Body>
-                    </Card>
+                          </Card.Header>
+                         <Card.Body className="chart-container-md">
+                              <Line options={{...lineChartOptions, plugins: {...lineChartOptions.plugins, title: {...lineChartOptions.plugins.title, text: 'Monthly Revenue (₹)' }}}} data={monthlyRevenueData} />
+                         </Card.Body>
+                     </Card>
                 </Col>
                  <Col lg={5}>
-                     <Card className="shadow-sm h-100">
-                         <Card.Header className="bg-white fw-bold">
-                             <FaTools className="me-2 text-info"/>Jobs Completed Trend
-                         </Card.Header>
-                         {/* Removed inline style, added className */}
+                     <Card className="shadow-sm border-0 h-100 saas-card">
+                          <Card.Header className="bg-white border-bottom border-light py-3 fw-bold">
+                              <FaTools className="me-2 text-info"/>Jobs Completed Trend
+                          </Card.Header>
                         <Card.Body className="chart-container-md">
                              <Line options={{...lineChartOptions, scales: { y: { beginAtZero: true } }, plugins: {...lineChartOptions.plugins, title: {...lineChartOptions.plugins.title, text: 'Jobs Completed per Month' }}}} data={jobsCompletedData} />
                         </Card.Body>
-                    </Card>
+                     </Card>
                 </Col>
             </Row>
 
              {/* === Charts Row 2: Service Breakdown and Revenue per Service === */}
-            <Row className="g-4">
+            <Row className="g-4 mb-4">
                 <Col lg={5}>
-                     <Card className="shadow-sm h-100">
-                         <Card.Header className="bg-white fw-bold">
-                             <FaChartPie className="me-2 text-danger"/>Service Breakdown (This Month)
-                         </Card.Header>
-                         {/* Removed inline style, added className */}
-                        <Card.Body className="chart-container-lg">
-                            <Doughnut options={{...doughnutChartOptions, plugins: {...doughnutChartOptions.plugins, title: {...doughnutChartOptions.plugins.title, text: 'Job Count by Service Type' }}}} data={serviceBreakdownData} />
-                        </Card.Body>
-                    </Card>
+                     <Card className="shadow-sm border-0 h-100 saas-card">
+                          <Card.Header className="bg-white border-bottom border-light py-3 fw-bold">
+                              <FaChartPie className="me-2 text-danger"/>Service Breakdown (This Month)
+                          </Card.Header>
+                         <Card.Body className="chart-container-lg">
+                             <Doughnut options={{...doughnutChartOptions, plugins: {...doughnutChartOptions.plugins, title: {...doughnutChartOptions.plugins.title, text: 'Job Count by Service Type' }}}} data={serviceBreakdownData} />
+                         </Card.Body>
+                     </Card>
                 </Col>
                 <Col lg={7}>
-                     <Card className="shadow-sm h-100">
-                         <Card.Header className="bg-white fw-bold">
-                             {/* Used text-purple class from CSS */}
-                             <FaRupeeSign className="me-2 text-purple"/>Revenue by Service Type (This Month)
-                         </Card.Header>
-                         {/* Removed inline style, added className */}
-                        <Card.Body className="chart-container-lg">
-                             <Bar options={{...barChartOptions, plugins: {...barChartOptions.plugins, title: {...barChartOptions.plugins.title, text: 'Revenue Contribution by Service (₹)' }}}} data={revenueByServiceData} />
-                        </Card.Body>
-                    </Card>
+                     <Card className="shadow-sm border-0 h-100 saas-card">
+                          <Card.Header className="bg-white border-bottom border-light py-3 fw-bold">
+                              <FaRupeeSign className="me-2" style={{color: '#8b5cf6'}}/>Revenue by Service Type (This Month)
+                          </Card.Header>
+                         <Card.Body className="chart-container-lg">
+                              <Bar options={{...barChartOptions, plugins: {...barChartOptions.plugins, title: {...barChartOptions.plugins.title, text: 'Revenue Contribution by Service (₹)' }}}} data={revenueByServiceData} />
+                         </Card.Body>
+                     </Card>
                 </Col>
             </Row>
 
-            {/* Add more rows/cards for other analytics */}
-
-            <Alert variant="secondary" className="mt-5">
-                <FaChartBar className="me-2" />
+            <Alert variant="secondary" className="border-0 shadow-sm bg-light mb-0">
+                <FaChartBar className="me-2 text-primary" />
                 More detailed reports and filtering options are under development. Data shown is illustrative for the last 6 months / current month.
             </Alert>
-
-        </Container>
+        </PageShell>
     );
 };
 

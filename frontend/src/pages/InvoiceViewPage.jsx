@@ -4,9 +4,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Container, Row, Col, Table, Button, Spinner, Alert } from 'react-bootstrap';
-import { FaPrint, FaArrowLeft } from 'react-icons/fa';
+import { FaPrint, FaArrowLeft, FaWhatsapp } from 'react-icons/fa';
 import api from '../api/api';
-import logo from '../assets/saman-logo.png';
+import defaultLogo from '../assets/saman-logo.png';
+import CustomToast from '../components/CustomToast';
+import LoadingOverlay from '../components/LoadingOverlay';
+import ConfirmModal from '../components/ConfirmModal';
 import '../App.css'; // Make sure you add the new CSS here
 
 // FIX: Import number-to-words using ES Modules syntax
@@ -47,8 +50,12 @@ const InvoiceViewPage = () => {
     const location = useLocation();
 
     const [invoice, setInvoice] = useState(null);
+    const [garage, setGarage] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [sendingWa, setSendingWa] = useState(false);
+    const [toast, setToast] = useState(null);
     const [error, setError] = useState(null);
+    const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', action: null });
 
     // Data Fetching Effect
     useEffect(() => {
@@ -67,6 +74,13 @@ const InvoiceViewPage = () => {
                 }
                 const data = await response.json();
                 setInvoice(data);
+
+                // Fetch active garage profile for branding
+                const profileRes = await api.get('/profile');
+                if (profileRes.ok) {
+                    const profData = await profileRes.json();
+                    setGarage(profData.garage);
+                }
             } catch (err) {
                 console.error("Error loading invoice data:", err);
                 setError(err.message || "An unexpected error occurred.");
@@ -76,6 +90,61 @@ const InvoiceViewPage = () => {
         };
         fetchInvoiceData();
     }, [invoiceId]);
+
+    const confirmSendWhatsApp = () => {
+        if (!garage) {
+            setToast({ type: 'error', title: 'Error', message: 'Garage profile not loaded yet. Please try again.' });
+            return;
+        }
+        if (!garage.feature_whatsapp) {
+            setToast({ type: 'error', title: 'Feature Disabled', message: 'WhatsApp Messaging is disabled globally for your account. Contact Cipra Infotech support.' });
+            return;
+        }
+        if (garage.feature_whatsapp_utility === false) {
+            setToast({ type: 'error', title: 'Feature Disabled', message: 'Utility transactional messaging is disabled for your account by your Super Admin.' });
+            return;
+        }
+        if (garage.whatsapp_status !== 'connected') {
+            setToast({ type: 'error', title: 'WhatsApp Disconnected', message: 'WhatsApp is not connected. Please scan the QR code in settings.' });
+            return;
+        }
+        if (!invoice?.customer_phone) {
+            setToast({ type: 'error', title: 'Missing Phone Number', message: 'Customer phone number is missing. Cannot dispatch WhatsApp message.' });
+            return;
+        }
+
+        setConfirmModal({
+            isOpen: true,
+            title: 'Confirm WhatsApp Invoice Dispatch',
+            message: `Send invoice ${invoice?.invoice_number || ''} via WhatsApp to ${invoice?.customer_name || 'Customer'} (${invoice?.customer_phone || 'No phone'})?`,
+            action: () => executeSendWhatsApp()
+        });
+    };
+
+    const executeSendWhatsApp = async () => {
+        setSendingWa(true);
+        try {
+            const res = await api.post('/whatsapp/send-invoice', { invoiceId });
+            const data = await res.json();
+            if (res.ok) {
+                setToast({
+                    type: 'success',
+                    title: 'WhatsApp Delivered!',
+                    message: data.message || 'Invoice sent successfully in background.'
+                });
+            } else {
+                setToast({
+                    type: 'error',
+                    title: data.code === 'INSUFFICIENT_FUNDS' ? 'Balance Exhausted' : 'Dispatch Failed',
+                    message: data.message || 'Failed to send WhatsApp invoice.'
+                });
+            }
+        } catch (err) {
+            setToast({ type: 'error', title: 'Network Error', message: 'Could not connect to WhatsApp service.' });
+        } finally {
+            setSendingWa(false);
+        }
+    };
 
     // --- Calculate all totals on the frontend using useMemo ---
     const invoiceTotals = useMemo(() => {
@@ -98,23 +167,26 @@ const InvoiceViewPage = () => {
         const invoiceDiscountValue = Number(invoice.discount_value) || 0;
 
         if (invoice.discount_type === 'Percent') {
-            discountAmount = subTotal * (invoiceDiscountValue / 100.0);
+            discountAmount = (subTotal * invoiceDiscountValue) / 100;
         } else { // 'Fixed'
             discountAmount = invoiceDiscountValue;
         }
 
         // 3. Calculate tax and final grand total
         const amountBeforeTax = subTotal - discountAmount;
-        const invoiceTaxRate = Number(invoice.tax_rate) || 0;
-        const taxAmount = amountBeforeTax * (invoiceTaxRate / 100.0);
+        const taxRate = Number(invoice.tax_rate) || 0;
+        const taxAmount = (amountBeforeTax * taxRate) / 100;
+        const grandTotal = amountBeforeTax + taxAmount;
         
         return {
-            ...calculatedTotals,
+            totalParts: calculatedTotals.totalParts,
+            totalLubes: calculatedTotals.totalLubes,
+            totalLabour: calculatedTotals.totalLabour,
             subTotal,
             discountAmount,
             amountBeforeTax,
             taxAmount,
-            grandTotal: Number(invoice.grand_total) || 0
+            grandTotal
         };
 
     }, [invoice]);
@@ -192,25 +264,50 @@ const InvoiceViewPage = () => {
     const items = invoice.items || [];
     const minTableRows = 10;
     
+    const logoSrc = garage?.logo_url ? `http://localhost:5001${garage.logo_url}` : defaultLogo;
+
     return (
         <div className={`invoice-view-wrapper bg-light py-4 py-md-5 printable-section`}>
+            <LoadingOverlay isVisible={sendingWa} message="Sending WhatsApp Invoice..." />
+            {toast && <CustomToast type={toast.type} title={toast.title} message={toast.message} onClose={() => setToast(null)} />}
+            
+            <ConfirmModal 
+                isOpen={confirmModal.isOpen}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                onConfirm={() => {
+                    if (confirmModal.action) confirmModal.action();
+                    setConfirmModal({ isOpen: false, title: '', message: '', action: null });
+                }}
+                onCancel={() => setConfirmModal({ isOpen: false, title: '', message: '', action: null })}
+            />
+
             <Container>
                 <Row className="mb-3 d-print-none">
                      <Col className="text-end">
                          <Button variant="outline-secondary" size="sm" onClick={() => navigate(-1)} className="me-2"><FaArrowLeft className="me-1"/> Back</Button>
-                         <Button variant="primary" size="sm" onClick={() => window.print()}><FaPrint className="me-1"/> Print Invoice</Button>
+                          <Button 
+                              variant="success" 
+                              size="sm" 
+                              onClick={confirmSendWhatsApp} 
+                              disabled={sendingWa || garage?.feature_whatsapp_utility === false} 
+                              className="me-2"
+                              title={garage?.feature_whatsapp_utility === false ? "WhatsApp Utility Messaging is disabled by Super Admin" : "Send via WhatsApp"}
+                          >
+                              <FaWhatsapp className="me-1"/> Send via WhatsApp
+                          </Button>
+                          <Button variant="primary" size="sm" onClick={() => window.print()}><FaPrint className="me-1"/> Print Invoice</Button>
                      </Col>
                  </Row>
                  
                 <div className="invoice-paper mx-lg-auto p-4 p-md-5 border bg-white shadow-sm">
                     <Row className="invoice-header align-items-center mb-4">
                         <Col xs={7} md={8} className="company-info">
-                            {/* 👉 MODIFIED CLASS & REMOVED INLINE STYLE */}
-                            <img src={logo} alt="Saman Motors Logo" className="company-logo-view mb-2"/>
-                            <h4 className="fw-bold mb-1 company-name">SAMAN MOTORS</h4>
+                            <img src={logoSrc} alt="Garage Logo" className="company-logo-view mb-2" style={{ maxHeight: '110px', maxWidth: '280px', objectFit: 'contain' }} />
+                            <h4 className="fw-bold mb-1 company-name">{garage?.name || 'SAMAN MOTORS'}</h4>
                             <p className="mb-0 company-tagline small">ALL CARS SPARES SALES & SERVICE STATION</p>
-                            <p className="mb-0 company-address small">Opp. Geeta Hume Pipe, Vasad Road, Vaghwala, Borsad - 388540</p>
-                            <p className="company-gstin mb-0 small">GSTIN No.: {invoice.gstinNo || '24BBDPK3507P1ZK'} | State: Gujarat (24)</p>
+                            <p className="mb-0 company-address small">{garage?.address || 'Opp. Geeta Hume Pipe, Vasad Road, Vaghwala, Borsad - 388540'}</p>
+                            <p className="company-gstin mb-0 small">GSTIN No.: {garage?.gst_number || invoice.gstinNo || '24BBDPK3507P1ZK'} | Phone: {garage?.phone || ''}</p>
                         </Col>
                         <Col xs={5} md={4} className="text-end invoice-title">
                             <h5 className="invoice-type fw-bold mb-1 text-uppercase">Tax Invoice</h5>
@@ -286,9 +383,9 @@ const InvoiceViewPage = () => {
                                         <div className="bank-details my-2 pt-2 border-top">
                                             <strong className="d-block small text-uppercase text-muted">Bank Details:</strong>
                                             <div className="small">
-                                                <span>HDFC Bank ({invoice.bankBranch || 'BORSAD'})</span><br/>
-                                                <span>A/c No: {invoice.bankAccountNo || '07492000002739'}</span><br/>
-                                                <span>IFSC: {invoice.bankIfsc || 'HDFC0000749'}</span>
+                                                <span>{garage?.bank_name || invoice.bankBranch || 'HDFC Bank (BORSAD)'}</span><br/>
+                                                <span>A/c No: {garage?.bank_account_no || invoice.bankAccountNo || '07492000002739'}</span><br/>
+                                                <span>IFSC: {garage?.bank_ifsc || invoice.bankIfsc || 'HDFC0000749'}</span>
                                             </div>
                                         </div>
                                     </td>
@@ -335,15 +432,19 @@ const InvoiceViewPage = () => {
                     <Row className="invoice-footer mt-4 pt-3 border-top">
                         <Col md={7} className="terms-section small pe-md-4 mb-3 mb-md-0">
                             <strong className="text-muted text-uppercase small d-block mb-1">Terms & Conditions:</strong>
-                            <ol className="ps-3 mb-0">
-                                <li>Goods once sold will not be taken back or exchanged.</li>
-                                <li>Interest @18% p.a. will be charged if payment is not made within the stipulated time.</li>
-                                <li>All disputes are subject to BORSAD Jurisdiction only.</li>
-                                <li>E. & O. E. (Errors and Omissions Excepted).</li>
-                            </ol>
+                            {garage?.terms_and_conditions ? (
+                                <div style={{ whiteSpace: 'pre-line' }}>{garage.terms_and_conditions}</div>
+                            ) : (
+                                <ol className="ps-3 mb-0">
+                                    <li>Goods once sold will not be taken back or exchanged.</li>
+                                    <li>Interest @18% p.a. will be charged if payment is not made within the stipulated time.</li>
+                                    <li>All disputes are subject to BORSAD Jurisdiction only.</li>
+                                    <li>E. & O. E. (Errors and Omissions Excepted).</li>
+                                </ol>
+                            )}
                         </Col>
                         <Col md={5} className="signature-section text-center pt-md-4 mt-md-4">
-                            <p className="mb-5 small">For, <strong>SAMAN MOTORS</strong></p>
+                            <p className="mb-5 small">For, <strong>{(garage?.name || 'My Garage').toUpperCase()}</strong></p>
                             <p className="signature-line pt-2 mt-5 border-top small">Authorised Signatory</p>
                         </Col>
                     </Row>

@@ -236,30 +236,32 @@ exports.updateJobSheetStatus = async (req, res) => {
         let newJobSheetNumber = currentJobSheet.job_sheet_number; // Default to the existing number
 
         // --- NEW LOGIC: Check if we are promoting a "Waiting" job ---
-        // If so, generate the official job sheet number from garage_settings.
+        // If so, generate the official job sheet number from garages table.
         if (currentJobSheet.status === 'Waiting' && status === 'In Progress') {
             
-            // 1. Fetch settings and lock the row to prevent duplicate numbers during high traffic
+            // 1. Fetch settings from garages table and lock row to prevent duplicate numbers
             const settingsRes = await client.query(
-                `SELECT job_sheet_prefix, job_sheet_next_number FROM garage_settings WHERE garage_id = $1 FOR UPDATE`,
+                `SELECT jobsheet_prefix, jobsheet_next_num FROM garages WHERE id = $1 FOR UPDATE`,
                 [garageId]
             );
 
             if (settingsRes.rows.length === 0) {
-                throw new Error('Garage settings not configured. Please contact support.');
+                throw new Error('Garage configuration not found. Please contact support.');
             }
 
             const settings = settingsRes.rows[0];
 
             // 2. Format the Dynamic Number
             const currentYear = new Date().getFullYear();
-            const dynamicPrefix = settings.job_sheet_prefix.replace('{YYYY}', currentYear);
-            const paddedNumber = String(settings.job_sheet_next_number).padStart(4, '0');
-            newJobSheetNumber = `${dynamicPrefix}${paddedNumber}`; // e.g., SM-JS-2026-0001
+            const rawPrefix = settings.jobsheet_prefix || 'JS-';
+            const dynamicPrefix = rawPrefix.replace('{YYYY}', currentYear);
+            const nextNum = settings.jobsheet_next_num || 1;
+            const paddedNumber = String(nextNum).padStart(4, '0');
+            newJobSheetNumber = `${dynamicPrefix}${paddedNumber}`; // e.g., JS-0001 or JS-2026-0001
 
             // 3. Increment the counter for the next vehicle
             await client.query(
-                `UPDATE garage_settings SET job_sheet_next_number = job_sheet_next_number + 1 WHERE garage_id = $1`,
+                `UPDATE garages SET jobsheet_next_num = COALESCE(jobsheet_next_num, 1) + 1 WHERE id = $1`,
                 [garageId]
             );
         }
@@ -361,10 +363,18 @@ exports.getJobSheetDetails = async (req, res) => {
                 year: jobSheetData.vehicle_year, vin: jobSheetData.vehicle_vin,
             },
             addedItems: itemsResult.rows.map(item => ({
-                masterItemId: item.master_item_id, name: item.name,
-                partNo: item.part_no, quantity: Number(item.quantity),
-                unitPrice: parseFloat(item.unit_price), lubeCharge: parseFloat(item.lube_charge),
-                labourCharge: parseFloat(item.labour_charge),
+                masterItemId: item.master_item_id,
+                master_item_id: item.master_item_id,
+                name: item.name,
+                partNo: item.part_no,
+                part_no: item.part_no,
+                quantity: Number(item.quantity),
+                unitPrice: parseFloat(item.unit_price || 0),
+                unit_price: parseFloat(item.unit_price || 0),
+                lubeCharge: parseFloat(item.lube_charge || 0),
+                lube_charge: parseFloat(item.lube_charge || 0),
+                labourCharge: parseFloat(item.labour_charge || 0),
+                labour_charge: parseFloat(item.labour_charge || 0),
             }))
         };
         res.status(200).json(response);
@@ -439,11 +449,11 @@ exports.updateJobSheetDetails = async (req, res) => {
         if (items.length > 0) {
             // Guard against undefined or broken values during raw template literal construction
             const itemValues = items.map(item => {
-                const masterItemId = parseInt(item.masterItemId, 10);
-                const qty = parseInt(item.quantity, 10);
-                const price = parseFloat(item.unitPrice) || 0;
-                const lube = parseFloat(item.lubeCharge) || 0;
-                const labour = parseFloat(item.labourCharge) || 0;
+                const masterItemId = parseInt(item.masterItemId || item.master_item_id || item.id, 10);
+                const qty = parseFloat(item.quantity) || 1;
+                const price = parseFloat(item.unitPrice ?? item.unit_price ?? item.price) || 0;
+                const lube = parseFloat(item.lubeCharge ?? item.lube_charge) || 0;
+                const labour = parseFloat(item.labourCharge ?? item.labour_charge) || 0;
                 return `(${id}, ${masterItemId}, ${qty}, ${price}, ${lube}, ${labour})`;
             }).join(',');
             

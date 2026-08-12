@@ -1,10 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
 export default defineConfig({
   plugins: [
     react(),
+    basicSsl(),
     VitePWA({
       registerType: 'autoUpdate', // Automatically updates the app when you push new code
       includeAssets: ['favicon.ico', 'apple-touch-icon.png'], // Add these to your public folder if you have them
@@ -30,5 +32,11 @@ export default defineConfig({
         ]
       }
     })
-  ]
+  ],
+  server: {
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost'
+    }
+  }
 })
