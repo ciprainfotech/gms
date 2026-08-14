@@ -3,6 +3,11 @@ const router = express.Router();
 const { authorizeGarage } = require('../middleware/authMiddleware');
 const whatsappController = require('../controllers/whatsappController');
 
+// Public Webhook endpoints for Meta Verification & Events (No auth required)
+router.get('/webhook', whatsappController.verifyWebhook);
+router.post('/webhook', whatsappController.handleWebhook);
+
+// Protected routes
 router.use(authorizeGarage);
 
 router.get('/balance', whatsappController.getWhatsAppBalance);

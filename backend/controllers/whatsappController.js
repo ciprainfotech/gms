@@ -675,3 +675,24 @@ exports.sendLedgerWhatsApp = async (req, res) => {
     res.status(500).json({ success: false, message: error.message || 'Failed to send WhatsApp message' });
   }
 };
+
+// @desc    Verify Meta Webhook Challenge (GET)
+exports.verifyWebhook = (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  const expectedToken = process.env.META_VERIFY_TOKEN || 'cipra_whatsapp_verify_token_2026';
+
+  if (mode === 'subscribe' && token === expectedToken) {
+    console.log('[Meta Webhook] Challenge verified successfully!');
+    return res.status(200).send(challenge);
+  }
+
+  res.sendStatus(403);
+};
+
+// @desc    Handle incoming Meta Webhook Events (POST)
+exports.handleWebhook = (req, res) => {
+  res.status(200).send('EVENT_RECEIVED');
+};
