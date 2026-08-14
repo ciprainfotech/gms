@@ -26,8 +26,9 @@ const uploadImageToCloud = async (buffer, mimetype = 'image/png', folder = 'gara
 
   if (isCloudinaryConfigured) {
     return new Promise((resolve, reject) => {
+      const envPrefix = process.env.NODE_ENV === 'production' ? 'prod_' : 'dev_';
       const uploadOptions = {
-        folder: folder,
+        folder: `${envPrefix}${folder}`,
         resource_type: 'auto'
       };
 
