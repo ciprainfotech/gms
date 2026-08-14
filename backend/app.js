@@ -28,20 +28,12 @@ const app = express();
 
 // Configure CORS to allow React app on localhost and Vercel to communicate with backend
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (
-      origin.includes('localhost') ||
-      origin.includes('127.0.0.1') ||
-      origin.endsWith('.vercel.app') ||
-      origin === process.env.FRONTEND_URL
-    ) {
-      return callback(null, true);
-    }
-    return callback(null, true);
-  },
+  origin: true,
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
 }));
+app.options('*', cors({ origin: true, credentials: true }));
 
 // Serve static uploaded files (like logos)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -101,6 +93,9 @@ app.listen(PORT, async () => {
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS leaving_date DATE DEFAULT NULL;
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS leaving_notes TEXT DEFAULT NULL;
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id VARCHAR(100);
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(50);
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(20);
     `);
     console.log('[DB Schema] Staff lifecycle and Meta WhatsApp columns verified.');
   } catch (err) {
