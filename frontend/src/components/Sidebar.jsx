@@ -17,7 +17,9 @@ import {
 import { useGarage } from '../contexts/GarageContext';
 import { useAuth } from '../contexts/AuthContext';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5001/api').replace(/\/api$/, '');
+import { SERVER_BASE_URL } from '../api/api.js';
+
+const API_BASE_URL = SERVER_BASE_URL;
 
 const Sidebar = ({ onClose }) => {
   const { garage, features, isSuspended } = useGarage();

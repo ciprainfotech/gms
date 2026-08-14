@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Container, Row, Col, Table, Button, Spinner, Alert } from 'react-bootstrap';
 import { FaPrint, FaArrowLeft, FaWhatsapp } from 'react-icons/fa';
-import api from '../api/api';
+import api, { SERVER_BASE_URL } from '../api/api';
 import defaultLogo from '../assets/saman-logo.png';
 import CustomToast from '../components/CustomToast';
 import LoadingOverlay from '../components/LoadingOverlay';
@@ -264,7 +264,7 @@ const InvoiceViewPage = () => {
     const items = invoice.items || [];
     const minTableRows = 10;
     
-    const logoSrc = garage?.logo_url ? `http://localhost:5001${garage.logo_url}` : defaultLogo;
+    const logoSrc = garage?.logo_url ? (garage.logo_url.startsWith('http') ? garage.logo_url : `${SERVER_BASE_URL}${garage.logo_url}`) : defaultLogo;
 
     return (
         <div className={`invoice-view-wrapper bg-light py-4 py-md-5 printable-section`}>

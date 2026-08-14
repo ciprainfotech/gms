@@ -5,7 +5,7 @@ import PageShell from '../components/ui/PageShell';
 import {   FaUser, FaLock, FaBuilding, FaHashtag, FaImage, FaUpload, 
   FaSave, FaShieldAlt, FaCheckCircle, FaExclamationTriangle, FaTimesCircle, FaKey, FaWhatsapp
 } from 'react-icons/fa';
-import api from '../api/api.js';
+import api, { API_BASE_URL, SERVER_BASE_URL } from '../api/api.js';
 import CustomToast from '../components/CustomToast';
 import LoadingOverlay from '../components/LoadingOverlay';
 import ConfirmModal from '../components/ConfirmModal';
@@ -117,7 +117,7 @@ const ProfileSettingsPage = () => {
             feature_whatsapp: data.garage.feature_whatsapp !== false
           });
           if (data.garage.logo_url) {
-            setLogoPreview(`http://localhost:5001${data.garage.logo_url}`);
+            setLogoPreview(data.garage.logo_url.startsWith('http') ? data.garage.logo_url : `${SERVER_BASE_URL}${data.garage.logo_url}`);
           } else {
             setLogoPreview(null);
           }
@@ -307,17 +307,13 @@ const ProfileSettingsPage = () => {
       const formData = new FormData();
       formData.append('logo', logoFile);
 
-      const res = await fetch('http://localhost:5001/api/profile/logo', {
-        method: 'POST',
-        credentials: 'include',
-        body: formData
-      });
+      const res = await api.upload('/profile/logo', formData);
       const data = await res.json();
       if (res.ok) {
         setToast({ type: 'success', title: 'Logo Uploaded', message: 'Garage logo uploaded successfully!' });
         const updatedForm = { ...garageForm, logo_url: data.logo_url };
         setGarageForm(updatedForm);
-        setLogoPreview(`http://localhost:5001${data.logo_url}`);
+        setLogoPreview(data.logo_url.startsWith('http') ? data.logo_url : `${SERVER_BASE_URL}${data.logo_url}`);
         if (onGarageUpdate) onGarageUpdate(updatedForm);
       } else {
         setToast({ type: 'error', title: 'Upload Failed', message: data.message || 'Failed to upload logo.' });

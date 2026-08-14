@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Modal, Button, Table, Row, Col, Form } from 'react-bootstrap';
-import { FaPrint, FaTimes, FaFileInvoiceDollar, FaFileDownload, FaCalendarAlt } from 'react-icons/fa';
+import { SERVER_BASE_URL } from '../api/api.js';
 
 const formatCurrency = (amount) => {
   const num = Number(amount || 0);
@@ -138,7 +138,7 @@ const CustomerStatementModal = ({ show, onHide, customer, garage, onSendWhatsApp
 
   const hasLogo = Boolean(garage?.logo_url);
   const logoSrc = hasLogo
-    ? (garage.logo_url.startsWith('http') ? garage.logo_url : `http://localhost:5001${garage.logo_url}`)
+    ? (garage.logo_url.startsWith('http') ? garage.logo_url : `${SERVER_BASE_URL}${garage.logo_url}`)
     : null;
 
   return (

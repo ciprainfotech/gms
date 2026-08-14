@@ -7,7 +7,7 @@ import {
   FaTimes, FaFileInvoiceDollar, FaEye, FaEyeSlash, FaSave, FaChartLine, FaPrint,
   FaUserSlash, FaUserCheck, FaExclamationTriangle, FaLock
 } from 'react-icons/fa';
-import api from '../api/api.js';
+import api, { API_BASE_URL } from '../api/api.js';
 import CustomToast from '../components/CustomToast';
 import LoadingOverlay from '../components/LoadingOverlay';
 import ConfirmModal from '../components/ConfirmModal';
@@ -166,7 +166,7 @@ const PayrollPage = () => {
     try {
       const endpoint = editingStaff ? `/staff/${editingStaff.id}` : '/staff';
       const method = editingStaff ? 'PUT' : 'POST';
-      const res = await fetch(`http://localhost:5001/api${endpoint}`, {
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(staffForm),
@@ -209,7 +209,7 @@ const PayrollPage = () => {
       action: async () => {
         setProcessing(true);
         try {
-          const res = await fetch(`http://localhost:5001/api/staff/${staff.id}`, {
+          const res = await fetch(`${API_BASE_URL}/staff/${staff.id}`, {
             method: 'DELETE',
             credentials: 'include'
           });
@@ -255,7 +255,7 @@ const PayrollPage = () => {
     }
     setProcessing(true);
     try {
-      const res = await fetch(`http://localhost:5001/api/staff/${resigningStaff.id}/resign`, {
+      const res = await fetch(`${API_BASE_URL}/staff/${resigningStaff.id}/resign`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(resignForm),
@@ -285,7 +285,7 @@ const PayrollPage = () => {
       action: async () => {
         setProcessing(true);
         try {
-          const res = await fetch(`http://localhost:5001/api/staff/${staff.id}/reactivate`, {
+          const res = await fetch(`${API_BASE_URL}/staff/${staff.id}/reactivate`, {
             method: 'PATCH',
             credentials: 'include'
           });
@@ -356,7 +356,7 @@ const PayrollPage = () => {
         });
       });
 
-      const res = await fetch('http://localhost:5001/api/staff/attendance/bulk', {
+      const res = await fetch(`${API_BASE_URL}/staff/attendance/bulk`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: daysInActiveMonth[0].dateStr, attendanceList }),
@@ -447,7 +447,7 @@ const PayrollPage = () => {
         month: selectedMonth
       };
 
-      const res = await fetch('http://localhost:5001/api/staff/transaction', {
+      const res = await fetch(`${API_BASE_URL}/staff/transaction`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -495,7 +495,7 @@ const PayrollPage = () => {
       action: async () => {
         setProcessing(true);
         try {
-          const res = await fetch(`http://localhost:5001/api/staff/transaction/${txId}`, {
+          const res = await fetch(`${API_BASE_URL}/staff/transaction/${txId}`, {
             method: 'DELETE',
             credentials: 'include'
           });
@@ -550,7 +550,7 @@ const PayrollPage = () => {
     setProcessing(true);
     setProgressMsg(`Sending account statement summary to ${staff.name}...`);
     try {
-      const res = await fetch(`http://localhost:5001/api/staff/${staff.id}/send-summary`, {
+      const res = await fetch(`${API_BASE_URL}/staff/${staff.id}/send-summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ month: selectedMonth }),
