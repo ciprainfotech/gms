@@ -4,6 +4,9 @@ const { Pool } = require('pg');
 
 // A connection pool is better than a single client for web applications
 // as it manages multiple connections automatically.
+// Allow cloud SSL proxies (Supabase / Neon)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 let poolConfig;
 
 if (process.env.DATABASE_URL) {
@@ -11,6 +14,8 @@ if (process.env.DATABASE_URL) {
   if (!connStr.startsWith('postgres://') && !connStr.startsWith('postgresql://')) {
     connStr = 'postgresql://' + connStr;
   }
+  // Strip sslmode from URL query parameters so pg uses ssl: { rejectUnauthorized: false }
+  connStr = connStr.replace(/\?sslmode=[^&]*/, '').replace(/&sslmode=[^&]*/, '');
 
   // Handle unencoded @ symbols in passwords inside DATABASE_URL
   // e.g., postgresql://user:pass@word@host:6543/db -> encode pass@word to pass%40word
