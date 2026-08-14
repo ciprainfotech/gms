@@ -62,6 +62,23 @@ app.use('/api/suppliers', supplierRoutes);
 app.use('/api/purchase-bills', purchaseBillRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/admin', superAdminRoutes);
+// --- Public Meta Webhook Verification Route ---
+app.get('/api/whatsapp/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  const expectedToken = process.env.META_VERIFY_TOKEN || 'cipra_whatsapp_verify_token_2026';
+
+  if (mode === 'subscribe' && token === expectedToken) {
+    console.log('[Meta Webhook] Challenge verified successfully!');
+    return res.status(200).send(challenge);
+  }
+  res.sendStatus(403);
+});
+app.post('/api/whatsapp/webhook', (req, res) => {
+  res.status(200).send('EVENT_RECEIVED');
+});
+
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/analytics', analyticsRoutes);
