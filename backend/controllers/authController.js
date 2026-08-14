@@ -30,7 +30,8 @@ exports.login = async (req, res) => {
         }
 
         const payload = { id: user.id };
-        const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+        const jwtSecret = process.env.JWT_SECRET || 'CGMS_CIPRA_JWT';
+        const token = jwt.sign(payload, jwtSecret, { expiresIn: '24h' });
 
         res.cookie('token', token, {
             httpOnly: true,
@@ -102,7 +103,7 @@ exports.login = async (req, res) => {
 
     } catch (err) {
         console.error('Login Error:', err);
-        res.status(500).json({ success: false, message: 'Server Error' });
+        res.status(500).json({ success: false, message: err.message || 'Server Error' });
     }
 };
 
