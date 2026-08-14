@@ -192,7 +192,9 @@ exports.updateGarageDetails = async (req, res) => {
   }
 };
 
-// Upload Garage Logo
+const { uploadImageToCloud } = require('../config/cloudinary');
+
+// Upload Garage Logo to Cloudinary CDN
 exports.uploadGarageLogo = async (req, res) => {
   try {
     const garageId = req.garageId;
@@ -200,17 +202,19 @@ exports.uploadGarageLogo = async (req, res) => {
       return res.status(400).json({ success: false, message: 'No image file uploaded' });
     }
 
-    const logoUrl = `/uploads/logos/${req.file.filename}`;
+    // Unique public_id per garage so updating logo overwrites the old one on Cloudinary CDN
+    const publicId = `garage_${garageId}_logo`;
+    const logoUrl = await uploadImageToCloud(req.file.buffer, req.file.mimetype, 'garage_logos', publicId);
 
     await db.query('UPDATE garages SET logo_url = $1, updated_at = NOW() WHERE id = $2', [logoUrl, garageId]);
 
     res.json({
       success: true,
-      message: 'Logo uploaded successfully',
+      message: 'Logo uploaded successfully to Cloud CDN',
       logo_url: logoUrl
     });
   } catch (error) {
-    console.error('Error uploading logo:', error);
-    res.status(500).json({ success: false, message: 'Failed to upload logo' });
+    console.error('Error uploading logo to Cloudinary:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload logo to cloud' });
   }
 };
