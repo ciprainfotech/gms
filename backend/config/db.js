@@ -4,20 +4,49 @@ const { Pool } = require('pg');
 
 // A connection pool is better than a single client for web applications
 // as it manages multiple connections automatically.
-const poolConfig = process.env.DATABASE_URL
-  ? {
-      connectionString: process.env.DATABASE_URL,
-      ssl: {
-        rejectUnauthorized: false
-      }
+let poolConfig;
+
+if (process.env.DATABASE_URL) {
+  let connStr = process.env.DATABASE_URL.trim();
+  if (!connStr.startsWith('postgres://') && !connStr.startsWith('postgresql://')) {
+    connStr = 'postgresql://' + connStr;
+  }
+
+  // Handle unencoded @ symbols in passwords inside DATABASE_URL
+  // e.g., postgresql://user:pass@word@host:6543/db -> encode pass@word to pass%40word
+  try {
+    const lastAtIdx = connStr.lastIndexOf('@');
+    const schemeEndIdx = connStr.indexOf('://') + 3;
+    const credsPart = connStr.substring(schemeEndIdx, lastAtIdx);
+    const hostDbPart = connStr.substring(lastAtIdx + 1);
+
+    const firstColonIdx = credsPart.indexOf(':');
+    if (firstColonIdx !== -1) {
+      const user = credsPart.substring(0, firstColonIdx);
+      const rawPassword = credsPart.substring(firstColonIdx + 1);
+      const encodedPassword = encodeURIComponent(decodeURIComponent(rawPassword));
+      connStr = `postgresql://${user}:${encodedPassword}@${hostDbPart}`;
     }
-  : {
-      user: process.env.DB_USER || 'postgres',
-      host: process.env.DB_HOST || 'localhost',
-      database: process.env.DB_DATABASE || 'gms',
-      password: process.env.DB_PASSWORD || 'postgres',
-      port: process.env.DB_PORT || 5432,
-    };
+  } catch (e) {
+    console.warn('[DB Config] URL auto-encoding fallback:', e.message);
+  }
+
+  poolConfig = {
+    connectionString: connStr,
+    ssl: {
+      rejectUnauthorized: false
+    }
+  };
+} else {
+  poolConfig = {
+    user: process.env.DB_USER || 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    database: process.env.DB_DATABASE || 'gms',
+    password: process.env.DB_PASSWORD || 'postgres',
+    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432,
+    ssl: (process.env.DB_HOST && !process.env.DB_HOST.includes('localhost')) ? { rejectUnauthorized: false } : false
+  };
+}
 
 const pool = new Pool(poolConfig);
 
