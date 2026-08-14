@@ -109,12 +109,36 @@ app.listen(PORT, async () => {
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS leaving_date DATE DEFAULT NULL;
       ALTER TABLE staff ADD COLUMN IF NOT EXISTS leaving_notes TEXT DEFAULT NULL;
+      
+      -- 3-Tier Commercial Fees & Meta WhatsApp columns
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS one_time_setup_fee DECIMAL(10,2) DEFAULT 0.00;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS yearly_maintenance_fee DECIMAL(10,2) DEFAULT 0.00;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS custom_monthly_price DECIMAL(10,2) DEFAULT 0.00;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS subscription_renewal_date DATE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_credit_balance DECIMAL(10,2) DEFAULT 100.00;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_cost_per_msg DECIMAL(10,2) DEFAULT 0.15;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_api_token TEXT;
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id VARCHAR(100);
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_phone_number VARCHAR(50);
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_waba_id VARCHAR(100);
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_api_url VARCHAR(255);
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_provider VARCHAR(50);
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_status VARCHAR(50) DEFAULT 'disconnected';
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_stock BOOLEAN DEFAULT TRUE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_purchase BOOLEAN DEFAULT TRUE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_analytics BOOLEAN DEFAULT TRUE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_reminders BOOLEAN DEFAULT TRUE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_tasks BOOLEAN DEFAULT TRUE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_whatsapp BOOLEAN DEFAULT TRUE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_whatsapp_utility BOOLEAN DEFAULT TRUE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_whatsapp_marketing BOOLEAN DEFAULT TRUE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_whatsapp_costing BOOLEAN DEFAULT TRUE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_payroll BOOLEAN DEFAULT TRUE;
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(50);
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(20);
     `);
-    console.log('[DB Schema] Staff lifecycle and Meta WhatsApp columns verified.');
+    console.log('[DB Schema] Staff lifecycle, 3-tier SaaS fees, and Meta WhatsApp columns verified.');
   } catch (err) {
     console.error('[DB Schema] Column check error:', err);
   }
