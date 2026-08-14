@@ -84,10 +84,15 @@ const AuthPage = ({ onLoginSuccess }) => {
                         onLoginSuccess(data);
                     }, 1500); // This delay allows the user to see the success message
                 } else {
-                    // Handle API-level errors (e.g., invalid credentials from backend)
-                    setErrorMessage(data.message || 'Login failed. Please check your credentials.');
+                    // Handle API-level errors (e.g., suspended account or invalid credentials)
+                    const isSuspended = data.code === 'GARAGE_SUSPENDED' || response.status === 403;
+                    const msg = isSuspended 
+                        ? (data.message || '🔒 Account Suspended: Your garage workspace subscription has been suspended by Super Admin. Contact support.') 
+                        : (data.message || 'Login failed. Please check your credentials.');
+                    
+                    setErrorMessage(msg);
                     setStatus('error');
-                    setTimeout(() => setStatus('idle'), 2000); // Reset after showing error
+                    setTimeout(() => setStatus('idle'), isSuspended ? 6000 : 3000);
                 }
             } catch (err) {
                 // Handle network/server errors

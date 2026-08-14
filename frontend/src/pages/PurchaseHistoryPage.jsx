@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Container, Row, Col, Form, Button, InputGroup, Table, Alert, Spinner, Modal, Card, Badge } from 'react-bootstrap';
+import { Container, Row, Col, Form, Button, Table, Alert, Spinner, Modal, Card, Badge } from 'react-bootstrap';
 import { FaFileInvoiceDollar, FaHistory, FaSearch, FaTimes, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 
-// Import custom API wrapper instead of static data
 import api from '../api/api';
+import SaaSDataPagination from '../components/ui/SaaSDataPagination';
+import '../PurchaseEntryPage.css';
 
-import '../PurchaseEntryPage.css'; // Reuse the styles
-
-// Helpers
 const formatCurrency = (amount, minimumFractionDigits = 2) => {
     if (amount == null || isNaN(Number(amount))) return 'N/A';
     return Number(amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits, maximumFractionDigits: 2 });
@@ -23,15 +21,17 @@ const formatDate = (dateString) => {
 
 const PurchaseHistoryPage = () => {
     const [purchaseBills, setPurchaseBills] = useState([]);
-    const [masterItems, setMasterItems] = useState([]); // Added to replace findMasterItemById
+    const [masterItems, setMasterItems] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
     const [dateFilter, setDateFilter] = useState('all');
     const [viewingBill, setViewingBill] = useState(null); 
     const [sortConfig, setSortConfig] = useState({ key: 'billDate', direction: 'descending' });
-
     const [isModuleLocked, setIsModuleLocked] = useState(false);
+    
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
 
     // --- Load Data from Database ---
     useEffect(() => {
@@ -39,7 +39,6 @@ const PurchaseHistoryPage = () => {
             setIsLoading(true);
             setError('');
             try {
-                // Fetch both bills and master items concurrently
                 const [billsRes, itemsRes] = await Promise.all([
                     api.get('/purchase-bills'),
                     api.get('/master-items')
@@ -54,7 +53,6 @@ const PurchaseHistoryPage = () => {
                     setIsModuleLocked(false);
                     setMasterItems(rawItems);
                     
-                    // Normalize the data safely in case the backend uses snake_case
                     const formattedBills = rawBills.map(bill => ({
                         ...bill,
                         billDate: bill.bill_date || bill.billDate,
@@ -80,69 +78,53 @@ const PurchaseHistoryPage = () => {
         fetchHistoryData();
     }, []);
 
-    // --- Filtering ---
+    // --- Date Filtering & Search ---
     const filteredBills = useMemo(() => {
-        let bills = [...purchaseBills];
+        return purchaseBills.filter(bill => {
+            const matchesSearch = !searchTerm || 
+                bill.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                bill.billNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                bill.id.toString().includes(searchTerm) ||
+                (bill.notes && bill.notes.toLowerCase().includes(searchTerm.toLowerCase()));
 
-        // Apply Date Filter
-        if (dateFilter !== 'all') {
-            const today = new Date();
-            bills = bills.filter(bill => {
-                const bDate = new Date(bill.billDate);
-                if (dateFilter === 'today') {
-                    return bDate.toDateString() === today.toDateString();
-                } else if (dateFilter === 'thisMonth') {
-                    return bDate.getMonth() === today.getMonth() && bDate.getFullYear() === today.getFullYear();
-                } else if (dateFilter === 'lastMonth') {
-                    const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-                    return bDate.getMonth() === lastMonth.getMonth() && bDate.getFullYear() === lastMonth.getFullYear();
-                } else if (dateFilter === 'thisYear') {
-                    return bDate.getFullYear() === today.getFullYear();
-                }
-                return true;
-            });
-        }
+            if (!matchesSearch) return false;
 
-        if (searchTerm) {
-            const lowerSearch = searchTerm.toLowerCase();
-            bills = bills.filter(bill => {
-                const supName = bill.supplierName || '';
-                const billNo = bill.billNumber || '';
-                const notes = bill.notes || '';
-                const idStr = String(bill.id || '');
-                
-                return supName.toLowerCase().includes(lowerSearch) ||
-                       billNo.toLowerCase().includes(lowerSearch) ||
-                       idStr.toLowerCase().includes(lowerSearch) ||
-                       notes.toLowerCase().includes(lowerSearch);
-            });
-        }
-        return bills;
-    }, [purchaseBills, searchTerm, dateFilter]);
+            if (dateFilter === 'all') return true;
+
+            const billDate = new Date(bill.billDate);
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+            if (dateFilter === 'today') {
+                return billDate >= today;
+            }
+            if (dateFilter === 'thisMonth') {
+                return billDate.getMonth() === now.getMonth() && billDate.getFullYear() === now.getFullYear();
+            }
+            if (dateFilter === 'lastMonth') {
+                const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                return billDate.getMonth() === lastMonth.getMonth() && billDate.getFullYear() === lastMonth.getFullYear();
+            }
+            if (dateFilter === 'thisYear') {
+                return billDate.getFullYear() === now.getFullYear();
+            }
+
+            return true;
+        });
+    }, [searchTerm, dateFilter, purchaseBills]);
 
     // --- Sorting ---
-     const sortedBills = useMemo(() => {
+    const sortedBills = useMemo(() => {
         let sortableItems = [...filteredBills];
         if (sortConfig.key !== null) {
             sortableItems.sort((a, b) => {
                 let aValue = a[sortConfig.key];
                 let bValue = b[sortConfig.key];
 
-                // Handle date sorting
-                if (sortConfig.key === 'billDate' || sortConfig.key === 'dateRecorded') {
-                    aValue = new Date(aValue || 0);
-                    bValue = new Date(bValue || 0);
+                if (sortConfig.key === 'billDate') {
+                    aValue = new Date(aValue).getTime();
+                    bValue = new Date(bValue).getTime();
                 }
-                // Handle numeric sorting (e.g., totalAmount)
-                else if (sortConfig.key === 'totalAmount') {
-                     aValue = Number(aValue) || 0;
-                     bValue = Number(bValue) || 0;
-                }
-                 // Handle string sorting (case-insensitive)
-                 else if (typeof aValue === 'string' && typeof bValue === 'string') {
-                    aValue = aValue.toLowerCase();
-                    bValue = bValue.toLowerCase();
-                 }
 
                 if (aValue < bValue) {
                     return sortConfig.direction === 'ascending' ? -1 : 1;
@@ -150,11 +132,16 @@ const PurchaseHistoryPage = () => {
                 if (aValue > bValue) {
                     return sortConfig.direction === 'ascending' ? 1 : -1;
                 }
-                return 0; // a == b
+                return 0;
             });
         }
         return sortableItems;
     }, [filteredBills, sortConfig]);
+
+    const paginatedBills = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return sortedBills.slice(start, start + pageSize);
+    }, [sortedBills, currentPage, pageSize]);
 
     const requestSort = (key) => {
         let direction = 'ascending';
@@ -166,11 +153,9 @@ const PurchaseHistoryPage = () => {
         setSortConfig({ key, direction });
     };
 
-    // --- Modal Handlers ---
     const handleViewDetails = (bill) => setViewingBill(bill);
     const handleCloseDetails = () => setViewingBill(null);
 
-    // Helper to render sort icons
     const getSortIcon = (key) => {
         if (sortConfig.key !== key) {
             return <FaSort className="ms-1 text-muted" size="0.8em" />;
@@ -181,7 +166,6 @@ const PurchaseHistoryPage = () => {
         return <FaSortDown className="ms-1" size="0.8em" />;
     };
 
-    // --- Render ---
     return (
         <Container fluid className="py-4 px-md-4 purchase-history-page">
             {isModuleLocked && (
@@ -283,7 +267,7 @@ const PurchaseHistoryPage = () => {
                                      <div>{purchaseBills.length === 0 ? "No purchase history recorded yet." : "No matching purchase bills found."}</div>
                                  </td></tr>
                             ) : (
-                                 sortedBills.map(bill => (
+                                 paginatedBills.map(bill => (
                                     <tr key={bill.id}>
                                         <td className="fw-medium text-dark">{formatDate(bill.billDate)}</td>
                                         <td className="fw-bold text-dark">{bill.supplierName}</td>
@@ -303,6 +287,13 @@ const PurchaseHistoryPage = () => {
                          </tbody>
                      </Table>
                  </div>
+                 <SaaSDataPagination
+                   totalItems={sortedBills.length}
+                   currentPage={currentPage}
+                   pageSize={pageSize}
+                   onPageChange={setCurrentPage}
+                   onPageSizeChange={setPageSize}
+                 />
             </Card>
 
              {/* View Bill Details Modal */}
@@ -315,20 +306,20 @@ const PurchaseHistoryPage = () => {
                          <>
                              <Row className="mb-4 g-3 p-4 bg-light rounded-4 border border-light">
                                  <Col md={6} className="d-flex flex-column">
-                                    <span className="text-muted small text-uppercase fw-bold mb-1">Supplier</span>
-                                    <span className="fw-bold text-dark fs-5">{viewingBill.supplierName}</span>
+                                     <span className="text-muted small text-uppercase fw-bold mb-1">Supplier</span>
+                                     <span className="fw-bold text-dark fs-5">{viewingBill.supplierName}</span>
                                  </Col>
                                  <Col md={6} className="d-flex flex-column">
-                                    <span className="text-muted small text-uppercase fw-bold mb-1">Bill No</span>
-                                    <span className="fw-bold text-dark fs-5">{viewingBill.billNumber}</span>
+                                     <span className="text-muted small text-uppercase fw-bold mb-1">Bill No</span>
+                                     <span className="fw-bold text-dark fs-5">{viewingBill.billNumber}</span>
                                  </Col>
                                  <Col md={6} className="d-flex flex-column">
-                                    <span className="text-muted small text-uppercase fw-bold mb-1">Bill Date</span>
-                                    <span className="text-dark fw-medium">{formatDate(viewingBill.billDate)}</span>
+                                     <span className="text-muted small text-uppercase fw-bold mb-1">Bill Date</span>
+                                     <span className="text-dark fw-medium">{formatDate(viewingBill.billDate)}</span>
                                  </Col>
                                  <Col md={6} className="d-flex flex-column">
-                                    <span className="text-muted small text-uppercase fw-bold mb-1">Recorded</span>
-                                    <span className="text-dark fw-medium">{formatDate(viewingBill.dateRecorded)}</span>
+                                     <span className="text-muted small text-uppercase fw-bold mb-1">Recorded</span>
+                                     <span className="text-dark fw-medium">{formatDate(viewingBill.dateRecorded)}</span>
                                  </Col>
                                  {viewingBill.notes && <Col xs={12} className="mt-3 pt-3 border-top border-light"><span className="text-muted small fw-bold text-uppercase d-block mb-1">Notes:</span><span className="text-secondary">{viewingBill.notes}</span></Col>}
                              </Row>
@@ -357,29 +348,28 @@ const PurchaseHistoryPage = () => {
                                                      <td className="text-muted">{index + 1}</td>
                                                      <td className="fw-medium text-dark">{master?.name || item.name || <span className='text-muted fst-italic'>Item ID: {masterId}</span>}</td>
                                                      <td className="text-muted">{master?.partNo || item.partNo || item.part_no || '-'}</td>
-                                                     <td className="text-center fw-medium">{qty}</td>
-                                                     <td className="text-end text-muted">{formatCurrency(price)}</td>
+                                                     <td className="text-center fw-bold">{qty}</td>
+                                                     <td className="text-end">{formatCurrency(price)}</td>
                                                      <td className="text-end fw-bold text-dark">{formatCurrency(qty * price)}</td>
                                                  </tr>
                                              );
                                          })}
                                      </tbody>
-                                     <tfoot className="bg-light">
-                                         <tr>
-                                             <td colSpan="5" className="text-end fw-bold text-secondary border-0 pt-3">Grand Total:</td>
-                                             <td className="text-end fw-bold fs-5 text-primary border-0 pt-3">{formatCurrency(viewingBill.totalAmount)}</td>
-                                         </tr>
-                                     </tfoot>
                                  </Table>
+                             </div>
+                             <div className="d-flex justify-content-end mt-4 pt-3 border-top border-light">
+                                 <div className="text-end">
+                                     <span className="text-muted small fw-bold text-uppercase d-block mb-1">Grand Total</span>
+                                     <span className="fw-bold text-primary fs-4">{formatCurrency(viewingBill.totalAmount)}</span>
+                                 </div>
                              </div>
                          </>
                      )}
                  </Modal.Body>
                  <Modal.Footer className="border-0 pt-0">
-                     <Button variant="light" onClick={handleCloseDetails} className="px-4 fw-medium">Close</Button>
+                     <Button variant="outline-secondary" className="rounded-pill px-4" onClick={handleCloseDetails}>Close</Button>
                  </Modal.Footer>
              </Modal>
-
         </Container>
     );
 };

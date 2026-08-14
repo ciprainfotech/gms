@@ -38,6 +38,7 @@ import RemindersPage from './pages/RemindersPage';
 import ProfileSettingsPage from './pages/ProfileSettingsPage';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import PayrollPage from './pages/PayrollPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 // ==========================================================================
 // 1. MAIN LAYOUT
@@ -45,9 +46,36 @@ import PayrollPage from './pages/PayrollPage';
 const MainLayout = () => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
-  const { garage, refreshGarage } = useGarage();
+  const { garage, isSuspended, refreshGarage } = useGarage();
 
   const toggleSidebar = () => setSidebarOpen(!isSidebarOpen);
+
+  if (isSuspended && !user?.is_super_admin) {
+    return (
+      <div className="min-vh-100 d-flex align-items-center justify-content-center px-3" style={{ background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)', color: '#F8FAFC' }}>
+        <div className="card border-0 shadow-lg p-4 p-md-5 rounded-4 text-center" style={{ backgroundColor: 'rgba(30, 41, 59, 0.95)', backdropFilter: 'blur(16px)', border: '1px solid rgba(255, 255, 255, 0.1)', maxWidth: '520px', width: '100%' }}>
+          <div className="rounded-circle d-inline-flex align-items-center justify-content-center mb-4 mx-auto" style={{ width: '80px', height: '80px', background: 'rgba(239, 68, 68, 0.15)', color: '#EF4444' }}>
+            <span style={{ fontSize: '36px' }}>🔒</span>
+          </div>
+          <h3 className="fw-bold mb-2 text-white">Workspace License Suspended</h3>
+          <p className="mb-4" style={{ color: '#94A3B8', fontSize: '14px', lineHeight: '1.6' }}>
+            The subscription license for <strong className="text-white">{garage?.name || 'your garage'}</strong> has been suspended by Cipra Infotech Super Admin. Workspace access is temporarily locked.
+          </p>
+          <div className="p-3 rounded-3 mb-4 text-start" style={{ background: 'rgba(15, 23, 42, 0.6)', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+            <small className="text-uppercase fw-bold d-block mb-1" style={{ color: '#6366F1', fontSize: '10px', letterSpacing: '0.8px' }}>Reactivation & Billing Support</small>
+            <div className="fw-bold text-white small">Cipra Infotech Administration</div>
+            <div className="text-muted small">Email: admin@ciprainfotech.com</div>
+          </div>
+          <button 
+            className="btn btn-outline-light rounded-pill px-4 py-2 fw-bold w-100"
+            onClick={logout}
+          >
+            Logout of Account
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="layout-wrapper">
@@ -159,7 +187,7 @@ function AppContent() {
           <Route path="active-jobsheets" element={<ActiveJobSheets />} />
           <Route path="jobsheet/:jobSheetId" element={<JobSheetDetailPage />} />
           <Route path="create-invoice" element={<ReadonlyAccountGuard><CreateInvoicePage /></ReadonlyAccountGuard>} />
-          <Route path="task-dashboard" element={<TaskDashboardPage />} />
+          <Route path="task-dashboard" element={<FeatureRouteGuard isEnabled={features.tasks} featureName="Internal Tasks"><TaskDashboardPage /></FeatureRouteGuard>} />
           <Route path="job-sheets" element={<JobSheets />} />
           <Route path="invoices" element={<InvoicesPage />} />
           <Route path="invoices/:invoiceId/view" element={<InvoiceViewPage />} />
@@ -176,7 +204,7 @@ function AppContent() {
           <Route path="settings" element={<ProfileSettingsPage />} />
 
           <Route index element={<Navigate replace to="/dashboard" />} />
-          <Route path="*" element={<div className="text-center mt-5"><h2>404 - Page Not Found</h2><p>The requested page could not be found.</p></div>} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
 
         {/* --- Super Admin Portal Routes --- */}

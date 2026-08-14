@@ -56,9 +56,15 @@ exports.searchVehicles = async (req, res) => {
     try {
         // ILIKE performs a case-insensitive partial match
         const query = `
-            SELECT v.car_number, c.name as customer_name 
+            SELECT 
+                v.car_number, 
+                c.name as customer_name,
+                m.name as make,
+                mo.name as model
             FROM vehicles v
             LEFT JOIN customers c ON v.customer_id = c.id
+            LEFT JOIN makes m ON v.make_id = m.id
+            LEFT JOIN models mo ON v.model_id = mo.id
             WHERE v.garage_id = $1 AND v.car_number ILIKE $2
             LIMIT 10
         `;

@@ -5,6 +5,7 @@ import {
 } from 'react-icons/fa';
 
 import api from '../api/api'; 
+import SaaSDataPagination from '../components/ui/SaaSDataPagination';
 import '../App.css'; 
 import '../StockManagementPage.css'; 
 
@@ -85,6 +86,14 @@ const StockManagementPage = () => {
             return matchesSearch && matchesType;
         });
     }, [searchTerm, filterType, masterItems, isLoading]);
+
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+
+    const paginatedItems = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return filteredItems.slice(start, start + pageSize);
+    }, [filteredItems, currentPage, pageSize]);
 
     const lowStockItems = useMemo(() => {
         if (isLoading) return [];
@@ -238,26 +247,6 @@ const StockManagementPage = () => {
          </tr>
      );
 
-    if (isModuleLocked) {
-        return (
-            <Container fluid className="p-5 text-center">
-                <Card className="border-0 shadow-lg p-5 rounded-4 mx-auto mt-4" style={{ maxWidth: '650px', backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
-                    <div className="mx-auto mb-4 p-3 rounded-circle text-danger d-flex align-items-center justify-content-center" style={{ backgroundColor: '#fef2f2', width: '80px', height: '80px' }}>
-                        <FaTimesCircle size={44} />
-                    </div>
-                    <h3 className="fw-bold text-dark mb-2">Module Access Locked</h3>
-                    <p className="text-muted mb-4 fs-6">
-                        The <strong>Stock & Inventory Management</strong> module has been disabled for your garage account by Cipra Infotech Super Admin.
-                    </p>
-                    <Alert variant="warning" className="border-0 rounded-3 text-start mb-4">
-                        <FaExclamationTriangle className="me-2 text-warning" />
-                        To activate this module or upgrade your subscription plan, please contact <strong>admin@ciprainfotech.com</strong>.
-                    </Alert>
-                </Card>
-            </Container>
-        );
-    }
-
     // --- Main Render ---
     return (
         <Container fluid className="py-4">
@@ -265,10 +254,26 @@ const StockManagementPage = () => {
                 <h2 className="page-title-active mb-0">
                     <FaBox className="me-2 text-primary"/> Stock Management
                 </h2>
-                <Button variant="primary" onClick={() => showModal('add')} className="shadow-sm d-flex align-items-center">
-                    <FaPlus className="me-2" /> Add New Item
-                </Button>
+                {!isModuleLocked ? (
+                    <Button variant="primary" onClick={() => showModal('add')} className="shadow-sm d-flex align-items-center">
+                        <FaPlus className="me-2" /> Add New Item
+                    </Button>
+                ) : (
+                    <span className="badge bg-warning text-dark px-3 py-2 rounded-pill fw-bold d-inline-flex align-items-center" style={{ fontSize: '13px' }}>
+                        🔒 Read-Only Mode (Locked by Admin)
+                    </span>
+                )}
             </div>
+
+            {isModuleLocked && (
+                <Alert variant="warning" className="d-flex align-items-center mb-4 shadow-sm border-0 rounded-3" style={{ backgroundColor: '#fffbe6', borderLeft: '4px solid #f59e0b' }}>
+                    <FaExclamationTriangle className="fs-4 me-3 text-warning flex-shrink-0" />
+                    <div>
+                        <strong className="d-block text-dark fw-bold">Stock & Inventory Locked in Read-Only Mode</strong>
+                        <span className="small text-muted">You can search and view all master stock items and pricing in Read-Only Mode. Adding new items, modifying stock quantities, or deleting items is locked by Super Admin.</span>
+                    </div>
+                </Alert>
+            )}
 
              <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} id="stock-tabs" className="mb-4 stock-nav-tabs">
                 

@@ -26,4 +26,8 @@ router.delete('/transaction/:id', staffController.deleteTransaction);
 // WhatsApp dispatch
 router.post('/:id/send-summary', staffController.sendStaffWhatsAppSummary);
 
+// Staff lifecycle management
+router.patch('/:id/resign', staffController.resignStaff);
+router.patch('/:id/reactivate', staffController.reactivateStaff);
+
 module.exports = router;

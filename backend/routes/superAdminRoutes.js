@@ -10,6 +10,7 @@ router.get('/stats', superAdminController.getPlatformStats);
 router.get('/garages', superAdminController.getAllGarages);
 router.post('/onboard-garage', superAdminController.onboardGarage);
 router.put('/garages/:garageId/subscription', superAdminController.updateGarageSubscription);
+router.put('/garages/:garageId/toggle-status', superAdminController.toggleGarageStatus);
 router.post('/garages/:garageId/topup-whatsapp', superAdminController.topUpWhatsAppCredits);
 
 router.get('/plans', superAdminController.getAllPlans);

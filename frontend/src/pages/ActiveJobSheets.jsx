@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Row, Col, Card } from 'react-bootstrap';
-import { FaEye, FaWrench, FaCar, FaUser, FaCalendarAlt, FaClipboardList, FaTrash } from 'react-icons/fa';
+import { FaEye, FaWrench, FaCar, FaUser, FaCalendarAlt, FaClipboardList, FaTrash, FaPlus } from 'react-icons/fa';
 import api from '../api/api.js';
 
 import PageShell from '../components/ui/PageShell';
@@ -115,8 +115,26 @@ const ActiveJobSheets = () => {
       ) : filteredJobSheets.length === 0 ? (
         <EmptyState
           icon={FaWrench}
-          title="No Active Job Sheets"
-          message={searchTerm ? 'No active jobs match your search query.' : 'No vehicles currently undergoing repair.'}
+          title={searchTerm ? 'No Matching Jobs Found' : 'No Active Job Sheets'}
+          message={searchTerm ? `No active workshop jobs match "${searchTerm}".` : 'There are currently no vehicles undergoing repair or active job sheets in the workshop.'}
+          action={
+            searchTerm ? (
+              <button 
+                type="button" 
+                className="btn btn-outline-secondary rounded-pill px-4 fw-bold"
+                onClick={() => setSearchTerm('')}
+              >
+                Clear Search Filter
+              </button>
+            ) : (
+              <Link 
+                to="/create-invoice" 
+                className="btn btn-primary rounded-pill px-4 fw-bold text-decoration-none d-inline-flex align-items-center gap-2 shadow-sm"
+              >
+                <FaPlus /> Create Invoice / Job Sheet
+              </Link>
+            )
+          }
         />
       ) : (
         <Row className="g-3">

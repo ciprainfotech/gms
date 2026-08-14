@@ -1,10 +1,10 @@
 -- =====================================================================
--- AutoCare PRO - FINAL Database Schema
--- Version: 7.0 (Schema Only, using SERIAL for auto-increment)
+-- AutoCare PRO / Garage Workshop Suite - Complete Production Database Schema
+-- Version: 8.0 (Full Production Ready — includes Staff, Payroll, WhatsApp, Messaging Controls)
 -- =====================================================================
 
--- This script creates the complete, empty database structure.
--- It is designed to be run on a clean database.
+-- Run this on a fresh empty Postgres database to initialize the full system.
+-- Compatible with PostgreSQL 13+
 
 BEGIN;
 
@@ -60,6 +60,7 @@ CREATE TABLE garages (
     whatsapp_waba_id VARCHAR(100),
     whatsapp_phone_number VARCHAR(50),
     whatsapp_status VARCHAR(20) DEFAULT 'disconnected',
+    whatsapp_provider VARCHAR(30) DEFAULT 'whatsapp-web',
     feature_stock BOOLEAN DEFAULT TRUE,
     feature_purchase BOOLEAN DEFAULT TRUE,
     feature_analytics BOOLEAN DEFAULT TRUE,
@@ -121,7 +122,7 @@ CREATE TABLE master_items (
     unit_price DECIMAL(10,2) DEFAULT 0,
     lube_charge DECIMAL(10,2) DEFAULT 0,
     labour_charge DECIMAL(10,2) DEFAULT 0,
-    stock_qty INTEGER,
+    stock_qty DECIMAL(10,2) DEFAULT 0,
     is_deleted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -192,7 +193,7 @@ CREATE TABLE job_sheet_items (
     id BIGSERIAL PRIMARY KEY,
     job_sheet_id BIGINT NOT NULL REFERENCES job_sheets(id) ON DELETE CASCADE,
     master_item_id INTEGER NOT NULL REFERENCES master_items(id),
-    quantity INTEGER NOT NULL,
+    quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
     unit_price DECIMAL(10,2) DEFAULT 0,
     lube_charge DECIMAL(10,2) DEFAULT 0,
     labour_charge DECIMAL(10,2) DEFAULT 0
@@ -224,7 +225,7 @@ CREATE TABLE invoice_items (
     id BIGSERIAL PRIMARY KEY,
     invoice_id BIGINT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
     master_item_id INTEGER NOT NULL REFERENCES master_items(id),
-    quantity INTEGER NOT NULL,
+    quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
     unit_price DECIMAL(10,2) DEFAULT 0,
     lube_charge DECIMAL(10,2) DEFAULT 0,
     labour_charge DECIMAL(10,2) DEFAULT 0
@@ -258,7 +259,7 @@ CREATE TABLE purchase_bill_items (
     id BIGSERIAL PRIMARY KEY,
     purchase_bill_id BIGINT NOT NULL REFERENCES purchase_bills(id) ON DELETE CASCADE,
     master_item_id INTEGER NOT NULL REFERENCES master_items(id),
-    quantity INTEGER NOT NULL,
+    quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
     purchase_price DECIMAL(10,2) NOT NULL
 );
 
@@ -294,8 +295,12 @@ CREATE TABLE staff (
     name VARCHAR(100) NOT NULL,
     phone VARCHAR(15),
     role VARCHAR(50) NOT NULL,
-    salary_type VARCHAR(20) DEFAULT 'monthly',
+    salary_type VARCHAR(20) DEFAULT 'monthly' CHECK (salary_type IN ('monthly', 'daily')),
     base_salary DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    joined_date DATE DEFAULT CURRENT_DATE,
+    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'resigned', 'terminated')),
+    leaving_date DATE DEFAULT NULL,
+    leaving_notes TEXT DEFAULT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -315,13 +320,22 @@ CREATE TABLE staff_transactions (
     id SERIAL PRIMARY KEY,
     garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
     staff_id INTEGER NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
-    type VARCHAR(20) NOT NULL,
+    type VARCHAR(20) NOT NULL CHECK (type IN ('Payment', 'Advance')),
     amount DECIMAL(10,2) NOT NULL,
     date DATE NOT NULL,
     payment_method VARCHAR(50) DEFAULT 'Cash',
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- =====================================================================
+-- 3. PERFORMANCE INDEXES
+-- =====================================================================
+CREATE INDEX idx_staff_garage_id ON staff(garage_id);
+CREATE INDEX idx_attendance_staff_id ON attendance(staff_id);
+CREATE INDEX idx_attendance_garage_date ON attendance(garage_id, date);
+CREATE INDEX idx_staff_transactions_staff_id ON staff_transactions(staff_id);
+CREATE INDEX idx_staff_transactions_garage_date ON staff_transactions(garage_id, date);
 
 
 
@@ -358,5 +372,12 @@ CREATE INDEX idx_payments_invoice_id ON payments(invoice_id);
 CREATE INDEX idx_purchase_bills_garage_id ON purchase_bills(garage_id);
 CREATE INDEX idx_tasks_assigned_to_user_id ON tasks(assigned_to_user_id);
 
+-- Multi-tenant Composite B-Tree Production Indexes
+CREATE INDEX IF NOT EXISTS idx_vehicles_garage_car ON vehicles(garage_id, car_number);
+CREATE INDEX IF NOT EXISTS idx_customers_garage_phone ON customers(garage_id, phone);
+CREATE INDEX IF NOT EXISTS idx_jobsheets_garage_status ON job_sheets(garage_id, status);
+CREATE INDEX IF NOT EXISTS idx_invoices_garage_date ON invoices(garage_id, date_issued);
+CREATE INDEX IF NOT EXISTS idx_payments_garage_invoice ON payments(garage_id, invoice_id);
+CREATE INDEX IF NOT EXISTS idx_purchase_bills_garage_date ON purchase_bills(garage_id, bill_date);
 
 COMMIT;

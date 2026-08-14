@@ -20,6 +20,7 @@ const profileRoutes = require('./routes/profileRoutes');
 const superAdminRoutes = require('./routes/superAdminRoutes');
 const whatsappRoutes = require('./routes/whatsappRoutes');
 const staffRoutes = require('./routes/staffRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/admin', superAdminRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/staff', staffRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 
 
@@ -79,6 +81,21 @@ const PORT = process.env.PORT || 5001;
 app.listen(PORT, async () => {
   console.log(`Server is running on port ${PORT}`);
   
+  // Auto-verify DB schema columns on boot
+  try {
+    const db = require('./config/db');
+    await db.query(`
+      ALTER TABLE staff ADD COLUMN IF NOT EXISTS joined_date DATE DEFAULT CURRENT_DATE;
+      ALTER TABLE staff ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'active';
+      ALTER TABLE staff ADD COLUMN IF NOT EXISTS leaving_date DATE DEFAULT NULL;
+      ALTER TABLE staff ADD COLUMN IF NOT EXISTS leaving_notes TEXT DEFAULT NULL;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id VARCHAR(100);
+    `);
+    console.log('[DB Schema] Staff lifecycle and Meta WhatsApp columns verified.');
+  } catch (err) {
+    console.error('[DB Schema] Column check error:', err);
+  }
+
   // Auto-restore active WhatsApp Web sessions on boot
   try {
     const db = require('./config/db');

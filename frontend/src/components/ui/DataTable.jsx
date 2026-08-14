@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { FaSort, FaSortUp, FaSortDown } from 'react-icons/fa';
 import EmptyState from './EmptyState';
 import SkeletonLoader from './SkeletonLoader';
+import SaaSDataPagination from './SaaSDataPagination';
 
 const DataTable = ({
   columns = [],
@@ -9,12 +10,13 @@ const DataTable = ({
   isLoading = false,
   emptyTitle = 'No Records Found',
   emptyMessage = 'There are no items matching your criteria.',
-  pageSize = 10,
+  pageSize: initialPageSize = 10,
   onRowClick,
   className = ''
 }) => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
 
   const handleSort = (key) => {
     if (!key) return;
@@ -42,7 +44,6 @@ const DataTable = ({
     });
   }, [data, sortConfig]);
 
-  const totalPages = Math.ceil(sortedData.length / pageSize) || 1;
   const paginatedData = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return sortedData.slice(start, start + pageSize);
@@ -97,31 +98,13 @@ const DataTable = ({
         </tbody>
       </table>
 
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.25rem', borderTop: '1px solid var(--app-border)', background: 'var(--slate-50)' }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--slate-500)' }}>
-            Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, sortedData.length)} of {sortedData.length} entries
-          </div>
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-              className="btn-saas btn-saas-secondary"
-              style={{ height: '34px', padding: '0 0.75rem', fontSize: '0.8rem' }}
-            >
-              Previous
-            </button>
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              className="btn-saas btn-saas-secondary"
-              style={{ height: '34px', padding: '0 0.75rem', fontSize: '0.8rem' }}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
+      <SaaSDataPagination
+        totalItems={sortedData.length}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={setPageSize}
+      />
     </div>
   );
 };

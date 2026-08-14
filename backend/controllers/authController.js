@@ -69,6 +69,17 @@ exports.login = async (req, res) => {
                 activeGarage = garageRows[0];
             }
             
+            // Check if garage is suspended for non-superadmin users
+            if (!user.is_super_admin && activeGarage && activeGarage.is_active === false) {
+                res.clearCookie('token');
+                res.clearCookie('activeGarageId');
+                return res.status(403).json({
+                    success: false,
+                    code: 'GARAGE_SUSPENDED',
+                    message: `Account Suspended: License for "${activeGarage.name}" has been suspended by Super Admin. You cannot log in at this time. Please contact Cipra Infotech support.`
+                });
+            }
+
             res.cookie('activeGarageId', activeGarage.id, {
                 httpOnly: true,
                 secure: true,

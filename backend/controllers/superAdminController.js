@@ -7,13 +7,15 @@ exports.getPlatformStats = async (req, res) => {
     const totalGaragesRes = await db.query('SELECT COUNT(*) FROM garages WHERE is_active = TRUE');
     const totalSubscribersRes = await db.query('SELECT COUNT(*) FROM garages WHERE subscription_status = $1', ['active']);
     const totalUsersRes = await db.query('SELECT COUNT(*) FROM users WHERE is_deleted = FALSE');
+    const totalCreditsRes = await db.query('SELECT COALESCE(SUM(whatsapp_credit_balance), 0) AS total_credits FROM garages');
 
     res.json({
       success: true,
       stats: {
         totalGarages: parseInt(totalGaragesRes.rows[0].count, 10),
         activeSubscribers: parseInt(totalSubscribersRes.rows[0].count, 10),
-        totalUsers: parseInt(totalUsersRes.rows[0].count, 10)
+        totalUsers: parseInt(totalUsersRes.rows[0].count, 10),
+        totalWhatsappCredits: parseFloat(totalCreditsRes.rows[0].total_credits || 0)
       }
     });
   } catch (error) {
@@ -31,6 +33,8 @@ exports.getAllGarages = async (req, res) => {
         g.subscription_expires_at, g.invoice_prefix, g.jobsheet_prefix, g.created_at,
         g.custom_monthly_price, g.one_time_setup_fee, g.yearly_maintenance_fee,
         g.subscription_renewal_date, g.whatsapp_credit_balance, g.whatsapp_cost_per_msg,
+        g.whatsapp_phone_number_id,
+        COALESCE(CASE WHEN g.whatsapp_phone_number_id IS NOT NULL AND g.whatsapp_phone_number_id != '' THEN 'connected' ELSE g.whatsapp_status END, 'disconnected') AS whatsapp_status,
         g.feature_stock, g.feature_purchase, g.feature_analytics, g.feature_reminders,
         g.feature_tasks, g.feature_whatsapp, g.feature_whatsapp_utility, g.feature_whatsapp_marketing, g.feature_whatsapp_costing, g.feature_payroll,
         p.id AS plan_id, p.name AS plan_name,
@@ -65,6 +69,7 @@ exports.onboardGarage = async (req, res) => {
     oneTimeSetupFee,
     yearlyMaintenanceFee,
     whatsappCostPerMsg,
+    whatsappPhoneNumberId,
     subscriptionRenewalDate,
     featureStock,
     featurePurchase,
@@ -115,10 +120,10 @@ exports.onboardGarage = async (req, res) => {
       `INSERT INTO garages (
         name, address, phone, email, custom_monthly_price, 
         one_time_setup_fee, yearly_maintenance_fee, subscription_renewal_date,
-        whatsapp_credit_balance, whatsapp_cost_per_msg,
+        whatsapp_credit_balance, whatsapp_cost_per_msg, whatsapp_phone_number_id,
         feature_stock, feature_purchase, feature_analytics, 
         feature_reminders, feature_tasks, feature_whatsapp, feature_whatsapp_utility, feature_whatsapp_marketing, feature_whatsapp_costing, feature_payroll, subscription_status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 'active')
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, 'active')
       RETURNING *`,
       [
         garageName.trim(),
@@ -131,6 +136,7 @@ exports.onboardGarage = async (req, res) => {
         renewalDate,
         parseFloat(initialWhatsappCredits || 100.00),
         parseFloat(whatsappCostPerMsg || 0.15),
+        whatsappPhoneNumberId ? whatsappPhoneNumberId.trim() : null,
         featureStock !== false,
         featurePurchase !== false,
         featureAnalytics !== false,
@@ -179,6 +185,7 @@ exports.updateGarageSubscription = async (req, res) => {
     yearly_maintenance_fee,
     subscription_renewal_date,
     whatsapp_cost_per_msg,
+    whatsapp_phone_number_id,
     feature_stock,
     feature_purchase,
     feature_analytics,
@@ -200,25 +207,27 @@ exports.updateGarageSubscription = async (req, res) => {
         yearly_maintenance_fee = $3,
         subscription_renewal_date = $4,
         whatsapp_cost_per_msg = $5,
-        feature_stock = $6,
-        feature_purchase = $7,
-        feature_analytics = $8,
-        feature_reminders = $9,
-        feature_tasks = $10,
-        feature_whatsapp = $11,
-        feature_whatsapp_utility = $12,
-        feature_whatsapp_marketing = $13,
-        feature_whatsapp_costing = $14,
-        feature_payroll = $15,
-        is_active = $16,
+        whatsapp_phone_number_id = $6,
+        feature_stock = $7,
+        feature_purchase = $8,
+        feature_analytics = $9,
+        feature_reminders = $10,
+        feature_tasks = $11,
+        feature_whatsapp = $12,
+        feature_whatsapp_utility = $13,
+        feature_whatsapp_marketing = $14,
+        feature_whatsapp_costing = $15,
+        feature_payroll = $16,
+        is_active = $17,
         updated_at = NOW()
-       WHERE id = $17`,
+       WHERE id = $18`,
       [
         parseFloat(custom_monthly_price || 0),
         parseFloat(one_time_setup_fee || 0),
         parseFloat(yearly_maintenance_fee || 0),
         subscription_renewal_date || null,
         parseFloat(whatsapp_cost_per_msg || 0.15),
+        whatsapp_phone_number_id ? whatsapp_phone_number_id.trim() : null,
         feature_stock !== false,
         feature_purchase !== false,
         feature_analytics !== false,
@@ -272,6 +281,29 @@ const topUpWhatsAppCredits = async (req, res) => {
   } catch (error) {
     console.error('Error topping up WhatsApp credit:', error);
     res.status(500).json({ success: false, message: 'Failed to recharge WhatsApp credits' });
+  }
+};
+
+// 1-Click Toggle Garage License Status (Active / Suspended)
+exports.toggleGarageStatus = async (req, res) => {
+  const { garageId } = req.params;
+  try {
+    const { rows } = await db.query('SELECT is_active, name FROM garages WHERE id = $1', [garageId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Garage not found' });
+    }
+
+    const newStatus = !rows[0].is_active;
+    await db.query('UPDATE garages SET is_active = $1, updated_at = NOW() WHERE id = $2', [newStatus, garageId]);
+
+    res.json({
+      success: true,
+      message: `Garage license for "${rows[0].name}" is now ${newStatus ? 'ACTIVE' : 'SUSPENDED (Read-Only)'}`,
+      is_active: newStatus
+    });
+  } catch (error) {
+    console.error('Error toggling garage status:', error);
+    res.status(500).json({ success: false, message: 'Failed to update garage active status' });
   }
 };
 

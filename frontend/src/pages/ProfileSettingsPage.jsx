@@ -8,6 +8,7 @@ import {   FaUser, FaLock, FaBuilding, FaHashtag, FaImage, FaUpload,
 import api from '../api/api.js';
 import CustomToast from '../components/CustomToast';
 import LoadingOverlay from '../components/LoadingOverlay';
+import ConfirmModal from '../components/ConfirmModal';
 
 const ProfileSettingsPage = () => {
   const outletContext = useOutletContext();
@@ -185,19 +186,41 @@ const ProfileSettingsPage = () => {
     }
   };
 
-  const handleDisconnectWhatsApp = async () => {
-    if(!window.confirm('Are you sure you want to disconnect WhatsApp?')) return;
-    
-    try {
-      const res = await api.post('/whatsapp/disconnect');
-      if (res.ok) {
-        setToast({ type: 'success', title: 'Disconnected', message: 'WhatsApp disconnected successfully.' });
-        fetchWhatsappStatus();
-        if (onGarageUpdate) onGarageUpdate();
+  // Confirmation modal state
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    variant: 'danger',
+    onConfirm: null
+  });
+
+  const handleDisconnectWhatsApp = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Disconnect WhatsApp',
+      message: 'Are you sure you want to disconnect WhatsApp automation? Automated invoice notifications and payment updates will be paused until re-linked.',
+      confirmText: 'Disconnect',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          const res = await api.post('/whatsapp/disconnect');
+          if (res.ok) {
+            setToast({ type: 'success', title: 'Disconnected', message: 'WhatsApp disconnected successfully.' });
+            fetchWhatsappStatus();
+            if (onGarageUpdate) onGarageUpdate();
+          } else {
+            setToast({ type: 'error', title: 'Error', message: 'Failed to disconnect WhatsApp.' });
+          }
+        } catch (err) {
+          setToast({ type: 'error', title: 'Error', message: 'Failed to disconnect WhatsApp.' });
+        }
       }
-    } catch (err) {
-      setToast({ type: 'error', title: 'Error', message: 'Failed to disconnect.' });
-    }
+    });
   };
 
   const handleUserUpdate = async (e) => {
@@ -325,6 +348,17 @@ const ProfileSettingsPage = () => {
     >
       <LoadingOverlay isVisible={loading || saving} message={saving ? 'Saving changes...' : 'Loading profile...'} />
       {toast && <CustomToast type={toast.type} title={toast.title} message={toast.message} onClose={() => setToast(null)} />}
+      
+      <ConfirmModal 
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        variant={confirmModal.variant}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
 
       {setupNotice && (
         <Alert variant="warning" className="shadow-sm border-0 rounded-3 mb-4 d-flex align-items-center">
@@ -748,62 +782,52 @@ const ProfileSettingsPage = () => {
           {/* TAB 4: WHATSAPP INTEGRATION */}
           {activeTab === 'whatsapp' && (
             <div>
-              <h5 className="fw-bold text-dark mb-3">WhatsApp Web Automation</h5>
-              <p className="text-muted mb-4">Connect your business WhatsApp number directly via a QR code to send automated invoices, job sheets, and marketing broadcasts without any third-party subscriptions or Meta approvals.</p>
+              <h5 className="fw-bold text-dark mb-3">Official Meta WhatsApp Cloud API Integration</h5>
+              <p className="text-muted mb-4">Your garage uses Meta's Official WhatsApp Cloud API infrastructure. All automated customer invoices, job sheets, and payment reminders are delivered directly from your registered business phone number.</p>
               
               <Row className="g-4" style={{ maxWidth: '800px' }}>
                 <Col md={12}>
-                  <Card className="border shadow-sm rounded-3 overflow-hidden">
-                    <Card.Body className="p-3 d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between bg-light gap-3">
-                      <div className="d-flex align-items-center">
-                        <div className="bg-white p-2 rounded-circle shadow-sm me-3 d-flex align-items-center justify-content-center" style={{ width: '48px', height: '48px' }}>
-                          <FaWhatsapp className="text-success" style={{ fontSize: '24px' }} />
+                  <Card className="border shadow-sm rounded-4 overflow-hidden">
+                    <Card.Body className="p-4 bg-light">
+                      <div className="d-flex align-items-center mb-3">
+                        <div className="bg-white p-3 rounded-circle shadow-sm me-3 d-flex align-items-center justify-content-center" style={{ width: '56px', height: '56px' }}>
+                          <FaWhatsapp className="text-success" style={{ fontSize: '28px' }} />
                         </div>
                         <div>
-                          <h6 className="fw-bold mb-1" style={{ fontSize: '14px' }}>WhatsApp Connection Status</h6>
-                          {whatsappStatus?.status === 'connected' ? (
-                            <div className="d-flex flex-column">
-                              <Badge bg="success" className="px-3 py-1 rounded-pill mt-1" style={{ width: 'fit-content', fontSize: '11px' }}>
-                                🟢 Connected
-                              </Badge>
-                              <span className="text-muted mt-1 fw-bold" style={{ fontSize: '11.5px' }}>Number: {whatsappStatus.phoneNumber || 'Linked via Web'}</span>
-                            </div>
+                          <h6 className="fw-bold mb-1" style={{ fontSize: '15px' }}>Official Meta WhatsApp Integration</h6>
+                          {whatsappStatus?.phoneNumberId ? (
+                            <Badge bg="success" className="px-3 py-1.5 rounded-pill mt-1" style={{ fontSize: '12px' }}>
+                              🟢 Official Meta API Active
+                            </Badge>
                           ) : (
-                            <Badge bg="danger" className="px-3 py-1 rounded-pill mt-1" style={{ width: 'fit-content', fontSize: '11px' }}>
-                              🔴 Not Connected
+                            <Badge bg="warning" text="dark" className="px-3 py-1.5 rounded-pill mt-1" style={{ fontSize: '12px' }}>
+                              ⚠️ Pending Phone Number ID Assignment
                             </Badge>
                           )}
                         </div>
                       </div>
-                      
-                      <div className="w-100 w-md-auto d-flex justify-content-start justify-content-md-end">
-                        {whatsappStatus?.status === 'connected' ? (
-                          <Button variant="outline-danger" className="fw-bold px-3 py-1.5 btn-saas" onClick={handleDisconnectWhatsApp}>
-                            Disconnect
-                          </Button>
-                        ) : (
-                          <Button variant="success" className="fw-bold px-3 py-1.5 d-flex align-items-center btn-saas text-nowrap" onClick={handleConnectWhatsApp} disabled={qrLoading}>
-                            <FaWhatsapp className="me-2 fs-5" /> {qrLoading ? 'Generating QR...' : 'Generate QR Code'}
-                          </Button>
-                        )}
-                      </div>
+
+                      <Row className="g-3 mt-2 pt-3 border-top border-light">
+                        <Col md={6}>
+                          <span className="text-muted small fw-bold text-uppercase d-block mb-1">Registered Phone Number ID</span>
+                          <span className="fw-bold text-dark font-monospace" style={{ fontSize: '14px' }}>
+                            {whatsappStatus?.phoneNumberId || 'Not Configured (Contact Admin)'}
+                          </span>
+                        </Col>
+                        <Col md={6}>
+                          <span className="text-muted small fw-bold text-uppercase d-block mb-1">Gateway Architecture</span>
+                          <span className="fw-bold text-primary" style={{ fontSize: '14px' }}>
+                            Official Meta Graph API (v18.0)
+                          </span>
+                        </Col>
+                      </Row>
                     </Card.Body>
-                    
-                    {/* QR Code Display Area */}
-                    {qrCodeUrl && (
-                      <Card.Footer className="bg-white p-4 text-center border-top">
-                        <h6 className="fw-bold text-dark mb-3">Scan QR Code</h6>
-                        <p className="text-muted small mb-3">Open WhatsApp on your phone &gt; Linked Devices &gt; Link a Device.</p>
-                        <img src={qrCodeUrl} alt="WhatsApp QR Code" style={{ width: '250px', height: '250px', border: '1px solid #ddd', borderRadius: '10px' }} />
-                        <p className="text-muted small mt-3">This QR code will expire in 45 seconds.</p>
-                      </Card.Footer>
-                    )}
                   </Card>
                 </Col>
               </Row>
               
-              <Alert variant="info" className="mt-4 border-0 shadow-sm rounded-3">
-                <FaCheckCircle className="me-2" /> <strong>Note:</strong> Keep your phone connected to the internet. We use unofficial WhatsApp Web endpoints to send messages free of charge. Do not send thousands of unsolicited spam messages, or WhatsApp may ban your number.
+              <Alert variant="success" className="mt-4 border-0 shadow-sm rounded-4">
+                <FaCheckCircle className="me-2" /> <strong>Zero Customer Maintenance:</strong> Your WhatsApp integration is fully managed centrally by Cipra Infotech. You do not need to scan QR codes or keep any phone connected to the internet. Messages are delivered with high reliability and zero risk of WhatsApp account bans.
               </Alert>
             </div>
           )}

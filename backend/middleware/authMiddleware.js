@@ -38,12 +38,21 @@ exports.authorizeGarage = [
         const userId = req.user.id;
         try {
             const accessResult = await db.query(
-                'SELECT role FROM garage_users WHERE user_id = $1 AND garage_id = $2',
+                'SELECT gu.role, g.is_active, g.name FROM garage_users gu JOIN garages g ON gu.garage_id = g.id WHERE gu.user_id = $1 AND gu.garage_id = $2',
                 [userId, garageId]
             );
 
             if (accessResult.rows.length === 0) {
                 return res.status(403).json({ success: false, message: 'Forbidden: You do not have access to the selected garage.' });
+            }
+
+            const isSuperAdmin = req.user.is_super_admin === true;
+            if (!isSuperAdmin && accessResult.rows[0].is_active === false) {
+                return res.status(403).json({
+                    success: false,
+                    code: 'GARAGE_SUSPENDED',
+                    message: `Account Suspended: License for "${accessResult.rows[0].name}" has been suspended by Super Admin. Workspace access is blocked.`
+                });
             }
 
             req.garageId = parseInt(garageId, 10);

@@ -9,34 +9,36 @@ const SuperAdminSidebar = ({ user, onLogout }) => {
     const navLinkClass = ({ isActive }) => (
       isActive 
         ? "nav-link active fw-bold text-white shadow-sm d-flex align-items-center py-2.5 px-3 rounded-3" 
-        : "nav-link text-slate-400 d-flex align-items-center py-2.5 px-3 rounded-3"
+        : "nav-link text-slate-700 d-flex align-items-center py-2.5 px-3 rounded-3"
     );
 
     const activeStyle = ({ isActive }) => ({
-      background: isActive ? 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)' : 'transparent',
-      color: isActive ? '#ffffff' : '#94a3b8',
-      transition: 'all 0.2s ease-in-out'
+      background: isActive ? 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)' : 'transparent',
+      color: isActive ? '#FFFFFF' : '#475569',
+      boxShadow: isActive ? '0 4px 12px rgba(79, 70, 229, 0.25)' : 'none',
+      fontWeight: isActive ? '600' : '500',
+      transition: 'all 0.15s ease-in-out'
     });
 
     return (
         <div 
-          className="d-flex flex-column shadow-lg" 
-          style={{ width: '260px', minWidth: '260px', height: '100vh', backgroundColor: '#0f172a', borderRight: '1px solid #1e293b' }}
+          className="d-flex flex-column shadow-sm" 
+          style={{ width: '260px', minWidth: '260px', height: '100vh', backgroundColor: '#FFFFFF', borderRight: '1px solid #E2E8F0' }}
         >
             {/* Super Admin Header / Platform Branding */}
-            <div className="sidebar-header p-4 border-bottom" style={{ borderColor: '#1e293b', backgroundColor: '#090d16' }}>
+            <div className="sidebar-header p-4 border-bottom" style={{ borderColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
                 <div className="d-flex align-items-center">
                     <div 
                       className="p-2.5 rounded-3 me-3 text-white shadow-sm d-flex align-items-center justify-content-center" 
-                      style={{ background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', width: '40px', height: '40px' }}
+                      style={{ background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)', width: '42px', height: '42px', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)' }}
                     >
-                        <FaShieldAlt size={20} />
+                        <FaShieldAlt size={22} />
                     </div>
                     <div>
-                        <h6 className="fw-bold text-white mb-0" style={{ fontSize: '15px', letterSpacing: '0.3px' }}>
+                        <h6 className="fw-bold text-dark mb-0" style={{ fontSize: '15px', letterSpacing: '0.3px', color: '#0F172A' }}>
                             Cipra Infotech
                         </h6>
-                        <small className="fw-bold text-uppercase" style={{ color: '#ef4444', fontSize: '9px', letterSpacing: '1px' }}>
+                        <small className="fw-bold text-uppercase" style={{ color: '#DC2626', fontSize: '9px', letterSpacing: '1px' }}>
                             SUPER ADMIN CONSOLE
                         </small>
                     </div>

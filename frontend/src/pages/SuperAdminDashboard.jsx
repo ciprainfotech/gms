@@ -48,6 +48,7 @@ const SuperAdminDashboard = () => {
     oneTimeSetupFee: '5000',
     yearlyMaintenanceFee: '10000',
     whatsappCostPerMsg: '0.15',
+    whatsappPhoneNumberId: '',
     subscriptionRenewalDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     featureStock: true,
     featurePurchase: true,
@@ -148,6 +149,7 @@ const SuperAdminDashboard = () => {
       yearly_maintenance_fee: garage.yearly_maintenance_fee || '0',
       subscription_renewal_date: garage.subscription_renewal_date ? garage.subscription_renewal_date.split('T')[0] : '',
       whatsapp_cost_per_msg: garage.whatsapp_cost_per_msg || '0.15',
+      whatsapp_phone_number_id: garage.whatsapp_phone_number_id || '',
       feature_stock: garage.feature_stock !== false,
       feature_purchase: garage.feature_purchase !== false,
       feature_analytics: garage.feature_analytics !== false,
@@ -204,6 +206,34 @@ const SuperAdminDashboard = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleToggleGarageActive = (garage) => {
+    const isCurrentlyActive = garage.is_active !== false;
+    const actionText = isCurrentlyActive ? 'Suspend' : 'Activate';
+    
+    setConfirmModal({
+      isOpen: true,
+      title: `${actionText} Garage License`,
+      message: `Are you sure you want to ${actionText.toLowerCase()} "${garage.name}"? ${isCurrentlyActive ? 'This will place their account into strict read-only mode.' : 'This will restore full workspace access.'}`,
+      action: async () => {
+        setSaving(true);
+        try {
+          const res = await api.put(`/admin/garages/${garage.id}/toggle-status`);
+          const data = await res.json();
+          if (res.ok) {
+            showToastNotification('success', 'Status Updated', data.message);
+            fetchAdminData();
+          } else {
+            showToastNotification('error', 'Update Failed', data.message);
+          }
+        } catch (err) {
+          showToastNotification('error', 'Error', 'Failed to toggle garage active status.');
+        } finally {
+          setSaving(false);
+        }
+      }
+    });
   };
 
   const handleAdminProfileUpdate = async (e) => {
@@ -274,79 +304,101 @@ const SuperAdminDashboard = () => {
 
       {/* OVERVIEW TAB */}
       {activeTab === 'overview' && (
-        <div>
+        <div className="mb-4">
           <div className="d-flex justify-content-between align-items-center mb-4">
             <div>
-              <h2 className="fw-bold mb-1" style={{ color: '#0f172a', letterSpacing: '-0.5px' }}>Platform Overview</h2>
-              <p className="text-muted mb-0">High-level executive metrics for Cipra Infotech multi-tenant GMS SaaS platform.</p>
+              <h2 className="fw-bold mb-1" style={{ color: '#0F172A', letterSpacing: '-0.5px' }}>Platform Overview</h2>
+              <p className="text-muted mb-0" style={{ color: '#64748B' }}>High-level executive metrics & multi-tenant GMS controls.</p>
             </div>
           </div>
-
-          <div className="row g-4 mb-4">
-            <div className="col-md-4">
+          <div className="row g-4">
+            <div className="col-md-3">
               <div 
                 className="card border-0 shadow-sm p-4 rounded-4" 
-                style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}
+                style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}
               >
                 <div className="d-flex justify-content-between align-items-center mb-3">
-                  <span className="text-uppercase fw-bold" style={{ color: '#64748b', fontSize: '11px', letterSpacing: '0.8px' }}>
-                    Total Onboarded Garages
+                  <span className="text-uppercase fw-bold" style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.8px' }}>
+                    Total Garages
                   </span>
                   <div 
                     className="rounded-circle d-flex align-items-center justify-content-center" 
-                    style={{ backgroundColor: '#eff6ff', color: '#2563eb', width: '48px', height: '48px' }}
+                    style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', width: '46px', height: '46px', border: '1px solid #C7D2FE' }}
                   >
-                    <FaBuilding size={22} />
+                    <FaBuilding size={20} />
                   </div>
                 </div>
-                <h1 className="fw-bold mb-1" style={{ color: '#0f172a', fontSize: '2.2rem' }}>{stats.totalGarages}</h1>
-                <small className="fw-bold d-flex align-items-center" style={{ color: '#16a34a' }}>
+                <h2 className="fw-bold mb-1" style={{ color: '#0F172A', fontSize: '2.2rem' }}>{stats.totalGarages}</h2>
+                <small className="fw-bold d-flex align-items-center" style={{ color: '#16A34A', fontSize: '12px' }}>
                   <FaCheck className="me-1" /> Active Client Garages
                 </small>
               </div>
             </div>
 
-            <div className="col-md-4">
+            <div className="col-md-3">
               <div 
                 className="card border-0 shadow-sm p-4 rounded-4" 
-                style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}
+                style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}
               >
                 <div className="d-flex justify-content-between align-items-center mb-3">
-                  <span className="text-uppercase fw-bold" style={{ color: '#64748b', fontSize: '11px', letterSpacing: '0.8px' }}>
+                  <span className="text-uppercase fw-bold" style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.8px' }}>
                     Active Paid Licenses
                   </span>
                   <div 
                     className="rounded-circle d-flex align-items-center justify-content-center" 
-                    style={{ backgroundColor: '#ecfdf5', color: '#059669', width: '48px', height: '48px' }}
+                    style={{ backgroundColor: '#ECFDF5', color: '#059669', width: '46px', height: '46px', border: '1px solid #A7F3D0' }}
                   >
-                    <FaCheckCircle size={22} />
+                    <FaCheckCircle size={20} />
                   </div>
                 </div>
-                <h1 className="fw-bold mb-1" style={{ color: '#059669', fontSize: '2.2rem' }}>{stats.activeSubscribers}</h1>
-                <small className="text-muted d-block">100% Active Platform Subscriptions</small>
+                <h2 className="fw-bold mb-1" style={{ color: '#059669', fontSize: '2.2rem' }}>{stats.activeSubscribers}</h2>
+                <small className="text-muted d-block" style={{ fontSize: '12px', color: '#64748B' }}>Active Subscriptions</small>
               </div>
             </div>
 
-            <div className="col-md-4">
+            <div className="col-md-3">
               <div 
                 className="card border-0 shadow-sm p-4 rounded-4" 
-                style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}
+                style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}
               >
                 <div className="d-flex justify-content-between align-items-center mb-3">
-                  <span className="text-uppercase fw-bold" style={{ color: '#64748b', fontSize: '11px', letterSpacing: '0.8px' }}>
-                    Registered Staff Accounts
+                  <span className="text-uppercase fw-bold" style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.8px' }}>
+                    Registered Users
                   </span>
                   <div 
                     className="rounded-circle d-flex align-items-center justify-content-center" 
-                    style={{ backgroundColor: '#e0f2fe', color: '#0284c7', width: '48px', height: '48px' }}
+                    style={{ backgroundColor: '#E0F2FE', color: '#0284C7', width: '46px', height: '46px', border: '1px solid #BAE6FD' }}
                   >
-                    <FaUsers size={22} />
+                    <FaUsers size={20} />
                   </div>
                 </div>
-                <h1 className="fw-bold mb-1" style={{ color: '#0f172a', fontSize: '2.2rem' }}>{stats.totalUsers}</h1>
-                <small className="fw-bold d-flex align-items-center" style={{ color: '#0284c7' }}>
-                  <FaChartLine className="me-1" /> Active Mechanics & Owners
+                <h2 className="fw-bold mb-1" style={{ color: '#0F172A', fontSize: '2.2rem' }}>{stats.totalUsers}</h2>
+                <small className="fw-bold d-flex align-items-center" style={{ color: '#0284C7', fontSize: '12px' }}>
+                  <FaChartLine className="me-1" /> Active Accounts
                 </small>
+              </div>
+            </div>
+
+            <div className="col-md-3">
+              <div 
+                className="card border-0 shadow-sm p-4 rounded-4" 
+                style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0', boxShadow: '0 4px 20px rgba(0,0,0,0.03)' }}
+              >
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <span className="text-uppercase fw-bold" style={{ color: '#64748B', fontSize: '11px', letterSpacing: '0.8px' }}>
+                    Platform Credits
+                  </span>
+                  <div 
+                    className="rounded-circle d-flex align-items-center justify-content-center" 
+                    style={{ backgroundColor: '#FEF3C7', color: '#D97706', width: '46px', height: '46px', border: '1px solid #FDE68A' }}
+                  >
+                    <FaWhatsapp size={20} />
+                  </div>
+                </div>
+                <h2 className="fw-bold mb-1" style={{ color: '#D97706', fontSize: '2.2rem' }}>
+                  ₹{parseFloat(stats.totalWhatsappCredits || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </h2>
+                <small className="text-muted d-block" style={{ fontSize: '12px', color: '#64748B' }}>WhatsApp Credits Issued</small>
               </div>
             </div>
           </div>
@@ -355,17 +407,17 @@ const SuperAdminDashboard = () => {
 
       {/* CLIENTS & GARAGES TAB WITH 3-TIER COMMERCIAL MODEL */}
       {(activeTab === 'garages' || activeTab === 'overview' || activeTab === 'plans') && (
-        <div className="card border-0 shadow-sm rounded-4 mb-4" style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
-          <div className="card-header bg-white py-4 px-4 d-flex justify-content-between align-items-center border-bottom" style={{ borderColor: '#f1f5f9' }}>
+        <div className="card border-0 shadow-sm rounded-4 mb-4" style={{ backgroundColor: '#FFFFFF', border: '1px solid #E2E8F0' }}>
+          <div className="card-header bg-white py-4 px-4 d-flex justify-content-between align-items-center border-bottom" style={{ borderColor: '#F1F5F9' }}>
             <div>
-              <h5 className="mb-0 fw-bold" style={{ color: '#0f172a' }}>Client Directory & 3-Tier Commercial Pricing Controls</h5>
-              <small className="text-muted">Manage One-Time Setup Fee, Yearly Maintenance, Meta WhatsApp messaging rates, & module toggles.</small>
+              <h5 className="mb-1 fw-bold" style={{ color: '#0F172A' }}>Client Directory & Commercial Controls</h5>
+              <small className="text-muted" style={{ color: '#64748B' }}>Manage One-Time Setup Fee, Yearly Maintenance, Meta WhatsApp messaging rates, & module toggles.</small>
             </div>
             <div className="position-relative" style={{ width: '280px' }}>
               <input 
                 type="text" 
-                className="form-control form-control-sm bg-light border ps-4 py-2" 
-                style={{ borderColor: '#cbd5e1', borderRadius: '8px', fontSize: '13px' }}
+                className="form-control form-control-sm bg-light text-dark ps-4 py-2" 
+                style={{ backgroundColor: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '13px' }}
                 placeholder="Search garage or owner..." 
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -374,79 +426,101 @@ const SuperAdminDashboard = () => {
             </div>
           </div>
           <div className="table-responsive">
-            <table className="table table-hover align-middle mb-0">
-              <thead style={{ backgroundColor: '#f8fafc', color: '#64748b' }}>
+            <table className="table table-hover align-middle mb-0 text-dark" style={{ borderColor: '#E2E8F0' }}>
+              <thead style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>
                 <tr>
-                  <th className="ps-4 text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>Garage & Client</th>
-                  <th className="text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>Setup Fee (One-Time)</th>
-                  <th className="text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>Yearly Maintenance</th>
-                  <th className="text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>WhatsApp Status & Credits</th>
-                  <th className="text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>Status</th>
-                  <th className="pe-4 text-end text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px' }}>Action</th>
+                  <th className="ps-4 text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px', color: '#475569' }}>Garage & Client</th>
+                  <th className="text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px', color: '#475569' }}>Setup Fee (One-Time)</th>
+                  <th className="text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px', color: '#475569' }}>Yearly Maintenance</th>
+                  <th className="text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px', color: '#475569' }}>WhatsApp Status & Credits</th>
+                  <th className="text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px', color: '#475569' }}>Status</th>
+                  <th className="pe-4 text-end text-uppercase fw-bold" style={{ fontSize: '11px', letterSpacing: '0.5px', color: '#475569' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredGarages.length > 0 ? (
                   filteredGarages.map((g) => (
-                    <tr key={g.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <tr key={g.id} style={{ borderBottom: '1px solid #F1F5F9', backgroundColor: '#FFFFFF' }}>
                       <td className="ps-4 py-3">
-                        <div className="fw-bold" style={{ color: '#0f172a', fontSize: '14px' }}>{g.name}</div>
-                        <small className="text-muted">{g.owner_name} ({g.owner_email})</small>
+                        <div className="fw-bold" style={{ color: '#0F172A', fontSize: '14px' }}>{g.name}</div>
+                        <small className="text-muted" style={{ color: '#64748B' }}>{g.owner_name} ({g.owner_email})</small>
                       </td>
                       <td>
                         <div className="fw-bold text-dark fs-6">
                           ₹{parseFloat(g.one_time_setup_fee || 0).toLocaleString('en-IN')}
                         </div>
-                        <small className="text-muted" style={{ fontSize: '11px' }}>Setup & Installation</small>
+                        <small className="text-muted" style={{ fontSize: '11px', color: '#64748B' }}>Setup & Installation</small>
                       </td>
                       <td>
-                        <div className="fw-bold text-primary fs-6">
+                        <div className="fw-bold text-primary fs-6" style={{ color: '#4F46E5' }}>
                           ₹{parseFloat(g.yearly_maintenance_fee || 0).toLocaleString('en-IN')}/yr
                         </div>
-                        <small className="text-muted" style={{ fontSize: '11px' }}>
+                        <small className="text-muted" style={{ fontSize: '11px', color: '#64748B' }}>
                           Renews: {g.subscription_renewal_date ? new Date(g.subscription_renewal_date).toLocaleDateString() : 'N/A'}
                         </small>
                       </td>
                       <td>
-                        <div className="mb-2">
-                          {g.whatsapp_status === 'connected' ? (
-                            <span className="badge bg-success rounded-pill px-2 py-1" style={{ fontSize: '10px' }}>🟢 Connected</span>
+                        <div className="mb-1">
+                          {g.whatsapp_phone_number_id ? (
+                            <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 fw-bold" style={{ fontSize: '11px' }}>
+                              🟢 Meta API Active
+                            </span>
                           ) : (
-                            <span className="badge bg-danger rounded-pill px-2 py-1" style={{ fontSize: '10px' }}>🔴 Disconnected</span>
+                            <span className="badge bg-warning-subtle text-warning border border-warning-subtle rounded-pill px-2.5 py-1 fw-bold" style={{ fontSize: '11px' }}>
+                              🟡 Unassigned Phone ID
+                            </span>
                           )}
                         </div>
-                        <div className="d-flex align-items-center mt-1">
-                          <span className="badge bg-secondary me-2">Provider: {g.whatsapp_provider || 'whatsapp-web'}</span>
+                        <div className="fw-bold text-dark" style={{ fontSize: '12px' }}>
+                          Balance: ₹{parseFloat(g.whatsapp_credit_balance || 0).toFixed(2)}
                         </div>
+                        <small className="text-muted" style={{ fontSize: '11px', color: '#64748B' }}>
+                          Rate: ₹{parseFloat(g.whatsapp_cost_per_msg || 0.15).toFixed(2)}/msg
+                        </small>
                       </td>
                       <td>
                         {g.is_active ? (
                           <div>
                             <span 
                               className="badge px-2.5 py-1.5 rounded-pill fw-bold d-inline-flex align-items-center mb-1"
-                              style={{ backgroundColor: '#dcfce7', color: '#15803d', fontSize: '11px' }}
+                              style={{ backgroundColor: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0', fontSize: '11px' }}
                             >
-                              <span className="me-1.5" style={{ fontSize: '8px' }}>●</span> Active
+                              <span className="me-1.5" style={{ fontSize: '8px' }}>●</span> Active License
                             </span>
-                            <div className="small text-muted" style={{ fontSize: '11px' }}>
+                            <div className="small text-muted" style={{ fontSize: '11px', color: '#64748B' }}>
                               {[g.feature_stock, g.feature_purchase, g.feature_analytics, g.feature_reminders, g.feature_tasks, g.feature_whatsapp, g.feature_payroll].filter(Boolean).length}/7 Modules Active
                             </div>
                           </div>
                         ) : (
                           <span 
                             className="badge px-2.5 py-1.5 rounded-pill fw-bold d-inline-flex align-items-center"
-                            style={{ backgroundColor: '#fee2e2', color: '#b91c1c', fontSize: '11px' }}
+                            style={{ backgroundColor: '#FEE2E2', color: '#B91C1C', border: '1px solid #FECACA', fontSize: '11px' }}
                           >
                             🔒 Suspended
                           </span>
                         )}
                       </td>
-                      <td className="pe-4 text-end">
+                      <td className="pe-4 text-end text-nowrap">
                         <button 
-                          className="btn btn-sm btn-outline-primary fw-bold rounded-pill px-3"
-                          onClick={() => handleOpenEditModal(g)}
+                          className="btn btn-sm btn-outline-success fw-bold rounded-pill px-2.5 py-1 me-1 shadow-sm"
+                          onClick={() => setTopUpModal({ isOpen: true, garage: g, amount: '100' })}
+                          title="Recharge WhatsApp Credits"
                         >
-                          <FaCog className="me-1" /> Configure Tiers
+                          ⚡ Top-Up
+                        </button>
+                        <button 
+                          className="btn btn-sm btn-outline-primary fw-bold rounded-pill px-2.5 py-1 me-1 shadow-sm"
+                          onClick={() => handleOpenEditModal(g)}
+                          title="Configure Features & Pricing Tiers"
+                        >
+                          <FaCog className="me-1" /> Configure
+                        </button>
+                        <button 
+                          className={`btn btn-sm fw-bold rounded-pill px-2.5 py-1 shadow-sm ${g.is_active ? 'btn-outline-danger' : 'btn-outline-success'}`}
+                          onClick={() => handleToggleGarageActive(g)}
+                          title={g.is_active ? "Suspend License (Full Lockout)" : "Activate License"}
+                        >
+                          {g.is_active ? '🔒 Suspend' : '✅ Activate'}
                         </button>
                       </td>
                     </tr>
@@ -511,6 +585,16 @@ const SuperAdminDashboard = () => {
                   className="form-control" 
                   value={onboardForm.whatsappCostPerMsg}
                   onChange={(e) => setOnboardForm({ ...onboardForm, whatsappCostPerMsg: e.target.value })}
+                />
+              </div>
+              <div className="col-md-6">
+                <label className="form-label text-muted fw-bold small">Meta WhatsApp Phone Number ID</label>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder="e.g. 111222333444555"
+                  value={onboardForm.whatsappPhoneNumberId}
+                  onChange={(e) => setOnboardForm({ ...onboardForm, whatsappPhoneNumberId: e.target.value })}
                 />
               </div>
               <div className="col-md-6">
@@ -711,139 +795,197 @@ const SuperAdminDashboard = () => {
         </div>
       )}
 
-      {/* EDIT GARAGE MODAL WITH 3-TIER COMMERCIAL PRICING */}
+      {/* EDIT GARAGE MODAL WITH 4-CATEGORY MODULE ARCHITECTURE */}
       {selectedGarage && editForm && (
-        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(6px)' }}>
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' }}>
           <div className="modal-dialog modal-lg modal-dialog-centered">
-            <div className="modal-content border-0 shadow-lg" style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-              <div className="modal-header border-bottom p-4">
+            <div className="modal-content border-0 shadow-lg text-dark" style={{ backgroundColor: '#FFFFFF', borderRadius: '20px', border: '1px solid #E2E8F0' }}>
+              <div className="modal-header border-bottom p-4" style={{ borderColor: '#F1F5F9' }}>
                 <div>
-                  <h5 className="modal-title fw-bold text-dark">Configure 3-Tier Commercial Pricing & Features</h5>
-                  <small className="text-muted">Garage: <strong className="text-primary">{selectedGarage.name}</strong></small>
+                  <h5 className="modal-title fw-bold text-dark">Configure 3-Tier Commercial Pricing & Modules</h5>
+                  <small style={{ color: '#64748B' }}>Client Garage: <strong style={{ color: '#4F46E5' }}>{selectedGarage.name}</strong></small>
                 </div>
                 <button type="button" className="btn-close" onClick={() => setSelectedGarage(null)}></button>
               </div>
               <form onSubmit={handleSaveEditGarage}>
-                <div className="modal-body p-4">
-                  <h6 className="fw-bold text-primary mb-3">1. Custom 3-Tier Commercial Pricing & Rates</h6>
-                  <div className="row g-3 mb-4">
-                    <div className="col-md-6">
-                      <label className="form-label text-muted small fw-bold">One-Time Setup Fee (₹ X)</label>
-                      <input 
-                        type="number" 
-                        className="form-control"
-                        value={editForm.one_time_setup_fee}
-                        onChange={(e) => setEditForm({ ...editForm, one_time_setup_fee: e.target.value })}
-                        required 
-                      />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label text-muted small fw-bold">Yearly Maintenance Fee (₹ Y/yr)</label>
-                      <input 
-                        type="number" 
-                        className="form-control"
-                        value={editForm.yearly_maintenance_fee}
-                        onChange={(e) => setEditForm({ ...editForm, yearly_maintenance_fee: e.target.value })}
-                        required 
-                      />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label text-muted small fw-bold">Meta WhatsApp Charge (₹ Z/msg)</label>
-                      <input 
-                        type="number" 
-                        step="0.01"
-                        className="form-control"
-                        value={editForm.whatsapp_cost_per_msg}
-                        onChange={(e) => setEditForm({ ...editForm, whatsapp_cost_per_msg: e.target.value })}
-                        required 
-                      />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label text-muted small fw-bold">Subscription Renewal Date</label>
-                      <input 
-                        type="date" 
-                        className="form-control"
-                        value={editForm.subscription_renewal_date}
-                        onChange={(e) => setEditForm({ ...editForm, subscription_renewal_date: e.target.value })}
-                      />
+                <div className="modal-body p-4" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+                  {/* SECTION 1: COMMERCIAL PRICING */}
+                  <div className="p-3 mb-4 rounded-3 border" style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}>
+                    <h6 className="fw-bold mb-3 d-flex align-items-center" style={{ color: '#4F46E5' }}>
+                      💳 1. Commercial SaaS Pricing Tiers & Meta API Rates
+                    </h6>
+                    <div className="row g-3">
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold" style={{ color: '#475569' }}>One-Time Setup Fee (₹ X)</label>
+                        <input 
+                          type="number" 
+                          className="form-control"
+                          style={{ backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1' }}
+                          value={editForm.one_time_setup_fee}
+                          onChange={(e) => setEditForm({ ...editForm, one_time_setup_fee: e.target.value })}
+                          required 
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold" style={{ color: '#475569' }}>Yearly Maintenance Fee (₹ Y/yr)</label>
+                        <input 
+                          type="number" 
+                          className="form-control"
+                          style={{ backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1' }}
+                          value={editForm.yearly_maintenance_fee}
+                          onChange={(e) => setEditForm({ ...editForm, yearly_maintenance_fee: e.target.value })}
+                          required 
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold" style={{ color: '#475569' }}>Meta WhatsApp Rate (₹ Z/msg)</label>
+                        <input 
+                          type="number" 
+                          step="0.01"
+                          className="form-control"
+                          style={{ backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1' }}
+                          value={editForm.whatsapp_cost_per_msg}
+                          onChange={(e) => setEditForm({ ...editForm, whatsapp_cost_per_msg: e.target.value })}
+                          required 
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold" style={{ color: '#475569' }}>Meta Phone Number ID</label>
+                        <input 
+                          type="text" 
+                          className="form-control"
+                          style={{ backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1' }}
+                          placeholder="e.g. 1202739572931345"
+                          value={editForm.whatsapp_phone_number_id}
+                          onChange={(e) => setEditForm({ ...editForm, whatsapp_phone_number_id: e.target.value })}
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-bold" style={{ color: '#475569' }}>Subscription Renewal Date</label>
+                        <input 
+                          type="date" 
+                          className="form-control"
+                          style={{ backgroundColor: '#FFFFFF', border: '1px solid #CBD5E1' }}
+                          value={editForm.subscription_renewal_date}
+                          onChange={(e) => setEditForm({ ...editForm, subscription_renewal_date: e.target.value })}
+                        />
+                      </div>
                     </div>
                   </div>
 
-                  <h6 className="fw-bold text-primary mb-3">2. Account License & Modular Feature Switches</h6>
-                  <div className="row g-3 mb-4">
-                    <div className="col-12">
-                      <div className={`form-check form-switch p-3 border rounded ${editForm.is_active ? 'bg-light' : 'bg-danger-subtle border-danger'}`}>
-                        <input 
-                          className="form-check-input ms-0 me-3" 
-                          type="checkbox" 
-                          id="edit_is_active" 
-                          checked={editForm.is_active} 
-                          onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })} 
-                        />
-                        <label className={`form-check-label fw-bold ${editForm.is_active ? 'text-dark' : 'text-danger'}`} htmlFor="edit_is_active">
-                          {editForm.is_active ? '● Garage License Active' : '🔒 Garage License Suspended (Read-Only Mode)'}
-                        </label>
+                  {/* SECTION 2: LICENSE CONTROL */}
+                  <div className="mb-4">
+                    <h6 className="fw-bold mb-3" style={{ color: '#0F172A' }}>🔒 2. Workspace Access Control</h6>
+                    <div className={`form-check form-switch p-3 border rounded ${editForm.is_active ? 'bg-light border-success-subtle' : 'bg-danger-subtle border-danger'}`}>
+                      <input 
+                        className="form-check-input ms-0 me-3" 
+                        type="checkbox" 
+                        id="edit_is_active" 
+                        checked={editForm.is_active} 
+                        onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })} 
+                      />
+                      <label className={`form-check-label fw-bold ${editForm.is_active ? 'text-success' : 'text-danger'}`} htmlFor="edit_is_active">
+                        {editForm.is_active ? '● Garage Workspace License Active' : '🔒 Garage License Suspended (Full Lockout Screen)'}
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* SECTION 3: 4-CATEGORY MODULE SWITCHES */}
+                  <h6 className="fw-bold mb-3" style={{ color: '#0F172A' }}>🧩 3. Modular Feature Matrix (Enable/Disable Features)</h6>
+                  
+                  {/* CATEGORY A: WORKSHOP OPERATIONS */}
+                  <div className="mb-3">
+                    <small className="fw-bold text-uppercase d-block mb-2" style={{ color: '#4F46E5', fontSize: '11px', letterSpacing: '0.5px' }}>
+                      A. Operations & Inventory Management
+                    </small>
+                    <div className="row g-2">
+                      <div className="col-md-6">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_stock" checked={editForm.feature_stock} onChange={(e) => setEditForm({ ...editForm, feature_stock: e.target.checked })} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_stock">Stock & Inventory Management</label>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_purchase" checked={editForm.feature_purchase} onChange={(e) => setEditForm({ ...editForm, feature_purchase: e.target.checked })} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_purchase">Purchase Entry & Vendor Bills</label>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_payroll" checked={editForm.feature_payroll} onChange={(e) => setEditForm({ ...editForm, feature_payroll: e.target.checked })} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_payroll">Staff Attendance & Payroll Engine</label>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_tasks" checked={editForm.feature_tasks} onChange={(e) => setEditForm({ ...editForm, feature_tasks: e.target.checked })} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_tasks">Internal Tasks & Job Assignments</label>
+                        </div>
                       </div>
                     </div>
-                    <div className="col-md-6">
-                      <div className="form-check form-switch p-3 border rounded bg-light">
-                        <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_stock" checked={editForm.feature_stock} onChange={(e) => setEditForm({ ...editForm, feature_stock: e.target.checked })} />
-                        <label className="form-check-label text-dark fw-bold" htmlFor="edit_stock">Stock & Inventory Management</label>
+                  </div>
+
+                  {/* CATEGORY B: ANALYTICS & REMINDERS */}
+                  <div className="mb-3">
+                    <small className="fw-bold text-uppercase d-block mb-2" style={{ color: '#0284C7', fontSize: '11px', letterSpacing: '0.5px' }}>
+                      B. Intelligence, Analytics & Reminders
+                    </small>
+                    <div className="row g-2">
+                      <div className="col-md-6">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_analytics" checked={editForm.feature_analytics} onChange={(e) => setEditForm({ ...editForm, feature_analytics: e.target.checked })} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_analytics">Financial Analytics & P&L Reports</label>
+                        </div>
+                      </div>
+                      <div className="col-md-6">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_reminders" checked={editForm.feature_reminders} onChange={(e) => setEditForm({ ...editForm, feature_reminders: e.target.checked })} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_reminders">Service & Due Payment Reminders</label>
+                        </div>
                       </div>
                     </div>
-                    <div className="col-md-6">
-                      <div className="form-check form-switch p-3 border rounded bg-light">
-                        <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_purchase" checked={editForm.feature_purchase} onChange={(e) => setEditForm({ ...editForm, feature_purchase: e.target.checked })} />
-                        <label className="form-check-label text-dark fw-bold" htmlFor="edit_purchase">Purchase Entry & Bills</label>
+                  </div>
+
+                  {/* CATEGORY C: META WHATSAPP GATEWAY */}
+                  <div>
+                    <small className="fw-bold text-uppercase d-block mb-2" style={{ color: '#16A34A', fontSize: '11px', letterSpacing: '0.5px' }}>
+                      C. Meta WhatsApp Cloud Gateway Controls
+                    </small>
+                    <div className="row g-2">
+                      <div className="col-md-6">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_whatsapp" checked={editForm.feature_whatsapp} onChange={(e) => setEditForm({ ...editForm, feature_whatsapp: e.target.checked })} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_whatsapp">WhatsApp Gateway (Global Master Switch)</label>
+                        </div>
                       </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="form-check form-switch p-3 border rounded bg-light">
-                        <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_analytics" checked={editForm.feature_analytics} onChange={(e) => setEditForm({ ...editForm, feature_analytics: e.target.checked })} />
-                        <label className="form-check-label text-dark fw-bold" htmlFor="edit_analytics">Financial Analytics & Reports</label>
+                      <div className="col-md-6">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_whatsapp_utility" checked={editForm.feature_whatsapp_utility} onChange={(e) => setEditForm({ ...editForm, feature_whatsapp_utility: e.target.checked })} disabled={!editForm.feature_whatsapp} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_whatsapp_utility">Utility Messages (Invoices, Receipts)</label>
+                        </div>
                       </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="form-check form-switch p-3 border rounded bg-light">
-                        <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_reminders" checked={editForm.feature_reminders} onChange={(e) => setEditForm({ ...editForm, feature_reminders: e.target.checked })} />
-                        <label className="form-check-label text-dark fw-bold" htmlFor="edit_reminders">Service & Payment Reminders</label>
+                      <div className="col-md-6">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_whatsapp_marketing" checked={editForm.feature_whatsapp_marketing} onChange={(e) => setEditForm({ ...editForm, feature_whatsapp_marketing: e.target.checked })} disabled={!editForm.feature_whatsapp} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_whatsapp_marketing">Marketing Broadcasts & Promos</label>
+                        </div>
                       </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="form-check form-switch p-3 border rounded bg-light">
-                        <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_whatsapp" checked={editForm.feature_whatsapp} onChange={(e) => setEditForm({ ...editForm, feature_whatsapp: e.target.checked })} />
-                        <label className="form-check-label text-dark fw-bold" htmlFor="edit_whatsapp">WhatsApp Messaging (Global)</label>
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="form-check form-switch p-3 border rounded bg-light">
-                        <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_whatsapp_utility" checked={editForm.feature_whatsapp_utility} onChange={(e) => setEditForm({ ...editForm, feature_whatsapp_utility: e.target.checked })} disabled={!editForm.feature_whatsapp} />
-                        <label className="form-check-label text-dark fw-bold" htmlFor="edit_whatsapp_utility">Allow WhatsApp Utility (Invoices, Reminders)</label>
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="form-check form-switch p-3 border rounded bg-light">
-                        <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_whatsapp_marketing" checked={editForm.feature_whatsapp_marketing} onChange={(e) => setEditForm({ ...editForm, feature_whatsapp_marketing: e.target.checked })} disabled={!editForm.feature_whatsapp} />
-                        <label className="form-check-label text-dark fw-bold" htmlFor="edit_whatsapp_marketing">Allow WhatsApp Marketing Broadcasts</label>
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="form-check form-switch p-3 border rounded bg-light">
-                        <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_whatsapp_costing" checked={editForm.feature_whatsapp_costing} onChange={(e) => setEditForm({ ...editForm, feature_whatsapp_costing: e.target.checked })} />
-                        <label className="form-check-label text-dark fw-bold" htmlFor="edit_whatsapp_costing">WhatsApp Costing System</label>
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="form-check form-switch p-3 border rounded bg-light">
-                        <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_payroll" checked={editForm.feature_payroll} onChange={(e) => setEditForm({ ...editForm, feature_payroll: e.target.checked })} />
-                        <label className="form-check-label text-dark fw-bold" htmlFor="edit_payroll">Staff & Payroll Management</label>
+                      <div className="col-md-6">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_whatsapp_costing" checked={editForm.feature_whatsapp_costing} onChange={(e) => setEditForm({ ...editForm, feature_whatsapp_costing: e.target.checked })} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_whatsapp_costing">WhatsApp Credit Costing System</label>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-                <div className="modal-footer border-top p-4">
+
+                <div className="modal-footer border-top p-4" style={{ borderColor: '#F1F5F9' }}>
                   <button type="button" className="btn btn-outline-secondary rounded-pill px-4" onClick={() => setSelectedGarage(null)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary fw-bold rounded-pill px-4">Save Configuration</button>
+                  <button type="submit" className="btn btn-primary fw-bold rounded-pill px-4 shadow-sm" style={{ background: 'linear-gradient(135deg, #6366F1 0%, #4F46E5 100%)', border: 'none' }}>
+                    Save Configuration
+                  </button>
                 </div>
               </form>
             </div>
@@ -853,22 +995,23 @@ const SuperAdminDashboard = () => {
 
       {/* TOP UP MODAL */}
       {topUpModal.isOpen && topUpModal.garage && (
-        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(6px)' }}>
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(8px)' }}>
           <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow-lg" style={{ backgroundColor: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-              <div className="modal-header border-bottom p-4">
+            <div className="modal-content border-0 shadow-lg text-dark" style={{ backgroundColor: '#FFFFFF', borderRadius: '20px', border: '1px solid #E2E8F0' }}>
+              <div className="modal-header border-bottom p-4" style={{ borderColor: '#F1F5F9' }}>
                 <h5 className="modal-title fw-bold text-dark">Recharge WhatsApp Credits</h5>
                 <button type="button" className="btn-close" onClick={() => setTopUpModal({ isOpen: false, garage: null, amount: '100' })}></button>
               </div>
               <form onSubmit={handleTopUpSubmit}>
                 <div className="modal-body p-4">
-                  <p className="text-muted">Garage: <strong className="text-dark">{topUpModal.garage.name}</strong></p>
-                  <p className="text-muted mb-3">Current Balance: <strong className="text-success">₹{parseFloat(topUpModal.garage.whatsapp_credit_balance || 0).toFixed(2)}</strong></p>
+                  <p className="text-muted mb-1">Garage: <strong className="text-dark">{topUpModal.garage.name}</strong></p>
+                  <p className="text-muted mb-3">Current Balance: <strong className="text-success fs-6">₹{parseFloat(topUpModal.garage.whatsapp_credit_balance || 0).toFixed(2)}</strong></p>
                   <div className="mb-3">
-                    <label className="form-label text-muted fw-bold">Recharge Amount (₹)</label>
+                    <label className="form-label fw-bold small text-muted">Recharge Amount (₹)</label>
                     <input 
                       type="number" 
-                      className="form-control form-control-lg"
+                      className="form-control form-control-lg text-dark"
+                      style={{ backgroundColor: '#F8FAFC', border: '1px solid #CBD5E1' }}
                       value={topUpModal.amount}
                       onChange={(e) => setTopUpModal({ ...topUpModal, amount: e.target.value })}
                       min="1"
@@ -876,9 +1019,9 @@ const SuperAdminDashboard = () => {
                     />
                   </div>
                 </div>
-                <div className="modal-footer border-top p-4">
+                <div className="modal-footer border-top p-4" style={{ borderColor: '#F1F5F9' }}>
                   <button type="button" className="btn btn-outline-secondary rounded-pill px-4" onClick={() => setTopUpModal({ isOpen: false, garage: null, amount: '100' })}>Cancel</button>
-                  <button type="submit" className="btn btn-success fw-bold rounded-pill px-4">Recharge Credits</button>
+                  <button type="submit" className="btn btn-success fw-bold rounded-pill px-4 shadow-sm" style={{ background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)', border: 'none' }}>Recharge Credits</button>
                 </div>
               </form>
             </div>

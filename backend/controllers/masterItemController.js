@@ -35,6 +35,10 @@ const createMasterItem = async (req, res) => {
     const { name, partNo, type, unitPrice, lubeCharge, labourCharge, stockQty } = req.body;
 
     try {
+        const garageRes = await db.query('SELECT feature_stock FROM garages WHERE id = $1', [garageId]);
+        if (garageRes.rows.length > 0 && garageRes.rows[0].feature_stock === false) {
+            return res.status(403).json({ success: false, message: 'This action is restricted because the Stock & Inventory module is set to Read-Only Mode by your Super Admin.' });
+        }
         const query = `
             INSERT INTO master_items (garage_id, name, part_no, type, unit_price, lube_charge, labour_charge, stock_qty)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)

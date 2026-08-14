@@ -167,13 +167,17 @@ const CreateInvoicePage = () => {
         
         const amountBeforeTax = subtotal - Math.max(0, calculatedDiscountAmount);
         const calculatedTaxAmount = amountBeforeTax * (currentTaxRatePercent / 100);
-        const calculatedGrandTotal = amountBeforeTax + calculatedTaxAmount;
+        const rawGrandTotal = amountBeforeTax + calculatedTaxAmount;
+        const roundedGrandTotal = Math.round(rawGrandTotal);
+        const roundOffAmount = roundedGrandTotal - rawGrandTotal;
         
         return {
             discountAmount: Math.max(0, calculatedDiscountAmount),
             taxableAmount: amountBeforeTax,
             taxAmount: calculatedTaxAmount,
-            grandTotal: calculatedGrandTotal
+            rawGrandTotal,
+            roundOffAmount,
+            grandTotal: roundedGrandTotal
         };
     }, [invoiceDraft, discountType, discountValue, taxRate]);
 
@@ -408,12 +412,18 @@ const CreateInvoicePage = () => {
                                                 </InputGroup>
                                             </ListGroup.Item>
                                             <ListGroup.Item className="d-flex justify-content-between small text-muted py-1">
-                                                <span></span>
+                                                <span>Tax Amount:</span>
                                                 <span>+ {formatCurrency(invoiceTotals.taxAmount)}</span>
                                             </ListGroup.Item>
-                                            <ListGroup.Item className="d-flex justify-content-between fw-bold fs-5 pt-3 pb-1 border-top border-dark">
-                                                <span>Grand Total:</span>
-                                                <span>{formatCurrency(invoiceTotals.grandTotal)}</span>
+                                            {invoiceTotals.roundOffAmount !== 0 && (
+                                                <ListGroup.Item className="d-flex justify-content-between small text-muted py-1">
+                                                    <span>Round Off Adjustment:</span>
+                                                    <span>{invoiceTotals.roundOffAmount >= 0 ? `+ ${formatCurrency(invoiceTotals.roundOffAmount)}` : `- ${formatCurrency(Math.abs(invoiceTotals.roundOffAmount))}`}</span>
+                                                </ListGroup.Item>
+                                            )}
+                                            <ListGroup.Item className="d-flex justify-content-between fw-bold fs-5 pt-2 pb-1 border-top border-dark">
+                                                <span>Grand Total (Rounded):</span>
+                                                <span className="text-primary">{formatCurrency(invoiceTotals.grandTotal)}</span>
                                             </ListGroup.Item>
                                         </ListGroup>
                                     </Card>

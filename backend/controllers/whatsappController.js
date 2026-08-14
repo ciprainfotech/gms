@@ -13,6 +13,102 @@ const formatPhone = (phone) => {
   return cleaned;
 };
 
+// Helper to send message via Meta WhatsApp Cloud API
+const sendMetaWhatsAppCloudMessage = async ({ phoneNumberId, systemToken, recipientPhone, messageText, mediaBase64, documentName }) => {
+  const metaUrl = `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`;
+
+  if (mediaBase64) {
+    let finalMimeType = 'application/pdf';
+    let rawBase64 = mediaBase64;
+    let filename = documentName || 'Document.pdf';
+
+    if (mediaBase64.startsWith('data:')) {
+      const matches = mediaBase64.match(/^data:([a-zA-Z0-9-+\/]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        finalMimeType = matches[1];
+        rawBase64 = matches[2];
+      }
+    }
+
+    const mediaBuffer = Buffer.from(rawBase64, 'base64');
+    
+    // Upload media to Meta Media endpoint first
+    const formData = new FormData();
+    const mediaBlob = new Blob([mediaBuffer], { type: finalMimeType });
+    formData.append('file', mediaBlob, filename);
+    formData.append('messaging_product', 'whatsapp');
+
+    const mediaUploadRes = await fetch(`https://graph.facebook.com/v18.0/${phoneNumberId}/media`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${systemToken}`
+      },
+      body: formData
+    });
+
+    const mediaUploadData = await mediaUploadRes.json();
+    if (!mediaUploadRes.ok || !mediaUploadData.id) {
+      throw new Error(mediaUploadData.error?.message || 'Failed to upload media to Meta Cloud API');
+    }
+
+    const mediaId = mediaUploadData.id;
+    const isImage = finalMimeType.startsWith('image/');
+
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: recipientPhone,
+      type: isImage ? 'image' : 'document',
+      [isImage ? 'image' : 'document']: {
+        id: mediaId,
+        caption: messageText,
+        filename: filename
+      }
+    };
+
+    const res = await fetch(metaUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${systemToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error?.message || 'Meta Cloud API document dispatch error');
+    }
+
+    return data.messages?.[0]?.id || `META_${Date.now()}`;
+  } else {
+    // Plain text message
+    const payload = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: recipientPhone,
+      type: 'text',
+      text: { preview_url: false, body: messageText }
+    };
+
+    const res = await fetch(metaUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${systemToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error?.message || 'Meta Cloud API message dispatch error');
+    }
+
+    return data.messages?.[0]?.id || `META_${Date.now()}`;
+  }
+};
+
 // Generic Real WhatsApp Gateway Dispatcher
 exports.processWhatsAppDispatch = async ({ garageId, recipientPhone, messageType, messageText, mediaBase64 = null, documentName = 'Document.pdf' }) => {
   const garageRes = await db.query(
@@ -62,55 +158,27 @@ exports.processWhatsAppDispatch = async ({ garageId, recipientPhone, messageType
 
   const formattedRecipient = formatPhone(recipientPhone);
   let gatewayMsgId = null;
-  let apiError = null;
 
   try {
-    const provider = (garage.whatsapp_provider || 'whatsapp-web').toLowerCase();
-    
-    if (provider === 'whatsapp-web') {
-      const client = whatsappManager.getClient(garageId);
-      if (!client) {
-        throw new Error('WhatsApp is not connected. Please scan the QR code in settings.');
-      }
-      const chatId = `${formattedRecipient}@c.us`;
-      
-      try {
-         // Warm up the contact cache to prevent "No LID for user" errors, without using getNumberId which breaks media uploads
-         await client.getContactById(chatId);
-      } catch (e) {
-         console.log(`[WhatsApp] Contact warm up skipped for ${chatId}`);
-      }
-      
-      let response;
-      if (mediaBase64) {
-         let finalMimeType = 'application/pdf';
-         let finalBase64 = mediaBase64;
-         let finalFilename = documentName;
+    const systemToken = process.env.META_SYSTEM_TOKEN || garage.whatsapp_api_token;
+    const phoneNumberId = garage.whatsapp_phone_number_id;
 
-         // Handle Data URIs from frontend uploads (e.g., data:image/jpeg;base64,...)
-         if (mediaBase64.startsWith('data:')) {
-            const matches = mediaBase64.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-            if (matches && matches.length === 3) {
-               finalMimeType = matches[1];
-               finalBase64 = matches[2];
-               if (finalMimeType.startsWith('image/')) {
-                  finalFilename = 'poster.' + finalMimeType.split('/')[1];
-               }
-            }
-         }
-
-         const media = new MessageMedia(finalMimeType, finalBase64, finalFilename);
-         console.log(`[WhatsApp] Dispatching media: ${finalFilename} (${finalMimeType}), Length: ${finalBase64.length}`);
-         response = await client.sendMessage(chatId, messageText, { media });
-      } else {
-         response = await client.sendMessage(chatId, messageText);
-      }
-      
-      gatewayMsgId = response?.id?._serialized || response?.id?.id || `WWEBJS_${Date.now()}`;
-    } else {
-      // Fallback or old providers
-      gatewayMsgId = `MOCK_ID_${Date.now()}`;
+    if (!phoneNumberId) {
+      throw new Error('WhatsApp Phone Number ID is not configured for this garage. Please contact Super Admin to assign your Meta Phone Number ID.');
     }
+
+    if (!systemToken) {
+      throw new Error('META_SYSTEM_TOKEN is not configured in backend environment. Please set META_SYSTEM_TOKEN in server .env.');
+    }
+
+    gatewayMsgId = await sendMetaWhatsAppCloudMessage({
+      phoneNumberId,
+      systemToken,
+      recipientPhone: formattedRecipient,
+      messageText,
+      mediaBase64,
+      documentName
+    });
   } catch (err) {
     // Log to DB
     await db.query(
@@ -425,54 +493,24 @@ exports.getWhatsAppStatus = async (req, res) => {
   try {
     const garageId = req.garageId;
     const { rows } = await db.query(
-      `SELECT whatsapp_status, whatsapp_phone_number, whatsapp_waba_id, whatsapp_provider, plan_id 
-       FROM garages WHERE id = $1`,
+      `SELECT id, name, phone, whatsapp_phone_number_id, feature_whatsapp FROM garages WHERE id = $1`,
       [garageId]
     );
 
     if (rows.length === 0) return res.status(404).json({ success: false, message: 'Garage not found' });
     
-    // Quick mock for Plan name, normally join with plans table
-    let planName = 'Basic';
-    if (rows[0].plan_id) planName = 'Professional'; // simple mock
-
-    // Check actual memory client status
-    const client = whatsappManager.getClient(garageId);
-    let realStatus = rows[0].whatsapp_status;
-    let phoneNumber = rows[0].whatsapp_phone_number;
-
-    if (client) {
-      const state = await client.getState().catch(() => null);
-      if (state === 'CONNECTED') {
-        realStatus = 'connected';
-        phoneNumber = client.info?.wid?.user || phoneNumber;
-        
-        // Auto-update DB if it says disconnected but we are connected
-        if (rows[0].whatsapp_status !== 'connected') {
-            await db.query(`UPDATE garages SET whatsapp_status = 'connected', whatsapp_provider = 'whatsapp-web', whatsapp_phone_number = $1 WHERE id = $2`, [phoneNumber, garageId]);
-        }
-      } else {
-        // Client in memory but not in CONNECTED state (e.g. disconnected, or invalid session)
-        if (realStatus === 'connected') {
-          realStatus = 'disconnected';
-          await db.query(`UPDATE garages SET whatsapp_status = 'disconnected' WHERE id = $1`, [garageId]);
-        }
-      }
-    } else {
-      if (realStatus === 'connected') {
-        // DB says connected, but no client in memory.
-        // It's genuinely disconnected or failed to restore. Let's sync the DB to reflect reality.
-        realStatus = 'disconnected';
-        await db.query(`UPDATE garages SET whatsapp_status = 'disconnected' WHERE id = $1`, [garageId]);
-      }
-    }
+    const garage = rows[0];
+    const isConfigured = Boolean(garage.whatsapp_phone_number_id);
 
     res.json({
       success: true,
-      status: realStatus || 'disconnected',
-      phoneNumber: phoneNumber,
-      provider: 'whatsapp-web',
-      plan: planName
+      status: isConfigured ? 'connected' : 'disconnected',
+      provider: 'meta_cloud_api',
+      phoneNumberId: garage.whatsapp_phone_number_id || null,
+      phoneNumber: garage.phone || null,
+      message: isConfigured 
+        ? 'Official Meta WhatsApp Cloud API is Active & Connected'
+        : 'Meta Phone Number ID is missing. Contact Super Admin to link your number.'
     });
   } catch (error) {
     console.error('Error fetching WhatsApp status:', error);

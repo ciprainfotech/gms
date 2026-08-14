@@ -46,9 +46,11 @@ export const GarageProvider = ({ children }) => {
     purchase: activeGarage?.feature_purchase === true,
     analytics: activeGarage?.feature_analytics === true,
     reminders: activeGarage?.feature_reminders === true,
+    tasks: activeGarage?.feature_tasks === true,
     whatsapp: activeGarage?.feature_whatsapp === true,
     whatsappUtility: activeGarage?.feature_whatsapp_utility !== false,
     whatsappMarketing: activeGarage?.feature_whatsapp_marketing !== false,
+    whatsappCosting: activeGarage?.feature_whatsapp_costing !== false,
     payroll: activeGarage?.feature_payroll !== false,
   };
 

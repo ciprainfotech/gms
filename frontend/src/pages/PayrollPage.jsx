@@ -4,7 +4,8 @@ import { Container, Card, Row, Col, Table, Button, Form, Badge } from 'react-boo
 import { 
   FaUsers, FaUserPlus, FaCalendarCheck, FaMoneyBillWave, FaTrash, 
   FaEdit, FaWhatsapp, FaCalendarAlt, FaHistory, FaCheckCircle, 
-  FaTimes, FaFileInvoiceDollar, FaEye, FaEyeSlash, FaSave, FaChartLine, FaPrint
+  FaTimes, FaFileInvoiceDollar, FaEye, FaEyeSlash, FaSave, FaChartLine, FaPrint,
+  FaUserSlash, FaUserCheck, FaExclamationTriangle, FaLock
 } from 'react-icons/fa';
 import api from '../api/api.js';
 import CustomToast from '../components/CustomToast';
@@ -63,6 +64,14 @@ const PayrollPage = () => {
   const [ledgerStaff, setLedgerStaff] = useState(null);
   const [ledgerTransactions, setLedgerTransactions] = useState([]);
   const [showLedgerModal, setShowLedgerModal] = useState(false);
+
+  // Resign modal
+  const [showResignModal, setShowResignModal] = useState(false);
+  const [resigningStaff, setResigningStaff] = useState(null);
+  const [resignForm, setResignForm] = useState({ leaving_date: new Date().toISOString().split('T')[0], leaving_notes: '', status: 'resigned' });
+
+  // Ledger filter toggle
+  const [showResignedInLedger, setShowResignedInLedger] = useState(false);
 
   useEffect(() => {
     fetchStaff();
@@ -128,7 +137,10 @@ const PayrollPage = () => {
         
         logs.forEach(log => {
           if (!map[log.staff_id]) map[log.staff_id] = {};
-          map[log.staff_id][log.date] = log.status;
+          const cleanDateStr = log.date ? log.date.toString().split('T')[0] : '';
+          if (cleanDateStr) {
+            map[log.staff_id][cleanDateStr] = log.status;
+          }
         });
 
         setLedgerBookState(map);
@@ -219,6 +231,81 @@ const PayrollPage = () => {
 
   // --- LEDGER REGISTER ATTENDANCE mark cycle ---
 
+  const handleOpenResignModal = (staff) => {
+    setResigningStaff(staff);
+    setResignForm({
+      leaving_date: new Date().toISOString().split('T')[0],
+      leaving_notes: '',
+      status: 'resigned'
+    });
+    setShowResignModal(true);
+  };
+
+  const handleResignStaff = async (e) => {
+    e.preventDefault();
+    if (!resignForm.leaving_date) {
+      setToast({ type: 'error', title: 'Validation', message: 'Leaving date is required.' });
+      return;
+    }
+    // Client side: leaving_date must be >= joined_date
+    const joinedDate = resigningStaff.joined_date?.split('T')[0];
+    if (joinedDate && resignForm.leaving_date < joinedDate) {
+      setToast({ type: 'error', title: 'Invalid Date', message: `Leaving date cannot be before joining date (${new Date(joinedDate).toLocaleDateString('en-IN')}).` });
+      return;
+    }
+    setProcessing(true);
+    try {
+      const res = await fetch(`http://localhost:5001/api/staff/${resigningStaff.id}/resign`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(resignForm),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setToast({ type: 'success', title: 'Status Updated', message: data.message });
+        setShowResignModal(false);
+        setResigningStaff(null);
+        fetchStaff();
+      } else {
+        setToast({ type: 'error', title: 'Failed', message: data.message });
+      }
+    } catch (err) {
+      setToast({ type: 'error', title: 'Network Error', message: 'Could not connect to server.' });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleReactivateStaff = (staff) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reactivate Staff Member',
+      message: `Reactivate ${staff.name} as an active employee? Their leaving date will be cleared.`,
+      action: async () => {
+        setProcessing(true);
+        try {
+          const res = await fetch(`http://localhost:5001/api/staff/${staff.id}/reactivate`, {
+            method: 'PATCH',
+            credentials: 'include'
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setToast({ type: 'success', title: 'Reactivated!', message: data.message });
+            fetchStaff();
+          } else {
+            setToast({ type: 'error', title: 'Failed', message: data.message });
+          }
+        } catch (err) {
+          setToast({ type: 'error', title: 'Error', message: 'Server communication failed.' });
+        } finally {
+          setProcessing(false);
+        }
+      }
+    });
+  };
+
+
   const daysInActiveMonth = useMemo(() => {
     const [yearStr, monthStr] = selectedMonth.split('-');
     const year = parseInt(yearStr, 10);
@@ -226,10 +313,14 @@ const PayrollPage = () => {
     const totalDays = new Date(year, month, 0).getDate();
     
     const list = [];
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     for (let d = 1; d <= totalDays; d++) {
       const dayStr = d < 10 ? `0${d}` : `${d}`;
+      const dateObj = new Date(year, month - 1, d);
+      const dayName = dayNames[dateObj.getDay()];
+      const isSunday = dateObj.getDay() === 0;
       const dateStr = `${selectedMonth}-${dayStr}`;
-      list.push({ day: d, dateStr });
+      list.push({ day: d, dayName, isSunday, dateStr });
     }
     return list;
   }, [selectedMonth]);
@@ -300,7 +391,7 @@ const PayrollPage = () => {
       date: new Date().toISOString().split('T')[0],
       payment_method: 'Cash',
       notes: '',
-      send_whatsapp: activeGarage?.whatsapp_status === 'connected'
+      send_whatsapp: Boolean(activeGarage?.whatsapp_phone_number_id)
     });
     setShowTxModal(true);
   };
@@ -316,6 +407,30 @@ const PayrollPage = () => {
     try {
       const amountVal = parseFloat(txForm.amount);
       
+      // Validation: Joined date & Leaving date check
+      if (txStaff.joined_date) {
+        const joinDateStr = txStaff.joined_date.split('T')[0];
+        if (txForm.date < joinDateStr) {
+          setToast({
+            type: 'error',
+            title: 'Invalid Date',
+            message: `Transaction date cannot be before joining date (${new Date(joinDateStr + 'T00:00:00').toLocaleDateString('en-IN')})!`
+          });
+          return;
+        }
+      }
+      if (txStaff.leaving_date) {
+        const leaveDateStr = txStaff.leaving_date.split('T')[0];
+        if (txForm.date > leaveDateStr) {
+          setToast({
+            type: 'error',
+            title: 'Invalid Date',
+            message: `Transaction date cannot be after resignation date (${new Date(leaveDateStr + 'T00:00:00').toLocaleDateString('en-IN')})!`
+          });
+          return;
+        }
+      }
+
       const staffCalculated = calculatedPayrollData.find(c => Number(c.id) === Number(txStaff.id));
       const pendingSalary = staffCalculated ? staffCalculated.pendingSalary : 0;
       
@@ -423,8 +538,8 @@ const PayrollPage = () => {
       setToast({ type: 'error', title: 'Feature Disabled', message: 'Utility messaging is disabled for your account by your Super Admin.' });
       return;
     }
-    if (activeGarage.whatsapp_status !== 'connected') {
-      setToast({ type: 'error', title: 'WhatsApp Disconnected', message: 'WhatsApp is not connected. Please scan the QR code in settings.' });
+    if (!activeGarage.whatsapp_phone_number_id) {
+      setToast({ type: 'error', title: 'WhatsApp Not Configured', message: 'Meta WhatsApp Phone Number ID is not configured for your garage. Contact Super Admin.' });
       return;
     }
     if (!staff.phone) {
@@ -457,11 +572,100 @@ const PayrollPage = () => {
 
   // --- PRINT PAYROLL REGISTER REPORT SHEET ---
   const handlePrintPayrollReport = () => {
-    document.body.className = 'printing-payroll-report';
-    window.print();
-    setTimeout(() => {
-      document.body.className = '';
-    }, 500);
+    const printEl = document.getElementById('payroll-print-region');
+    if (!printEl) {
+      setToast({ type: 'error', title: 'Print Error', message: 'Report area not found. Switch to Monthly Reports tab first.' });
+      return;
+    }
+
+    // Create a hidden iframe and inject only the report HTML
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:0;height:0;border:none;';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8"/>
+          <title>Payroll Report - ${activeGarage?.name || 'Garage'}</title>
+          <style>
+            @page { size: A4 landscape; margin: 15mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 12px; color: #000; background: #fff; margin: 0; padding: 0; }
+            h3 { font-size: 20px; font-weight: 700; margin: 0 0 4px 0; color: #1e293b; }
+            h5 { font-size: 14px; font-weight: 400; margin: 0; color: #64748b; }
+            h6 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin: 0 0 4px 0; }
+            .header-row { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 16px; }
+            .text-end { text-align: right; }
+            table { width: 100%; border-collapse: collapse; font-size: 11px; }
+            thead tr { background: #f8fafc; }
+            th { border: 1px solid #cbd5e1; padding: 7px 8px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; color: #475569; }
+            td { border: 1px solid #e2e8f0; padding: 7px 8px; }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .text-success { color: #16a34a; }
+            .text-danger { color: #dc2626; }
+            .text-warning { color: #d97706; }
+            .fw-bold { font-weight: 700; }
+            .footer-row { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 12px; border-top: 1px solid #e2e8f0; }
+            .footer-note { font-size: 10px; color: #94a3b8; }
+            .signatory { font-size: 13px; font-weight: 700; color: #1e293b; }
+          </style>
+        </head>
+        <body>
+          ${printEl.innerHTML}
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:24px;padding-top:14px;border-top:1px solid #e2e8f0;">
+            <div style="font-size:10px;color:#94a3b8;">
+              Generated by Garage Workshop Payroll Suite &bull; ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })} at ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+            </div>
+            <div style="font-size:13px;font-weight:700;color:#1e293b;">
+              Authorized Signatory: _______________________
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    iframe.contentWindow.onload = () => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 1000);
+    };
+  };
+
+  // ── Lifecycle helpers ──────────────────────────────────────────────────────
+
+  // Is this staff member employed at any point during the selected month?
+  const isStaffActiveInMonth = (staff, yearN, monthN) => {
+    const firstDay = `${selectedMonth}-01`;
+    const lastDayDate = new Date(yearN, monthN, 0);
+    const lastDay = lastDayDate.toISOString().split('T')[0];
+    const joinedDate = staff.joined_date?.split('T')[0];
+    const leavingDate = staff.leaving_date?.split('T')[0];
+    if (!joinedDate) return false;
+    if (joinedDate > lastDay) return false;
+    if (leavingDate && leavingDate < firstDay) return false;
+    return true;
+  };
+
+  // Should this cell (dateStr = YYYY-MM-DD) be disabled for this staff?
+  // Returns { disabled: bool, reason: string }
+  const getCellState = (staff, dateStr) => {
+    const joinedDate = staff.joined_date?.split('T')[0];
+    const leavingDate = staff.leaving_date?.split('T')[0];
+    if (joinedDate && dateStr < joinedDate) {
+      return { disabled: true, reason: `Before joining (${new Date(joinedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })})` };
+    }
+    if (leavingDate && dateStr > leavingDate) {
+      return { disabled: true, reason: `After leaving (${new Date(leavingDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })})` };
+    }
+    return { disabled: false, reason: null };
   };
 
   // --- DYNAMIC CALCULATIONS ---
@@ -471,45 +675,65 @@ const PayrollPage = () => {
     const year = parseInt(yearStr, 10);
     const month = parseInt(monthStr, 10);
     const totalDaysInMonth = new Date(year, month, 0).getDate();
+    const firstDay = `${selectedMonth}-01`;
+    const lastDay = new Date(year, month, 0).toISOString().split('T')[0];
 
-    return staffList.map(staff => {
-      // Find monthly attendance summary
-      const sum = monthlySummary.find(item => Number(item.staff_id) === Number(staff.id)) || {
-        present_count: 0,
-        half_day_count: 0,
-        holiday_count: 0,
-        absent_count: 0,
-        total_paid: 0
-      };
+    // Filter: only staff active during this month OR resigned staff with pending balance
+    return staffList
+      .filter(staff => {
+        const activeThisMonth = isStaffActiveInMonth(staff, year, month);
+        if (activeThisMonth) return true;
+        // Always include resigned staff with pending balance for accounts settlement
+        const sum = monthlySummary.find(item => Number(item.staff_id) === Number(staff.id));
+        // If not in this month's summary but resigned, they may still have all-time dues — show them
+        return staff.status !== 'active';
+      })
+      .map(staff => {
+        const sum = monthlySummary.find(item => Number(item.staff_id) === Number(staff.id)) || {
+          present_count: 0, half_day_count: 0, holiday_count: 0, absent_count: 0, total_paid: 0
+        };
 
-      const present = parseInt(sum.present_count || 0, 10);
-      const halfDay = parseInt(sum.half_day_count || 0, 10);
-      const holiday = parseInt(sum.holiday_count || 0, 10);
-      const absent = parseInt(sum.absent_count || 0, 10);
+        const present = parseInt(sum.present_count || 0, 10);
+        const halfDay = parseInt(sum.half_day_count || 0, 10);
+        const holiday = parseInt(sum.holiday_count || 0, 10);
+        const absent = parseInt(sum.absent_count || 0, 10);
 
-      // Paid days = Present + Holiday + 0.5 * Half Day
-      const paidDays = present + holiday + (0.5 * halfDay);
-      const baseSalary = parseFloat(staff.base_salary || 0);
-      
-      let earnedSalary = 0;
-      if (staff.salary_type === 'daily') {
-        earnedSalary = baseSalary * paidDays;
-      } else {
-        earnedSalary = (baseSalary / totalDaysInMonth) * paidDays;
-      }
+        // Paid days
+        const paidDays = present + holiday + (0.5 * halfDay);
+        const baseSalary = parseFloat(staff.base_salary || 0);
 
-      const totalPaid = parseFloat(sum.total_paid || 0);
-      const pendingSalary = earnedSalary - totalPaid;
+        // Proration: for partial months, denominator = days staff was active in this month
+        const joinedDate = staff.joined_date?.split('T')[0];
+        const leavingDate = staff.leaving_date?.split('T')[0];
+        const effectiveStart = joinedDate && joinedDate > firstDay ? joinedDate : firstDay;
+        const effectiveEnd = leavingDate && leavingDate < lastDay ? leavingDate : lastDay;
 
-      return {
-        ...staff,
-        attendanceSummary: { present, halfDay, holiday, absent, paidDays },
-        earnedSalary,
-        totalDaysInMonth,
-        totalPaid,
-        pendingSalary
-      };
-    });
+        const effectiveStartObj = new Date(effectiveStart + 'T00:00:00');
+        const effectiveEndObj = new Date(effectiveEnd + 'T00:00:00');
+        const activeDaysInMonth = Math.max(1, Math.round((effectiveEndObj - effectiveStartObj) / (1000 * 60 * 60 * 24)) + 1);
+
+        let earnedSalary = 0;
+        if (staff.salary_type === 'daily') {
+          earnedSalary = baseSalary * paidDays;
+        } else {
+          // Prorate: use actual active days in month as denominator
+          earnedSalary = (baseSalary / activeDaysInMonth) * paidDays;
+        }
+
+        const totalPaid = parseFloat(sum.total_paid || 0);
+        const pendingSalary = earnedSalary - totalPaid;
+
+        return {
+          ...staff,
+          attendanceSummary: { present, halfDay, holiday, absent, paidDays },
+          earnedSalary,
+          totalDaysInMonth,
+          activeDaysInMonth,
+          totalPaid,
+          pendingSalary,
+          isActiveThisMonth: isStaffActiveInMonth(staff, year, month)
+        };
+      });
   }, [staffList, monthlySummary, selectedMonth]);
 
   // Analytics helper metrics
@@ -549,6 +773,19 @@ const PayrollPage = () => {
       .toUpperCase();
   };
 
+  const formatDateSafe = (dateVal) => {
+    if (!dateVal) return '—';
+    const cleanStr = dateVal.toString().split('T')[0];
+    const parts = cleanStr.split('-');
+    if (parts.length !== 3) return cleanStr;
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const d = new Date(year, month, day);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
   const toggleSalaryVisibility = (staffId) => {
     setShowSalaries(prev => ({ ...prev, [staffId]: !prev[staffId] }));
   };
@@ -579,7 +816,7 @@ const PayrollPage = () => {
             Manage your workshop staff records, manual attendance logs, advances ledger, and WhatsApp payment notifications.
           </p>
         </div>
-        {!isSuspended && (
+        {!isSuspended && features.payroll ? (
           <Button 
             variant="primary" 
             className="btn btn-primary mt-3 mt-md-0 d-inline-flex align-items-center" 
@@ -598,8 +835,22 @@ const PayrollPage = () => {
           >
             <FaUserPlus className="me-2" /> Add Staff Member
           </Button>
-        )}
+        ) : (!features.payroll) ? (
+          <span className="badge bg-warning text-dark px-3 py-2 rounded-pill fw-bold d-inline-flex align-items-center mt-3 mt-md-0" style={{ fontSize: '13px' }}>
+            <FaLock className="me-1.5" /> Read-Only Mode (Locked by Admin)
+          </span>
+        ) : null}
       </div>
+
+      {!features.payroll && (
+        <Alert variant="warning" className="d-flex align-items-center mb-4 shadow-sm border-0 rounded-3" style={{ backgroundColor: '#fffbe6', borderLeft: '4px solid #f59e0b' }}>
+          <FaLock className="fs-4 me-3 text-warning flex-shrink-0" />
+          <div>
+            <strong className="d-block text-dark fw-bold">Module Locked in Read-Only Mode</strong>
+            <span className="small text-muted">You can browse past staff directory records, attendance logs, and payroll balances in Read-Only Mode. Adding new staff, modifying records, or issuing payouts is locked by Super Admin.</span>
+          </div>
+        </Alert>
+      )}
 
       {/* SEGMENTED TAB NAVIGATION CONTROL (HIGH-END DESIGN) */}
       <div className="d-flex justify-content-center mb-4">
@@ -640,103 +891,156 @@ const PayrollPage = () => {
               <Table className="saas-table align-middle">
                 <thead>
                   <tr>
-                    <th>Staff Name</th>
+                    <th>Staff Member</th>
                     <th>Phone</th>
                     <th>Role</th>
+                    <th>Status</th>
                     <th>Joined Date</th>
-                    <th>Salary Type</th>
-                    <th>Base Rate / Month</th>
+                    <th>Left Date</th>
+                    <th>Base Rate</th>
                     <th className="text-end">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {staffList.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="text-center py-4 text-muted">
+                      <td colSpan="8" className="text-center py-4 text-muted">
                         No employee records found. Click "Add Staff Member" to get started.
                       </td>
                     </tr>
                   ) : (
-                    staffList.map((staff) => (
-                      <tr key={staff.id}>
-                        <td>
-                          <div className="d-flex align-items-center gap-3">
-                            <div 
-                              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold"
-                              style={{
-                                width: '38px',
-                                height: '38px',
-                                background: 'linear-gradient(135deg, #818cf8 0%, #4f46e5 100%)',
-                                fontSize: '13px'
-                              }}
-                            >
-                              {initials(staff.name)}
-                            </div>
-                            <div>
-                              <strong className="text-dark d-block">{staff.name}</strong>
-                            </div>
-                          </div>
-                        </td>
-                        <td>{staff.phone || <span className="text-muted small">No Phone</span>}</td>
-                        <td>
-                          <Badge 
-                            bg="primary" 
-                            className="bg-opacity-10 text-primary border border-primary border-opacity-25 px-2.5 py-1.5"
-                            style={{ fontSize: '11px', borderRadius: '20px' }}
-                          >
-                            {staff.role}
-                          </Badge>
-                        </td>
-                        <td>
-                          {staff.joined_date ? new Date(staff.joined_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
-                        </td>
-                        <td className="text-capitalize">{staff.salary_type}</td>
-                        <td className="fw-bold text-dark">
-                          <div className="d-flex align-items-center gap-2">
-                            <span>
-                              {showSalaries[staff.id] 
-                                ? `₹${parseFloat(staff.base_salary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` 
-                                : '••••••'
-                              }
-                            </span>
-                            <Button 
-                              variant="link" 
-                              className="text-muted p-0 border-0 bg-transparent"
-                              onClick={() => toggleSalaryVisibility(staff.id)}
-                            >
-                              {showSalaries[staff.id] ? <FaEyeSlash size={14} /> : <FaEye size={14} />}
-                            </Button>
-                          </div>
-                        </td>
-                        <td className="text-end">
-                          {!isSuspended && (
-                            <>
-                              <Button 
-                                variant="link" 
-                                className="text-primary me-2 p-1 border-0 bg-transparent"
-                                onClick={() => handleEditStaff(staff)}
-                                title="Edit Staff Details"
+                    staffList.map((staff) => {
+                      const isActive = !staff.status || staff.status === 'active';
+                      const isResigned = staff.status === 'resigned';
+                      const isTerminated = staff.status === 'terminated';
+                      return (
+                        <tr key={staff.id} style={{ opacity: isActive ? 1 : 0.72 }}>
+                          <td>
+                            <div className="d-flex align-items-center gap-3">
+                              <div
+                                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                                style={{
+                                  width: '38px', height: '38px', fontSize: '13px',
+                                  background: isActive
+                                    ? 'linear-gradient(135deg, #818cf8 0%, #4f46e5 100%)'
+                                    : isResigned
+                                    ? 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)'
+                                    : 'linear-gradient(135deg, #f87171 0%, #dc2626 100%)'
+                                }}
                               >
-                                <FaEdit className="fs-5" />
-                              </Button>
-                              <Button 
-                                variant="link" 
-                                className="text-danger p-1 border-0 bg-transparent"
-                                onClick={() => handleDeleteStaff(staff)}
-                                title="Delete Staff Member"
+                                {initials(staff.name)}
+                              </div>
+                              <div>
+                                <strong className="text-dark d-block">{staff.name}</strong>
+                                <span className="text-muted text-xs">{staff.role}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="small">{staff.phone || <span className="text-muted">—</span>}</td>
+                          <td>
+                            <Badge
+                              bg="primary"
+                              className="bg-opacity-10 text-primary border border-primary border-opacity-25 px-2 py-1"
+                              style={{ fontSize: '11px', borderRadius: '20px' }}
+                            >
+                              {staff.role}
+                            </Badge>
+                          </td>
+                          <td>
+                            {isActive && (
+                              <span className="badge rounded-pill px-2 py-1" style={{ background: '#dcfce7', color: '#16a34a', fontSize: '11px' }}>
+                                ✓ Active
+                              </span>
+                            )}
+                            {isResigned && (
+                              <span className="badge rounded-pill px-2 py-1" style={{ background: '#fff7ed', color: '#d97706', fontSize: '11px' }}>
+                                ⚠ Resigned
+                              </span>
+                            )}
+                            {isTerminated && (
+                              <span className="badge rounded-pill px-2 py-1" style={{ background: '#fef2f2', color: '#dc2626', fontSize: '11px' }}>
+                                ✕ Terminated
+                              </span>
+                            )}
+                          </td>
+                          <td className="small text-muted">
+                            {formatDateSafe(staff.joined_date)}
+                          </td>
+                          <td className="small">
+                            {staff.leaving_date
+                              ? <span className="text-warning fw-bold">{formatDateSafe(staff.leaving_date)}</span>
+                              : <span className="text-muted">—</span>
+                            }
+                          </td>
+                          <td className="fw-bold text-dark">
+                            <div className="d-flex align-items-center gap-2">
+                              <span>
+                                {showSalaries[staff.id]
+                                  ? `₹${parseFloat(staff.base_salary).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                                  : '••••••'
+                                }
+                              </span>
+                              <Button
+                                variant="link"
+                                className="text-muted p-0 border-0 bg-transparent"
+                                onClick={() => toggleSalaryVisibility(staff.id)}
                               >
-                                <FaTrash className="fs-5" />
+                                {showSalaries[staff.id] ? <FaEyeSlash size={13} /> : <FaEye size={13} />}
                               </Button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    ))
+                            </div>
+                            <div className="text-muted text-xs text-capitalize">{staff.salary_type}</div>
+                          </td>
+                          <td className="text-end">
+                            {!isSuspended && (
+                              <div className="d-flex justify-content-end align-items-center gap-1">
+                                <Button
+                                  variant="link"
+                                  className="text-primary p-1 border-0 bg-transparent"
+                                  onClick={() => handleEditStaff(staff)}
+                                  title="Edit Staff Details"
+                                >
+                                  <FaEdit className="fs-5" />
+                                </Button>
+                                {isActive ? (
+                                  <Button
+                                    variant="link"
+                                    className="p-1 border-0 bg-transparent"
+                                    style={{ color: '#d97706' }}
+                                    onClick={() => handleOpenResignModal(staff)}
+                                    title="Mark as Resigned / Left Job"
+                                  >
+                                    <FaUserSlash className="fs-5" />
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="link"
+                                    className="p-1 border-0 bg-transparent text-success"
+                                    onClick={() => handleReactivateStaff(staff)}
+                                    title="Reactivate Staff Member"
+                                  >
+                                    <FaUserCheck className="fs-5" />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="link"
+                                  className="text-danger p-1 border-0 bg-transparent"
+                                  onClick={() => handleDeleteStaff(staff)}
+                                  title="Delete Staff Member (only if no history)"
+                                >
+                                  <FaTrash className="fs-5" />
+                                </Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </Table>
             </div>
           )}
+
 
           {/* TAB 2: MONTHLY LEDGER REGISTER BOOK (PHYSICAL STYLE REGISTER GRID WITH CELL SELECTS) */}
           {activeTab === 'attendance' && (
@@ -770,64 +1074,121 @@ const PayrollPage = () => {
                 </Col>
               </Row>
 
-              {staffList.length === 0 ? (
-                <div className="text-center py-5 text-muted">
-                  No staff members available. Add staff in Tab 1 first.
+              {/* Ledger header with filter toggle */}
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <div className="text-muted small">
+                  Showing <strong>{staffList.filter(s => {
+                    const [y, m] = selectedMonth.split('-').map(Number);
+                    return isStaffActiveInMonth(s, y, m) || (showResignedInLedger && s.status !== 'active');
+                  }).length}</strong> of {staffList.length} staff members
                 </div>
-              ) : (
-                <>
+                <Form.Check
+                  type="switch"
+                  id="showResignedSwitch"
+                  label={<span className="text-muted small">Show resigned staff history</span>}
+                  checked={showResignedInLedger}
+                  onChange={(e) => setShowResignedInLedger(e.target.checked)}
+                />
+              </div>
+              {(() => {
+                const [y, m] = selectedMonth.split('-').map(Number);
+                const filteredStaff = staffList.filter(s =>
+                  isStaffActiveInMonth(s, y, m) || (showResignedInLedger && s.status !== 'active')
+                );
+                if (filteredStaff.length === 0) {
+                  return (
+                    <div className="text-center py-5 text-muted">
+                      <FaCalendarAlt size={32} className="mb-3 opacity-25" />
+                      <div className="fw-bold">No staff employed in {new Date(selectedMonth + '-02').toLocaleString('default', { month: 'long', year: 'numeric' })}</div>
+                      <div className="small mt-1">Add staff or toggle "Show resigned staff history" above.</div>
+                    </div>
+                  );
+                }
+                return (
                   <div className="saas-ledger-book-wrapper">
                     <table className="saas-ledger-book-table">
                       <thead>
                         <tr>
                           <th>Staff Member</th>
                           {daysInActiveMonth.map(dayObj => (
-                            <th key={dayObj.day} style={{ minWidth: '100px' }} title={dayObj.dateStr}>
-                              Day {dayObj.day}
+                            <th 
+                              key={dayObj.day} 
+                              className={`text-center py-2 px-1 ${dayObj.isSunday ? 'bg-danger bg-opacity-10' : ''}`}
+                              style={{ minWidth: '95px' }} 
+                              title={dayObj.dateStr}
+                            >
+                              <div style={{ fontSize: '10px', textTransform: 'uppercase', color: dayObj.isSunday ? '#dc2626' : '#64748b', fontWeight: 700, letterSpacing: '0.05em' }}>
+                                {dayObj.dayName}
+                              </div>
+                              <div style={{ fontSize: '14px', fontWeight: 800, color: dayObj.isSunday ? '#dc2626' : '#0f172a', marginTop: '1px' }}>
+                                {dayObj.day < 10 ? `0${dayObj.day}` : dayObj.day}
+                              </div>
                             </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {staffList.map(staff => (
-                          <tr key={staff.id}>
-                            <td>
-                              <div className="d-flex flex-column">
-                                <span className="text-dark fw-bold">{staff.name}</span>
-                                <span className="text-muted text-xs font-semibold">{staff.role}</span>
-                              </div>
-                            </td>
-                            {daysInActiveMonth.map(dayObj => {
-                              const status = ledgerBookState[staff.id]?.[dayObj.dateStr];
-                              
-                              let selectClass = 'select-unset';
-                              if (status === 'Present') selectClass = 'select-p';
-                              else if (status === 'Half Day') selectClass = 'select-h';
-                              else if (status === 'Absent') selectClass = 'select-a';
-                              else if (status === 'Holiday') selectClass = 'select-o';
+                        {filteredStaff.map(staff => {
+                          const isInactive = staff.status !== 'active';
+                          return (
+                            <tr key={staff.id} style={isInactive ? { borderLeft: '3px solid #f59e0b', opacity: 0.85 } : {}}>
+                              <td>
+                                <div className="d-flex flex-column">
+                                  <span className="text-dark fw-bold">{staff.name}</span>
+                                  <span className="text-muted text-xs">{staff.role}</span>
+                                  {isInactive && (
+                                    <span style={{ fontSize: '10px', color: '#d97706', fontWeight: 600, marginTop: '2px' }}>
+                                      ⚠ {staff.status === 'resigned' ? 'Resigned' : 'Terminated'} {staff.leaving_date ? new Date(staff.leaving_date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : ''}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              {daysInActiveMonth.map(dayObj => {
+                                const cellState = getCellState(staff, dayObj.dateStr);
+                                const status = ledgerBookState[staff.id]?.[dayObj.dateStr];
 
-                              return (
-                                <td key={dayObj.day}>
-                                  <select
-                                    value={status || ''}
-                                    onChange={(e) => handleCellStatusSelect(staff.id, dayObj.dateStr, e.target.value)}
-                                    className={`saas-ledger-select ${selectClass}`}
-                                    disabled={isSuspended}
-                                  >
-                                    <option value="">-</option>
-                                    <option value="Present">Present</option>
-                                    <option value="Half Day">Half Day</option>
-                                    <option value="Absent">Absent</option>
-                                    <option value="Holiday">Holiday</option>
-                                  </select>
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
+                                if (cellState.disabled) {
+                                  return (
+                                    <td key={dayObj.day} title={cellState.reason} style={{ background: '#f1f5f9', cursor: 'not-allowed' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                                        <FaLock size={9} color="#cbd5e1" title={cellState.reason} />
+                                      </div>
+                                    </td>
+                                  );
+                                }
+
+                                let selectClass = 'select-unset';
+                                if (status === 'Present') selectClass = 'select-p';
+                                else if (status === 'Half Day') selectClass = 'select-h';
+                                else if (status === 'Absent') selectClass = 'select-a';
+                                else if (status === 'Holiday') selectClass = 'select-o';
+
+                                return (
+                                  <td key={dayObj.day}>
+                                    <select
+                                      value={status || ''}
+                                      onChange={(e) => handleCellStatusSelect(staff.id, dayObj.dateStr, e.target.value)}
+                                      className={`saas-ledger-select ${selectClass}`}
+                                      disabled={isSuspended}
+                                    >
+                                      <option value="">-</option>
+                                      <option value="Present">Present</option>
+                                      <option value="Half Day">Half Day</option>
+                                      <option value="Absent">Absent</option>
+                                      <option value="Holiday">Holiday</option>
+                                    </select>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
+                );
+              })()}
+
 
                   {/* ATTENDANCE LEGEND */}
                   <div className="saas-ledger-legend">
@@ -848,8 +1209,6 @@ const PayrollPage = () => {
                       <span>Paid shop off-day / holiday (Earns 100% pay rate)</span>
                     </div>
                   </div>
-                </>
-              )}
             </div>
           )}
 
@@ -898,12 +1257,24 @@ const PayrollPage = () => {
                         const earned = Math.round(staff.earnedSalary);
                         const paid = Math.round(staff.totalPaid);
                         const pending = Math.round(staff.pendingSalary);
+                        const isResigned = staff.status === 'resigned' || staff.status === 'terminated';
 
                         return (
-                          <tr key={staff.id}>
+                          <tr key={staff.id} style={isResigned ? { borderLeft: '3px solid #f59e0b', background: 'rgba(251,191,36,0.03)' } : {}}>
                             <td>
                               <strong className="text-dark d-block">{staff.name}</strong>
                               <span className="text-muted small">{staff.role}</span>
+                              {isResigned && (
+                                <div className="mt-1">
+                                  <span className="badge rounded-pill px-2 py-1" style={{ background: '#fff7ed', color: '#d97706', fontSize: '10px', fontWeight: 600 }}>
+                                    ⚠ {staff.status === 'resigned' ? 'Resigned' : 'Terminated'}
+                                    {staff.leaving_date ? ` · ${formatDateSafe(staff.leaving_date)}` : ''}
+                                  </span>
+                                  {pending > 0 && (
+                                    <div className="text-danger text-xs mt-1 fw-bold">⚡ Dues pending — settle before closure</div>
+                                  )}
+                                </div>
+                              )}
                             </td>
                             <td>
                               <div className="small">
@@ -1056,84 +1427,68 @@ const PayrollPage = () => {
                 </Col>
               </Row>
 
-              {/* PRINTABLE AREA */}
-              <div className="printable-payroll-report-area border rounded p-4 bg-white shadow-xs">
-                <div className="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
+              {/* PRINTABLE AREA — cloned into iframe on print, uses semantic HTML + inline styles */}
+              <div id="payroll-print-region" style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '24px', background: '#fff', marginTop: '16px' }}>
+                {/* Header */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #e2e8f0', paddingBottom: '14px', marginBottom: '18px' }}>
                   <div>
-                    <h3 className="fw-bold text-indigo mb-1">{activeGarage?.name || 'Garage Shop'}</h3>
-                    <h5 className="text-muted mb-0 fw-normal">Attendance & Payroll Ledger Statement</h5>
+                    <h3 style={{ fontSize: '22px', fontWeight: 700, margin: '0 0 4px 0', color: '#1e293b' }}>{activeGarage?.name || 'Garage Shop'}</h3>
+                    <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>Attendance &amp; Payroll Ledger Statement</p>
                   </div>
-                  <div className="text-end">
-                    <h6 className="mb-1 text-uppercase font-bold text-muted small">Statement Period</h6>
-                    <h5 className="text-dark mb-0 fw-bold">
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8', marginBottom: '4px' }}>Statement Period</div>
+                    <div style={{ fontSize: '18px', fontWeight: 700, color: '#1e293b' }}>
                       {new Date(selectedMonth + '-02').toLocaleString('default', { month: 'long', year: 'numeric' })}
-                    </h5>
+                    </div>
                   </div>
                 </div>
 
-                <div className="table-responsive">
-                  <Table className="table table-bordered align-middle">
-                    <thead className="table-light text-uppercase" style={{ fontSize: '11px', letterSpacing: '0.05em' }}>
-                      <tr>
-                        <th>Employee</th>
-                        <th>Role</th>
-                        <th className="text-center">Salary rate</th>
-                        <th className="text-center">Days present</th>
-                        <th className="text-center">Days half</th>
-                        <th className="text-center">Days holiday</th>
-                        <th className="text-center">Days absent</th>
-                        <th className="text-center">Paid days</th>
-                        <th className="text-end">Earned Salary</th>
-                        <th className="text-end">Total Paid</th>
-                        <th className="text-end">Net Outstanding</th>
+                {/* Table */}
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc' }}>
+                        {['Employee','Role','Salary Rate','Present','Half Day','Holiday','Absent','Paid Days','Earned','Total Paid','Outstanding'].map((h, i) => (
+                          <th key={i} style={{ border: '1px solid #cbd5e1', padding: '8px 10px', textAlign: i >= 8 ? 'right' : i >= 3 ? 'center' : 'left', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, color: '#475569' }}>{h}</th>
+                        ))}
                       </tr>
                     </thead>
-                    <tbody style={{ fontSize: '13px' }}>
+                    <tbody>
                       {calculatedPayrollData.length === 0 ? (
                         <tr>
-                          <td colSpan="11" className="text-center py-4 text-muted">
-                            No employees onboarded.
-                          </td>
+                          <td colSpan="11" style={{ border: '1px solid #e2e8f0', padding: '16px', textAlign: 'center', color: '#94a3b8' }}>No employees onboarded.</td>
                         </tr>
                       ) : (
                         calculatedPayrollData.map(staff => (
                           <tr key={staff.id}>
-                            <td><strong>{staff.name}</strong></td>
-                            <td>{staff.role}</td>
-                            <td className="text-center">
-                              ₹{parseFloat(staff.base_salary).toLocaleString('en-IN')} <span className="text-xs text-muted text-capitalize">({staff.salary_type})</span>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px', fontWeight: 700 }}>{staff.name}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px' }}>{staff.role}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px', textAlign: 'center' }}>
+                              ₹{parseFloat(staff.base_salary).toLocaleString('en-IN')} <span style={{ fontSize: '10px', color: '#94a3b8' }}>({staff.salary_type})</span>
                             </td>
-                            <td className="text-center">{staff.attendanceSummary.present}</td>
-                            <td className="text-center">{staff.attendanceSummary.halfDay}</td>
-                            <td className="text-center">{staff.attendanceSummary.holiday}</td>
-                            <td className="text-center">{staff.attendanceSummary.absent}</td>
-                            <td className="text-center fw-bold text-success">{staff.attendanceSummary.paidDays}</td>
-                            <td className="text-end fw-bold">₹{Math.round(staff.earnedSalary).toLocaleString('en-IN')}</td>
-                            <td className="text-end fw-bold text-success">₹{Math.round(staff.totalPaid).toLocaleString('en-IN')}</td>
-                            <td className="text-end fw-bold">
-                              {staff.pendingSalary < 0 
-                                ? <span className="text-warning">Advance: ₹{Math.abs(Math.round(staff.pendingSalary)).toLocaleString('en-IN')}</span>
-                                : <span className="text-danger">₹{Math.round(staff.pendingSalary).toLocaleString('en-IN')}</span>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px', textAlign: 'center' }}>{staff.attendanceSummary.present}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px', textAlign: 'center' }}>{staff.attendanceSummary.halfDay}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px', textAlign: 'center' }}>{staff.attendanceSummary.holiday}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px', textAlign: 'center' }}>{staff.attendanceSummary.absent}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px', textAlign: 'center', fontWeight: 700, color: '#16a34a' }}>{staff.attendanceSummary.paidDays}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>₹{Math.round(staff.earnedSalary).toLocaleString('en-IN')}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px', textAlign: 'right', fontWeight: 700, color: '#16a34a' }}>₹{Math.round(staff.totalPaid).toLocaleString('en-IN')}</td>
+                            <td style={{ border: '1px solid #e2e8f0', padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>
+                              {staff.pendingSalary < 0
+                                ? <span style={{ color: '#d97706' }}>Adv: ₹{Math.abs(Math.round(staff.pendingSalary)).toLocaleString('en-IN')}</span>
+                                : <span style={{ color: '#dc2626' }}>₹{Math.round(staff.pendingSalary).toLocaleString('en-IN')}</span>
                               }
                             </td>
                           </tr>
                         ))
                       )}
                     </tbody>
-                  </Table>
-                </div>
-
-                <div className="row mt-4 pt-3 border-top justify-content-between align-items-center">
-                  <div className="col-md-6 text-muted small">
-                    Generated dynamically via Garage Workshop Payroll Suite on {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}.
-                  </div>
-                  <div className="col-md-5 text-end">
-                    <div className="fw-bold text-dark fs-6">Authorized Signatory: ___________________</div>
-                  </div>
+                  </table>
                 </div>
               </div>
             </div>
           )}
+
 
         </Card.Body>
       </Card>
@@ -1249,7 +1604,7 @@ const PayrollPage = () => {
       {/* RECORD SINGLE UNIFIED PAYMENT MODAL */}
       {showTxModal && txStaff && (
         <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(6px)' }}>
-          <div className="modal-dialog modal-dialog-centered">
+          <div className="modal-dialog modal-dialog-centered modal-dialog-scrollable">
             <div className="modal-content border-0 shadow-lg" style={{ borderRadius: '16px' }}>
               <div className="modal-header border-bottom p-4 bg-light">
                 <h5 className="modal-title fw-bold text-dark">
@@ -1301,9 +1656,17 @@ const PayrollPage = () => {
                           type="date"
                           className="form-control"
                           value={txForm.date}
+                          min={txStaff.joined_date ? txStaff.joined_date.split('T')[0] : undefined}
+                          max={txStaff.leaving_date ? txStaff.leaving_date.split('T')[0] : undefined}
                           onChange={(e) => setTxForm({ ...txForm, date: e.target.value })}
                           required
                         />
+                        {txStaff.joined_date && (
+                          <Form.Text className="text-muted" style={{ fontSize: '11px' }}>
+                            Tenure: {new Date(txStaff.joined_date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {txStaff.leaving_date ? ` to ${new Date(txStaff.leaving_date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ' onwards'}
+                          </Form.Text>
+                        )}
                       </Form.Group>
                     </Col>
                     <Col md={6}>
@@ -1436,6 +1799,76 @@ const PayrollPage = () => {
               <div className="modal-footer border-top p-4 bg-light">
                 <button type="button" className="btn btn-outline-secondary rounded-pill px-4" onClick={() => setShowLedgerModal(false)}>Close Statement</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MARK STAFF AS RESIGNED / TERMINATED MODAL */}
+      {showResignModal && resigningStaff && (
+        <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(15, 23, 42, 0.5)', backdropFilter: 'blur(6px)' }}>
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content border-0 shadow-lg" style={{ borderRadius: '16px' }}>
+              <div className="modal-header border-bottom p-4 bg-light">
+                <h5 className="modal-title fw-bold text-dark">Staff Resignation / Leaving Job</h5>
+                <button type="button" className="btn-close" onClick={() => setShowResignModal(false)}></button>
+              </div>
+              <Form onSubmit={handleResignStaff}>
+                <div className="modal-body p-4">
+                  <div className="p-3 border rounded bg-warning bg-opacity-10 text-dark mb-4">
+                    <p className="mb-1 text-muted small">Employee Record:</p>
+                    <h6 className="fw-bold mb-1">{resigningStaff.name} ({resigningStaff.role})</h6>
+                    <span className="text-muted small">Joined: {formatDateSafe(resigningStaff.joined_date)}</span>
+                  </div>
+
+                  <Row className="mb-3">
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="saas-label">Leaving Status</Form.Label>
+                        <Form.Select
+                          className="form-select"
+                          value={resignForm.status}
+                          onChange={(e) => setResignForm({ ...resignForm, status: e.target.value })}
+                        >
+                          <option value="resigned">Resigned (Left Job)</option>
+                          <option value="terminated">Terminated (Relieved)</option>
+                        </Form.Select>
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group>
+                        <Form.Label className="saas-label">Leaving Date</Form.Label>
+                        <Form.Control
+                          type="date"
+                          className="form-control"
+                          value={resignForm.leaving_date}
+                          min={resigningStaff.joined_date ? resigningStaff.joined_date.split('T')[0] : undefined}
+                          onChange={(e) => setResignForm({ ...resignForm, leaving_date: e.target.value })}
+                          required
+                        />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+
+                  <Form.Group className="mb-3">
+                    <Form.Label className="saas-label">Reason / Exit Notes</Form.Label>
+                    <Form.Control
+                      as="textarea"
+                      rows={3}
+                      className="form-control"
+                      value={resignForm.leaving_notes}
+                      onChange={(e) => setResignForm({ ...resignForm, leaving_notes: e.target.value })}
+                      placeholder="Write exit notes, resignation reason..."
+                    />
+                  </Form.Group>
+                </div>
+                <div className="modal-footer border-top p-4 bg-light">
+                  <button type="button" className="btn btn-outline-secondary rounded-pill px-4" onClick={() => setShowResignModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-warning fw-bold text-dark rounded-pill px-4">
+                    Confirm Status Change
+                  </button>
+                </div>
+              </Form>
             </div>
           </div>
         </div>
