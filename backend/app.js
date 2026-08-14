@@ -139,6 +139,14 @@ app.listen(PORT, async () => {
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(20);
     `);
     console.log('[DB Schema] Staff lifecycle, 3-tier SaaS fees, and Meta WhatsApp columns verified.');
+
+    // Auto-seed Indian Vehicle Makes and Models if empty or incomplete
+    const makeCheck = await db.query('SELECT COUNT(*) FROM makes');
+    if (parseInt(makeCheck.rows[0].count, 10) < 15) {
+      console.log('[DB Seed] Seeding complete Indian vehicle makes and models...');
+      const seedScript = require('./scripts/seedIndianVehiclesHelper');
+      await seedScript.runAutoSeed();
+    }
   } catch (err) {
     console.error('[DB Schema] Column check error:', err);
   }
