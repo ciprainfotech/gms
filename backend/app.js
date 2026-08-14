@@ -26,9 +26,20 @@ const app = express();
 
 // --- Middleware ---
 
-// Configure CORS to allow React app to communicate with backend
+// Configure CORS to allow React app on localhost and Vercel to communicate with backend
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://localhost:5173', 'http://localhost:3005'],
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      origin.includes('localhost') ||
+      origin.includes('127.0.0.1') ||
+      origin.endsWith('.vercel.app') ||
+      origin === process.env.FRONTEND_URL
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
   credentials: true,
 }));
 
