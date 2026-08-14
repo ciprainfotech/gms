@@ -268,7 +268,7 @@ CREATE TABLE tasks (
     garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
     description TEXT,
-    assigned_to_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    assigned_to_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     status VARCHAR(50) NOT NULL CHECK (status IN ('Todo', 'In Progress', 'Done')) DEFAULT 'Todo',
     due_date DATE,
     is_deleted BOOLEAN DEFAULT FALSE,
@@ -372,6 +372,8 @@ CREATE INDEX idx_payments_invoice_id ON payments(invoice_id);
 CREATE INDEX idx_purchase_bills_garage_id ON purchase_bills(garage_id);
 CREATE INDEX idx_tasks_assigned_to_user_id ON tasks(assigned_to_user_id);
 
+CREATE TRIGGER set_timestamp_staff BEFORE UPDATE ON staff FOR EACH ROW EXECUTE PROCEDURE trigger_set_timestamp();
+
 -- Multi-tenant Composite B-Tree Production Indexes
 CREATE INDEX IF NOT EXISTS idx_vehicles_garage_car ON vehicles(garage_id, car_number);
 CREATE INDEX IF NOT EXISTS idx_customers_garage_phone ON customers(garage_id, phone);
@@ -379,5 +381,10 @@ CREATE INDEX IF NOT EXISTS idx_jobsheets_garage_status ON job_sheets(garage_id, 
 CREATE INDEX IF NOT EXISTS idx_invoices_garage_date ON invoices(garage_id, date_issued);
 CREATE INDEX IF NOT EXISTS idx_payments_garage_invoice ON payments(garage_id, invoice_id);
 CREATE INDEX IF NOT EXISTS idx_purchase_bills_garage_date ON purchase_bills(garage_id, bill_date);
+
+-- Seed Default Subscription Plan
+INSERT INTO plans (id, name, monthly_price, max_users, max_vehicles, whatsapp_enabled, analytics_enabled)
+VALUES (1, 'Pro Garage Plan', 0.00, 10, 5000, TRUE, TRUE)
+ON CONFLICT (name) DO NOTHING;
 
 COMMIT;
