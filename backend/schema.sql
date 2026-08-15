@@ -294,6 +294,10 @@ CREATE TABLE whatsapp_logs (
     cost_deducted DECIMAL(10,2) DEFAULT 0.15,
     balance_after DECIMAL(10,2) NOT NULL,
     status VARCHAR(20) DEFAULT 'sent',
+    gateway_msg_id VARCHAR(255),
+    message_text TEXT,
+    media_base64 TEXT,
+    document_name VARCHAR(255),
     error_message TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
