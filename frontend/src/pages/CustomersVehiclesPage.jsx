@@ -241,12 +241,9 @@ const CustomersVehiclesPage = () => {
        // Match the payload to what your backend expects
         // Match the payload to what your backend expects
         const vehiclePayload = {
-            // Find the ID from the dropdown, OR keep the existing one from the DB
+            customer_id: formData.customerId,
             make_id: masterMakes.find(m => m.name === formData.make)?.id || formData.make_id, 
-            
-            // 👉 THE FIX: Find the model ID from the dropdown, OR keep the existing one. No more '|| 1' !!
             model_id: availableModels.find(m => m.name === formData.model)?.id || formData.model_id, 
-            
             car_number: formData.carNumber,
             year: parseInt(formData.year) || null,
             vin: formData.vin || null,

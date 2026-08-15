@@ -100,11 +100,13 @@ const Sidebar = ({ onClose }) => {
               <FaTachometerAlt /> Dashboard
             </NavLink>
           </li>
-          <li className="nav-item">
-            <NavLink to="/active-jobsheets" className={navLinkClass} onClick={handleLinkClick}>
-              <FaWrench /> Active Job Sheets
-            </NavLink>
-          </li>
+          {features.tasks && (
+            <li className="nav-item">
+              <NavLink to="/active-jobsheets" className={navLinkClass} onClick={handleLinkClick}>
+                <FaWrench /> Active Job Sheets
+              </NavLink>
+            </li>
+          )}
           {!isSuspended && (
             <li className="nav-item">
               <NavLink to="/create-invoice" className={navLinkClass} onClick={handleLinkClick}>
@@ -114,11 +116,13 @@ const Sidebar = ({ onClose }) => {
           )}
 
           <h6 className="sidebar-heading">Management</h6>
-          <li className="nav-item">
-            <NavLink to="/job-sheets" className={navLinkClass} onClick={handleLinkClick}>
-              <FaFolderOpen /> Job Sheets Archive
-            </NavLink>
-          </li>
+          {features.tasks && (
+            <li className="nav-item">
+              <NavLink to="/job-sheets" className={navLinkClass} onClick={handleLinkClick}>
+                <FaFolderOpen /> Job Sheets Archive
+              </NavLink>
+            </li>
+          )}
           <li className="nav-item">
             <NavLink to="/invoices" className={navLinkClass} onClick={handleLinkClick}>
               <FaReceipt /> Invoices

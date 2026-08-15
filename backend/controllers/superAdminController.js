@@ -24,6 +24,23 @@ exports.getPlatformStats = async (req, res) => {
   }
 };
 
+exports.getAllWhatsappLogs = async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT l.id, l.recipient_phone, l.message_type, l.gateway_msg_id, l.cost_deducted, 
+             l.balance_after, l.status, l.error_message, l.created_at, g.name as garage_name
+      FROM whatsapp_logs l
+      LEFT JOIN garages g ON l.garage_id = g.id
+      ORDER BY l.created_at DESC
+      LIMIT 100
+    `);
+    res.json({ success: true, logs: rows });
+  } catch (error) {
+    console.error('Error fetching all whatsapp logs:', error);
+    res.status(500).json({ success: false, message: 'Server error fetching whatsapp logs' });
+  }
+};
+
 // List All Garages with 3-Tier Commercial Plan Details & Feature Toggles
 exports.getAllGarages = async (req, res) => {
   try {

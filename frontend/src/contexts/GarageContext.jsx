@@ -5,13 +5,13 @@ import { useAuth } from './AuthContext';
 const GarageContext = createContext(null);
 
 export const GarageProvider = ({ children }) => {
-  const { isAuthenticated, garage: authGarage, updateGarageState } = useAuth();
+  const { isAuthenticated, user, garage: authGarage, updateGarageState } = useAuth();
   const [profile, setProfile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
   const fetchProfile = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || (user && user.is_super_admin)) return;
     setIsLoading(true);
     setError(null);
     try {

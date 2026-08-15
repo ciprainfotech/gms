@@ -32,7 +32,7 @@ exports.getProfile = async (req, res) => {
                 g.feature_stock, g.feature_purchase, g.feature_analytics,
                 g.feature_reminders, g.feature_tasks, g.feature_whatsapp,
                 g.feature_whatsapp_utility, g.feature_whatsapp_marketing, g.feature_payroll,
-                g.whatsapp_agent_download_enabled,
+                g.feature_whatsapp_costing, g.whatsapp_agent_download_enabled,
                 p.name as plan_name
          FROM garages g
          LEFT JOIN plans p ON g.plan_id = p.id

@@ -84,7 +84,7 @@ const SuperAdminDashboard = () => {
       const [statsRes, garagesRes, logsRes, meRes] = await Promise.all([
         api.get('/admin/stats'),
         api.get('/admin/garages'),
-        api.get('/whatsapp/logs'),
+        api.get('/admin/whatsapp/logs'),
         api.get('/auth/me')
       ]);
 

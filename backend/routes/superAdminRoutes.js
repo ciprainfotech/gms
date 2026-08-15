@@ -8,6 +8,7 @@ router.use(requireSuperAdmin);
 
 router.get('/stats', superAdminController.getPlatformStats);
 router.get('/garages', superAdminController.getAllGarages);
+router.get('/whatsapp/logs', superAdminController.getAllWhatsappLogs);
 router.post('/onboard-garage', superAdminController.onboardGarage);
 router.put('/garages/:garageId/subscription', superAdminController.updateGarageSubscription);
 router.put('/garages/:garageId/toggle-status', superAdminController.toggleGarageStatus);

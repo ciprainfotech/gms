@@ -17,7 +17,7 @@ const ProfileSettingsPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
-  const [activeTab, setActiveTab] = useState('license');
+  const [activeTab, setActiveTab] = useState('garage');
 
   // User Profile Form
   const [userForm, setUserForm] = useState({ name: '', phone: '', email: '' });
@@ -53,6 +53,7 @@ const ProfileSettingsPage = () => {
     feature_reminders: true,
     feature_tasks: true,
     feature_whatsapp: true,
+    feature_whatsapp_costing: true,
     whatsapp_agent_download_enabled: false
   });
 
@@ -98,9 +99,9 @@ const ProfileSettingsPage = () => {
             email: data.garage.email || '',
             address: data.garage.address || '',
             gst_number: data.garage.gst_number || '',
-            bank_name: data.garage.bank_name || 'HDFC Bank (BORSAD)',
-            bank_account_no: data.garage.bank_account_no || '07492000002739',
-            bank_ifsc: data.garage.bank_ifsc || 'HDFC0000749',
+            bank_name: data.garage.bank_name || '',
+            bank_account_no: data.garage.bank_account_no || '',
+            bank_ifsc: data.garage.bank_ifsc || '',
             terms_and_conditions: data.garage.terms_and_conditions || '',
             invoice_prefix: data.garage.invoice_prefix || 'INV-',
             invoice_next_num: data.garage.invoice_next_num || 1,
@@ -119,6 +120,7 @@ const ProfileSettingsPage = () => {
             feature_reminders: data.garage.feature_reminders !== false,
             feature_tasks: data.garage.feature_tasks !== false,
             feature_whatsapp: data.garage.feature_whatsapp !== false,
+            feature_whatsapp_costing: data.garage.feature_whatsapp_costing !== false,
             whatsapp_agent_download_enabled: data.garage.whatsapp_agent_download_enabled === true
           });
           if (data.garage.logo_url) {
@@ -394,21 +396,6 @@ const ProfileSettingsPage = () => {
       >
         <button
           type="button"
-          onClick={() => setActiveTab('license')}
-          className="btn border-0 py-2.5 px-4 fw-bold rounded-3 d-flex align-items-center"
-          style={{
-            backgroundColor: activeTab === 'license' ? '#0f172a' : 'transparent',
-            color: activeTab === 'license' ? '#ffffff' : '#64748b',
-            boxShadow: activeTab === 'license' ? '0 4px 14px rgba(15,23,42,0.2)' : 'none',
-            transition: 'all 0.2s ease-in-out',
-            fontSize: '13px'
-          }}
-        >
-          <FaShieldAlt className="me-2" /> Plan & Capabilities
-        </button>
-
-        <button
-          type="button"
           onClick={() => setActiveTab('garage')}
           className="btn border-0 py-2.5 px-4 fw-bold rounded-3 d-flex align-items-center"
           style={{
@@ -466,6 +453,21 @@ const ProfileSettingsPage = () => {
         >
           <FaLock className="me-2" /> Security & Password
         </button>
+        
+        <button
+          type="button"
+          onClick={() => setActiveTab('license')}
+          className="btn border-0 py-2.5 px-4 fw-bold rounded-3 d-flex align-items-center"
+          style={{
+            backgroundColor: activeTab === 'license' ? '#0f172a' : 'transparent',
+            color: activeTab === 'license' ? '#ffffff' : '#64748b',
+            boxShadow: activeTab === 'license' ? '0 4px 14px rgba(15,23,42,0.2)' : 'none',
+            transition: 'all 0.2s ease-in-out',
+            fontSize: '13px'
+          }}
+        >
+          <FaShieldAlt className="me-2" /> Plan & Capabilities
+        </button>
       </div>
 
       <Card className="border-0 shadow-sm rounded-4 overflow-hidden" style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
@@ -507,17 +509,19 @@ const ProfileSettingsPage = () => {
                   </div>
                 </Col>
 
-                <Col md={4}>
-                  <div className="p-4 rounded-4 border bg-light">
-                    <small className="text-uppercase fw-bold text-muted d-block mb-1" style={{ fontSize: '11px' }}>WhatsApp Credits & Meta Rate</small>
-                    <div className="fw-bold text-dark fs-5">
-                      ₹{parseFloat(garageForm.whatsapp_credit_balance || 0).toFixed(2)}
+                {garageForm.feature_whatsapp_costing !== false && (
+                  <Col md={4}>
+                    <div className="p-4 rounded-4 border bg-light">
+                      <small className="text-uppercase fw-bold text-muted d-block mb-1" style={{ fontSize: '11px' }}>WhatsApp Credits & Meta Rate</small>
+                      <div className="fw-bold text-dark fs-5">
+                        ₹{parseFloat(garageForm.whatsapp_credit_balance || 0).toFixed(2)}
+                      </div>
+                      <small className="text-muted mt-2 d-block">
+                        Meta API Rate: ₹{parseFloat(garageForm.whatsapp_cost_per_msg || 0.15).toFixed(2)}/msg
+                      </small>
                     </div>
-                    <small className="text-muted mt-2 d-block">
-                      Meta API Rate: ₹{parseFloat(garageForm.whatsapp_cost_per_msg || 0.15).toFixed(2)}/msg
-                    </small>
-                  </div>
-                </Col>
+                  </Col>
+                )}
               </Row>
 
               <h6 className="fw-bold text-dark mb-3">Module Activations & Access Controls</h6>
@@ -623,34 +627,34 @@ const ProfileSettingsPage = () => {
 
                   <h5 className="fw-bold text-dark mt-4 mb-3">Bank Account & Settlement Details</h5>
                   <Row className="g-3">
-                    <Col md={4}>
+                    <Col md={12}>
                       <Form.Group>
-                        <Form.Label className="fw-bold small text-muted">Bank Name & Branch</Form.Label>
+                        <Form.Label className="fw-bold small text-muted">Bank Name</Form.Label>
                         <Form.Control 
                           type="text" 
-                          placeholder="e.g. HDFC Bank (BORSAD)"
+                          placeholder="e.g. State Bank of India"
                           value={garageForm.bank_name}
                           onChange={(e) => setGarageForm({ ...garageForm, bank_name: e.target.value })}
                         />
                       </Form.Group>
                     </Col>
-                    <Col md={4}>
+                    <Col md={6}>
                       <Form.Group>
                         <Form.Label className="fw-bold small text-muted">Account Number</Form.Label>
                         <Form.Control 
                           type="text" 
-                          placeholder="e.g. 07492000002739"
+                          placeholder="e.g. 123456789012"
                           value={garageForm.bank_account_no}
                           onChange={(e) => setGarageForm({ ...garageForm, bank_account_no: e.target.value })}
                         />
                       </Form.Group>
                     </Col>
-                    <Col md={4}>
+                    <Col md={6}>
                       <Form.Group>
                         <Form.Label className="fw-bold small text-muted">IFSC Code</Form.Label>
                         <Form.Control 
                           type="text" 
-                          placeholder="e.g. HDFC0000749"
+                          placeholder="e.g. SBIN0001234"
                           value={garageForm.bank_ifsc}
                           onChange={(e) => setGarageForm({ ...garageForm, bank_ifsc: e.target.value })}
                         />
