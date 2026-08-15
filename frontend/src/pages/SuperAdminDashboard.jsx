@@ -160,7 +160,8 @@ const SuperAdminDashboard = () => {
       feature_whatsapp_marketing: garage.feature_whatsapp_marketing !== false,
       feature_whatsapp_costing: garage.feature_whatsapp_costing !== false,
       feature_payroll: garage.feature_payroll !== false,
-      is_active: garage.is_active !== false
+      is_active: garage.is_active !== false,
+      whatsapp_agent_download_enabled: garage.whatsapp_agent_download_enabled === true
     });
   };
 
@@ -975,6 +976,12 @@ const SuperAdminDashboard = () => {
                         <div className="form-check form-switch p-2.5 border rounded bg-white">
                           <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_whatsapp_costing" checked={editForm.feature_whatsapp_costing} onChange={(e) => setEditForm({ ...editForm, feature_whatsapp_costing: e.target.checked })} />
                           <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_whatsapp_costing">WhatsApp Credit Costing System</label>
+                        </div>
+                      </div>
+                      <div className="col-md-12">
+                        <div className="form-check form-switch p-2.5 border rounded bg-white">
+                          <input className="form-check-input ms-0 me-3" type="checkbox" id="edit_whatsapp_agent_download_enabled" checked={editForm.whatsapp_agent_download_enabled} onChange={(e) => setEditForm({ ...editForm, whatsapp_agent_download_enabled: e.target.checked })} />
+                          <label className="form-check-label text-dark fw-semibold small" htmlFor="edit_whatsapp_agent_download_enabled">Enable "Download 1-Click Agent Setup" Button for Non-Tech Owners</label>
                         </div>
                       </div>
                     </div>

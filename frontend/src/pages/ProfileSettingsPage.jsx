@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { Container, Card, Row, Col, Form, Button, Badge, Alert } from 'react-bootstrap';
+import { Container, Card, Row, Col, Form, Button, Badge, Alert, Spinner } from 'react-bootstrap';
 import PageShell from '../components/ui/PageShell';
 import {   FaUser, FaLock, FaBuilding, FaHashtag, FaImage, FaUpload, 
   FaSave, FaShieldAlt, FaCheckCircle, FaExclamationTriangle, FaTimesCircle, FaKey, FaWhatsapp
@@ -52,7 +52,8 @@ const ProfileSettingsPage = () => {
     feature_analytics: true,
     feature_reminders: true,
     feature_tasks: true,
-    feature_whatsapp: true
+    feature_whatsapp: true,
+    whatsapp_agent_download_enabled: false
   });
 
   // Selected File for Logo Upload
@@ -62,6 +63,7 @@ const ProfileSettingsPage = () => {
   const [whatsappStatus, setWhatsappStatus] = useState(null);
   const [qrCodeUrl, setQrCodeUrl] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
+  const [qrTimer, setQrTimer] = useState(60);
 
   const [setupNotice, setSetupNotice] = useState(false);
 
@@ -72,6 +74,8 @@ const ProfileSettingsPage = () => {
       setSetupNotice(true);
       setActiveTab('garage');
     }
+    const statusInterval = setInterval(fetchWhatsappStatus, 4000);
+    return () => clearInterval(statusInterval);
   }, []);
 
   const fetchProfileData = async () => {
@@ -114,7 +118,8 @@ const ProfileSettingsPage = () => {
             feature_analytics: data.garage.feature_analytics !== false,
             feature_reminders: data.garage.feature_reminders !== false,
             feature_tasks: data.garage.feature_tasks !== false,
-            feature_whatsapp: data.garage.feature_whatsapp !== false
+            feature_whatsapp: data.garage.feature_whatsapp !== false,
+            whatsapp_agent_download_enabled: data.garage.whatsapp_agent_download_enabled === true
           });
           if (data.garage.logo_url) {
             setLogoPreview(data.garage.logo_url.startsWith('http') ? data.garage.logo_url : `${SERVER_BASE_URL}${data.garage.logo_url}`);
@@ -137,6 +142,10 @@ const ProfileSettingsPage = () => {
       if (res.ok) {
         const data = await res.json();
         setWhatsappStatus(data);
+        if (data.status === 'connected') {
+          setQrCodeUrl(null);
+          setQrLoading(false);
+        }
       }
     } catch (err) {
       console.error('Error fetching whatsapp status', err);
@@ -146,12 +155,14 @@ const ProfileSettingsPage = () => {
   const handleConnectWhatsApp = async () => {
     setQrLoading(true);
     setQrCodeUrl(null);
+    setQrTimer(60);
     try {
       const res = await api.get('/whatsapp/qr');
       const data = await res.json();
       if (data.success) {
         if (data.qrCode) {
           setQrCodeUrl(data.qrCode);
+          setQrTimer(60);
           setToast({ type: 'info', title: 'QR Ready', message: 'Please scan the QR code with your WhatsApp.' });
           
           // Poll for status change while QR is showing
@@ -165,11 +176,21 @@ const ProfileSettingsPage = () => {
               setToast({ type: 'success', title: 'Connected', message: 'WhatsApp Connected Successfully!' });
               if (onGarageUpdate) onGarageUpdate();
             }
-          }, 3000);
-          
-          // Stop polling after 45 seconds (QR expiry)
-          setTimeout(() => clearInterval(pollInterval), 45000);
-          
+          }, 2000);
+
+          // 1-second countdown timer
+          const countdownInterval = setInterval(() => {
+            setQrTimer((prev) => {
+              if (prev <= 1) {
+                clearInterval(countdownInterval);
+                clearInterval(pollInterval);
+                setQrCodeUrl(null);
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+
         } else if (data.status === 'connected') {
           setToast({ type: 'success', title: 'Already Connected', message: 'WhatsApp is already connected.' });
           fetchWhatsappStatus();
@@ -775,56 +796,149 @@ const ProfileSettingsPage = () => {
             </Form>
           )}
 
-          {/* TAB 4: WHATSAPP INTEGRATION */}
+          {/* TAB 4: WHATSAPP INTEGRATION (STRICT 2-STEP FLOW) */}
           {activeTab === 'whatsapp' && (
             <div>
-              <h5 className="fw-bold text-dark mb-3">Official Meta WhatsApp Cloud API Integration</h5>
-              <p className="text-muted mb-4">Your garage uses Meta's Official WhatsApp Cloud API infrastructure. All automated customer invoices, job sheets, and payment reminders are delivered directly from your registered business phone number.</p>
+              <h5 className="fw-bold text-dark mb-2">WhatsApp Web Connection</h5>
+              <p className="text-muted mb-4">Connect your garage's WhatsApp number to send automated invoices, job sheets, and payment reminders directly to your customers.</p>
               
-              <Row className="g-4" style={{ maxWidth: '800px' }}>
+              <Row className="g-4" style={{ maxWidth: '750px' }}>
                 <Col md={12}>
                   <Card className="border shadow-sm rounded-4 overflow-hidden">
-                    <Card.Body className="p-4 bg-light">
-                      <div className="d-flex align-items-center mb-3">
-                        <div className="bg-white p-3 rounded-circle shadow-sm me-3 d-flex align-items-center justify-content-center" style={{ width: '56px', height: '56px' }}>
-                          <FaWhatsapp className="text-success" style={{ fontSize: '28px' }} />
-                        </div>
+                    <Card.Body className="p-4">
+                      {whatsappStatus?.status === 'connected' ? (
+                        /* WHATSAPP CONNECTED & READY */
                         <div>
-                          <h6 className="fw-bold mb-1" style={{ fontSize: '15px' }}>Official Meta WhatsApp Integration</h6>
-                          {whatsappStatus?.phoneNumberId ? (
-                            <Badge bg="success" className="px-3 py-1.5 rounded-pill mt-1" style={{ fontSize: '12px' }}>
-                              🟢 Official Meta API Active
-                            </Badge>
-                          ) : (
-                            <Badge bg="warning" text="dark" className="px-3 py-1.5 rounded-pill mt-1" style={{ fontSize: '12px' }}>
-                              ⚠️ Pending Phone Number ID Assignment
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
+                          <div className="d-flex align-items-center justify-content-between mb-4 pb-3 border-bottom">
+                            <div className="d-flex align-items-center">
+                              <div className="bg-success text-white p-3 rounded-circle me-3 d-flex align-items-center justify-content-center" style={{ width: '56px', height: '56px' }}>
+                                <FaWhatsapp style={{ fontSize: '28px' }} />
+                              </div>
+                              <div>
+                                <h6 className="fw-bold mb-1 text-dark" style={{ fontSize: '16px' }}>WhatsApp Status: Connected</h6>
+                                <Badge bg="success" className="px-3 py-1.5 rounded-pill" style={{ fontSize: '12px' }}>
+                                  🟢 Active & Ready to Send
+                                </Badge>
+                              </div>
+                            </div>
+                            <Button 
+                              variant="outline-danger" 
+                              className="rounded-pill px-4 fw-bold btn-sm"
+                              onClick={handleDisconnectWhatsApp}
+                            >
+                              Disconnect
+                            </Button>
+                          </div>
 
-                      <Row className="g-3 mt-2 pt-3 border-top border-light">
-                        <Col md={6}>
-                          <span className="text-muted small fw-bold text-uppercase d-block mb-1">Registered Phone Number ID</span>
-                          <span className="fw-bold text-dark font-monospace" style={{ fontSize: '14px' }}>
-                            {whatsappStatus?.phoneNumberId || 'Not Configured (Contact Admin)'}
-                          </span>
-                        </Col>
-                        <Col md={6}>
-                          <span className="text-muted small fw-bold text-uppercase d-block mb-1">Gateway Architecture</span>
-                          <span className="fw-bold text-primary" style={{ fontSize: '14px' }}>
-                            Official Meta Graph API (v18.0)
-                          </span>
-                        </Col>
-                      </Row>
+                          <Row className="g-3">
+                            <Col md={6}>
+                              <span className="text-muted small text-uppercase fw-bold d-block mb-1">Linked Phone Number</span>
+                              <span className="fw-bold text-dark font-monospace" style={{ fontSize: '15px' }}>
+                                {whatsappStatus?.phoneNumber || 'Connected Device'}
+                              </span>
+                            </Col>
+                            <Col md={6}>
+                              <span className="text-muted small text-uppercase fw-bold d-block mb-1">Session Mode</span>
+                              <span className="fw-bold text-primary" style={{ fontSize: '15px' }}>
+                                💻 Local Workshop Computer Bridge
+                              </span>
+                            </Col>
+                          </Row>
+                        </div>
+                      ) : !whatsappStatus?.isAgentConnected ? (
+                        /* STEP 1: AGENT OFFLINE SETUP */
+                        <div className="text-center py-3">
+                          <div className="bg-danger text-white p-3 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style={{ width: '64px', height: '64px' }}>
+                            <FaWhatsapp style={{ fontSize: '36px' }} />
+                          </div>
+                          <h5 className="fw-bold text-dark mb-1">Step 1: Start Workshop PC Agent</h5>
+                          <Badge bg="danger" className="px-3 py-1.5 rounded-pill mb-3" style={{ fontSize: '12px' }}>
+                            🔴 Step 1 Required: Agent Offline
+                          </Badge>
+                          <p className="text-muted small mb-4 mx-auto" style={{ maxWidth: '500px' }}>
+                            Before scanning the WhatsApp QR code, you must start the 1-Click Agent on your workshop computer to establish the cloud bridge connection.
+                          </p>
+
+                          {garageForm?.whatsapp_agent_download_enabled ? (
+                            <>
+                              <div className="mb-4">
+                                <a 
+                                  href={`${API_BASE_URL}/whatsapp/bridge/download?garageId=${garageForm?.id || 1}`}
+                                  className="btn btn-success btn-lg rounded-pill px-5 fw-bold shadow-sm"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  🚀 Download 1-Click Agent Setup
+                                </a>
+                              </div>
+
+                              <div className="p-3 bg-light rounded-4 text-start mt-3" style={{ maxWidth: '540px', margin: '0 auto' }}>
+                                <h6 className="fw-bold text-dark small mb-2">⚡ Quick 3-Step Setup Instructions:</h6>
+                                <ol className="small text-muted mb-0 ps-3" style={{ lineHeight: '1.7' }}>
+                                  <li>Click the green <strong>Download 1-Click Agent Setup</strong> button above.</li>
+                                  <li>Double-click the downloaded file (<code>Start-Garage-{garageForm?.id || 1}-WhatsApp-Agent.bat</code>) on your workshop PC.</li>
+                                  <li>Once launched, <strong>Step 2 (Generate QR Code)</strong> will unlock automatically!</li>
+                                </ol>
+                              </div>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : (
+                        /* STEP 2: AGENT ONLINE - LINK WHATSAPP QR CODE */
+                        <div className="text-center py-3">
+                          <div className="bg-success text-white p-3 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style={{ width: '64px', height: '64px' }}>
+                            <FaWhatsapp style={{ fontSize: '36px' }} />
+                          </div>
+                          <h5 className="fw-bold text-dark mb-1">Step 2: Link WhatsApp Phone Number</h5>
+                          <Badge bg="success" className="px-3 py-1.5 rounded-pill mb-3" style={{ fontSize: '12px' }}>
+                            🟢 Step 1 Complete: Workshop Agent Online
+                          </Badge>
+                          <p className="text-muted small mb-4 mx-auto" style={{ maxWidth: '480px' }}>
+                            Your workshop PC agent is online! Now scan the QR code to link your WhatsApp account.
+                          </p>
+
+                          {qrLoading ? (
+                            <div className="py-4">
+                              <Spinner animation="border" variant="success" className="mb-2" />
+                              <p className="text-muted small">Booting local WhatsApp engine & generating QR code...</p>
+                            </div>
+                          ) : qrCodeUrl && qrTimer > 0 ? (
+                            <div className="my-3 p-3 bg-white d-inline-block border rounded-4 shadow-sm text-center">
+                              <div className="mb-2">
+                                <Badge bg={qrTimer > 15 ? "success" : "danger"} className="px-3 py-1.5 rounded-pill" style={{ fontSize: '13px' }}>
+                                  ⏱️ QR Code Expires in {qrTimer}s
+                                </Badge>
+                              </div>
+                              <img src={qrCodeUrl} alt="WhatsApp QR Code" style={{ width: '230px', height: '230px' }} />
+                              <div className="mt-2 text-success small fw-bold">
+                                📲 Point your phone camera at this QR code
+                              </div>
+                            </div>
+                          ) : (
+                            <Button 
+                              variant="success" 
+                              size="lg"
+                              className="rounded-pill px-5 fw-bold shadow-sm mb-4"
+                              onClick={handleConnectWhatsApp}
+                            >
+                              <FaWhatsapp className="me-2" /> {qrTimer === 0 ? '🔄 Refresh Expired QR Code' : 'Generate Connection QR Code'}
+                            </Button>
+                          )}
+
+                          <div className="p-3 bg-light rounded-4 text-start mt-3" style={{ maxWidth: '540px', margin: '0 auto' }}>
+                            <h6 className="fw-bold text-dark small mb-2">How to link your phone:</h6>
+                            <ol className="small text-muted mb-0 ps-3" style={{ lineHeight: '1.7' }}>
+                              <li>Open <strong>WhatsApp</strong> on your phone.</li>
+                              <li>Tap <strong>Menu (⋮)</strong> or <strong>Settings</strong> ➔ <strong>Linked Devices</strong>.</li>
+                              <li>Tap <strong>Link a Device</strong> and point your camera at the QR code above.</li>
+                            </ol>
+                          </div>
+                        </div>
+                      )}
                     </Card.Body>
                   </Card>
                 </Col>
               </Row>
-              
-              <Alert variant="success" className="mt-4 border-0 shadow-sm rounded-4">
-                <FaCheckCircle className="me-2" /> <strong>Zero Customer Maintenance:</strong> Your WhatsApp integration is fully managed centrally by Cipra Infotech. You do not need to scan QR codes or keep any phone connected to the internet. Messages are delivered with high reliability and zero risk of WhatsApp account bans.
-              </Alert>
             </div>
           )}
 

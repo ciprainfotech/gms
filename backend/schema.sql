@@ -78,6 +78,8 @@ CREATE TABLE garages (
     feature_whatsapp_costing BOOLEAN DEFAULT TRUE,
     feature_payroll BOOLEAN DEFAULT TRUE,
     is_active BOOLEAN DEFAULT TRUE,
+    whatsapp_agent_secret UUID,
+    whatsapp_agent_download_enabled BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

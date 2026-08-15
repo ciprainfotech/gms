@@ -7,6 +7,12 @@ const whatsappController = require('../controllers/whatsappController');
 router.get('/webhook', whatsappController.verifyWebhook);
 router.post('/webhook', whatsappController.handleWebhook);
 
+// Public bridge script endpoint (called by 1-Click .bat launcher on PC)
+router.get('/bridge/script/:garageId', whatsappController.getAgentScript);
+
+// Public batch file download endpoint (browser href doesn't have Bearer token)
+router.get('/bridge/download', whatsappController.downloadBridgeScript);
+
 // Protected routes
 router.use(authorizeGarage);
 
@@ -16,6 +22,10 @@ router.get('/status', whatsappController.getWhatsAppStatus);
 router.get('/qr', whatsappController.getWhatsAppQR);
 router.post('/connect', whatsappController.connectWhatsApp);
 router.post('/disconnect', whatsappController.disconnectWhatsApp);
+
+// Bridge routes for Local Workshop Client
+router.get('/bridge/pending', whatsappController.getPendingBridgeMessages);
+router.post('/bridge/ack', whatsappController.acknowledgeBridgeMessage);
 
 router.post('/send-invoice', whatsappController.sendInvoiceWhatsApp);
 router.post('/send-jobsheet', whatsappController.sendJobSheetWhatsApp);

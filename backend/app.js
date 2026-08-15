@@ -4,6 +4,15 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 
+// Suppress Windows EBUSY file lock crashes from WhatsApp session logouts
+process.on('uncaughtException', (err) => {
+  if (err && err.message && (err.message.includes('EBUSY') || err.message.includes('wwebjs_auth') || err.message.includes('resource busy'))) {
+    console.warn('⚠️ [Server Warning] Suppressed Windows EBUSY session file lock error:', err.message);
+    return;
+  }
+  console.error('CRITICAL UNCAUGHT EXCEPTION:', err);
+});
+
 // --- Import Routes ---
 const authRoutes = require('./routes/authRoutes');
 const vehicleRoutes = require('./routes/vehicleRoutes');     // <-- ADD
@@ -96,10 +105,133 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- Start the Server ---
+// --- Start the Server with Socket.io Bridge Support ---
+const http = require('http');
+const server = http.createServer(app);
+const { Server } = require('socket.io');
+
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] }
+});
+
+const bridgeSockets = {};
+global.bridgeSockets = bridgeSockets;
+app.set('bridgeSockets', bridgeSockets);
+
+io.use(async (socket, next) => {
+  const isAgent = socket.handshake.query.isAgent === 'true' || socket.handshake.query.isAgent === true;
+  if (!isAgent) return next(); // Web clients bypass this secret check
+
+  const garageId = socket.handshake.query.garageId;
+  const agentSecret = socket.handshake.query.agentSecret;
+
+  if (!garageId || !agentSecret) {
+    return next(new Error('Authentication error: Missing garageId or agentSecret'));
+  }
+
+  try {
+    const db = require('./config/db');
+    const { rows } = await db.query('SELECT whatsapp_agent_secret FROM garages WHERE id = $1', [garageId]);
+    if (rows.length === 0 || rows[0].whatsapp_agent_secret !== agentSecret) {
+      console.warn(`⚠️ Unauthorized Agent Connection Attempt for Garage ${garageId}`);
+      return next(new Error('Authentication error: Invalid agentSecret'));
+    }
+    next();
+  } catch (err) {
+    console.error('Socket DB Auth Error:', err);
+    next(new Error('Authentication error: Internal error'));
+  }
+});
+
+io.on('connection', (socket) => {
+  const garageId = socket.handshake.query.garageId || socket.handshake.headers['x-garage-id'];
+  const isAgent = socket.handshake.query.isAgent === 'true' || socket.handshake.query.isAgent === true;
+
+  if (garageId) {
+    // Join room for this garage (so Web UI & Agent share a real-time room)
+    socket.join(`garage_${garageId}`);
+
+    if (isAgent) {
+      console.log(`⚡ [Socket.io Bridge] Garage ${garageId} Agent Connected (Socket ID: ${socket.id})`);
+      bridgeSockets[String(garageId)] = socket;
+      bridgeSockets[Number(garageId)] = socket;
+
+      // Instantly notify web app room that agent connected
+      io.to(`garage_${garageId}`).emit('saas_status_changed', { garageId, isAgentConnected: true });
+
+      socket.on('disconnect', () => {
+        console.log(`🔌 [Socket.io Bridge] Garage ${garageId} Agent Disconnected`);
+        if (bridgeSockets[String(garageId)] === socket) delete bridgeSockets[String(garageId)];
+        if (bridgeSockets[Number(garageId)] === socket) delete bridgeSockets[Number(garageId)];
+        io.to(`garage_${garageId}`).emit('saas_status_changed', { garageId, isAgentConnected: false });
+      });
+    } else {
+      console.log(`🌐 [Socket.io Web Client] Garage ${garageId} Web UI Connected (Socket ID: ${socket.id})`);
+    }
+
+    // Handle agent QR Code relay to SaaS Web UI
+    socket.on('agent_qr_code', (data) => {
+      console.log(`📲 [Socket.io Bridge] Relaying QR Code for Garage ${data.garageId} to SaaS Web UI...`);
+      io.to(`garage_${data.garageId}`).emit('saas_qr_ready', data);
+      app.set(`qr_code_${data.garageId}`, data.qrCode);
+    });
+
+    // Handle agent status change
+    socket.on('agent_status_change', async (data) => {
+      console.log(`🔔 [Socket.io Bridge] Status change for Garage ${data.garageId}: ${data.status}`);
+      try {
+        const db = require('./config/db');
+        let phoneNumQueryPart = `whatsapp_phone_number = COALESCE($2, whatsapp_phone_number)`;
+        if (data.status === 'disconnected') {
+          phoneNumQueryPart = `whatsapp_phone_number = NULL`;
+        }
+
+        await db.query(
+          `UPDATE garages SET whatsapp_status = $1, ${phoneNumQueryPart}, updated_at = NOW() WHERE id = $3`,
+          [data.status, data.phoneNumber || null, data.garageId]
+        );
+      } catch (err) {
+        console.error(`[Socket.io Bridge DB Error]:`, err.message);
+      }
+      io.to(`garage_${data.garageId}`).emit('saas_status_changed', data);
+    });
+
+    // Handle job acknowledgement from Agent
+    socket.on('job_ack', async (data) => {
+      console.log(`✅ [Socket.io Bridge Job Ack] Job #${data.jobId} -> ${data.status}`);
+      try {
+        const db = require('./config/db');
+        if (data.status === 'sent') {
+          await db.query(
+            `UPDATE whatsapp_logs SET status = 'sent', gateway_msg_id = $1, error_message = NULL WHERE id = $2 AND garage_id = $3`,
+            [data.gatewayMsgId || `LOCAL_${Date.now()}`, data.jobId, data.garageId]
+          );
+        } else {
+          await db.query(
+            `UPDATE whatsapp_logs SET status = 'failed', error_message = $1 WHERE id = $2 AND garage_id = $3`,
+            [data.errorMessage || 'Dispatch failed on local agent', data.jobId, data.garageId]
+          );
+        }
+      } catch (err) {
+        console.error(`[Socket.io Bridge Job Ack Error]:`, err.message);
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log(`⚠️ [Socket.io Bridge] Garage ${garageId} Agent Disconnected`);
+      if (bridgeSockets[garageId]?.id === socket.id) {
+        delete bridgeSockets[garageId];
+      }
+    });
+  }
+});
+
+app.set('io', io);
+app.set('bridgeSockets', bridgeSockets);
+
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, async () => {
-  console.log(`Server is running on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', async () => {
+  console.log(`Server & Socket.io Real-Time Bridge running on port ${PORT} (Strict isAgent Socket Filter Active)`);
   
   // Auto-verify DB schema columns on boot
   try {
@@ -143,9 +275,33 @@ app.listen(PORT, async () => {
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vin VARCHAR(100);
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS fuel_type VARCHAR(50);
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS year INTEGER;
-      ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
+      -- WhatsApp logs table & columns schema integrity
+      CREATE TABLE IF NOT EXISTS whatsapp_logs (
+          id SERIAL PRIMARY KEY,
+          garage_id INTEGER REFERENCES garages(id) ON DELETE CASCADE,
+          recipient_phone VARCHAR(50),
+          message_type VARCHAR(50),
+          gateway_msg_id VARCHAR(100),
+          cost_deducted DECIMAL(10,2) DEFAULT 0.00,
+          balance_after DECIMAL(10,2) DEFAULT 0.00,
+          status VARCHAR(50) DEFAULT 'sent',
+          error_message TEXT,
+          message_text TEXT,
+          media_base64 TEXT,
+          document_name VARCHAR(255),
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      ALTER TABLE whatsapp_logs ADD COLUMN IF NOT EXISTS message_text TEXT;
+      ALTER TABLE whatsapp_logs ADD COLUMN IF NOT EXISTS media_base64 TEXT;
+      ALTER TABLE whatsapp_logs ADD COLUMN IF NOT EXISTS document_name VARCHAR(255);
+      ALTER TABLE whatsapp_logs ADD COLUMN IF NOT EXISTS gateway_msg_id VARCHAR(100);
+      ALTER TABLE whatsapp_logs ADD COLUMN IF NOT EXISTS cost_deducted DECIMAL(10,2) DEFAULT 0.00;
+      ALTER TABLE whatsapp_logs ADD COLUMN IF NOT EXISTS balance_after DECIMAL(10,2) DEFAULT 0.00;
+      ALTER TABLE whatsapp_logs ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'sent';
+      ALTER TABLE whatsapp_logs ADD COLUMN IF NOT EXISTS error_message TEXT;
     `);
-    console.log('[DB Schema] Staff lifecycle, 3-tier SaaS fees, Vehicles, and Meta WhatsApp columns verified.');
+    console.log('[DB Schema] Staff lifecycle, 3-tier SaaS fees, Vehicles, Meta & Local WhatsApp logs columns verified.');
 
     // Auto-seed Indian Vehicle Makes and Models if empty or incomplete
     const makeCheck = await db.query('SELECT COUNT(*) FROM makes');

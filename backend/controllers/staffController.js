@@ -625,7 +625,8 @@ exports.sendStaffWhatsAppSummary = async (req, res) => {
       garageId,
       recipientPhone: staff.phone,
       messageType: 'invoice',
-      messageText: message
+      messageText: message,
+      req
     });
 
     res.json({ success: true, message: 'WhatsApp account summary sent successfully!', remainingBalance: result.remainingBalance });

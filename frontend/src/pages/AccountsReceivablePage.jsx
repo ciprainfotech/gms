@@ -317,10 +317,6 @@ const AccountsReceivablePage = () => {
             setToast({ type: 'error', title: 'Feature Disabled', message: 'Utility transactional messaging is disabled for your account by your Super Admin.' });
             return;
         }
-        if (activeGarage.whatsapp_status !== 'connected') {
-            setToast({ type: 'error', title: 'WhatsApp Disconnected', message: 'WhatsApp is not connected. Please scan the QR code in settings.' });
-            return;
-        }
         if (!invoice.customerPhone) {
             setToast({ type: 'error', title: 'Missing Phone', message: `Cannot send reminder. Customer ${invoice.customerName} does not have a phone number.` });
             return;
@@ -364,10 +360,6 @@ const AccountsReceivablePage = () => {
         }
         if (activeGarage.feature_whatsapp_utility === false) {
             setToast({ type: 'error', title: 'Feature Disabled', message: 'Utility transactional messaging is disabled for your account by your Super Admin.' });
-            return;
-        }
-        if (activeGarage.whatsapp_status !== 'connected') {
-            setToast({ type: 'error', title: 'WhatsApp Disconnected', message: 'WhatsApp is not connected. Please scan the QR code in settings.' });
             return;
         }
 
@@ -419,7 +411,10 @@ const AccountsReceivablePage = () => {
         setShowStatementModal(true);
     };
 
-    const handleSendLedgerWhatsApp = (customerData, transactions, totalBilled, totalPaid, totalDue, periodText) => {
+    const handleSendLedgerWhatsApp = async (customerData, transactions, totalBilled, totalPaid, totalDue, periodText) => {
+        const isOnline = await checkAgentOnline();
+        if (!isOnline) return;
+
         if (!customerData.phone) {
             setToast({ type: 'error', title: 'Missing Phone', message: `Cannot send ledger. Customer ${customerData.customerName} does not have a phone number.` });
             return;

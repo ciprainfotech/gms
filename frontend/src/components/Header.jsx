@@ -7,6 +7,7 @@ import api from "../api/api.js";
 const Header = ({ onMenuToggle, onLogout, user, garage }) => {
     const [isDropdownOpen, setDropdownOpen] = useState(false);
     const [waBalance, setWaBalance] = useState(null);
+    const [waAgentStatus, setWaAgentStatus] = useState(null);
     const [query, setQuery] = useState('');
     const dropdownRef = useRef(null);
     const navigate = useNavigate();
@@ -31,18 +32,27 @@ const Header = ({ onMenuToggle, onLogout, user, garage }) => {
     const [pageTitle, pageDescription] = pageMeta[location.pathname] || (location.pathname.startsWith('/jobsheet/') ? ['Job sheet', 'Review vehicle and repair details.'] : ['Garage workspace', 'Workshop management.']);
 
     useEffect(() => {
-        const fetchWaBalance = async () => {
+        const fetchWaData = async () => {
             try {
-                const res = await api.get('/whatsapp/balance');
-                if (res.ok) {
-                    const data = await res.json();
+                const [balRes, statusRes] = await Promise.all([
+                    api.get('/whatsapp/balance'),
+                    api.get('/whatsapp/status')
+                ]);
+                if (balRes.ok) {
+                    const data = await balRes.json();
                     setWaBalance(data);
+                }
+                if (statusRes.ok) {
+                    const statusData = await statusRes.json();
+                    setWaAgentStatus(statusData);
                 }
             } catch (err) {
                 // Silently ignore if unauthorized
             }
         };
-        fetchWaBalance();
+        fetchWaData();
+        const interval = setInterval(fetchWaData, 8000);
+        return () => clearInterval(interval);
     }, []);
 
     const handleSearch = (e) => {
@@ -128,6 +138,22 @@ const Header = ({ onMenuToggle, onLogout, user, garage }) => {
                     >
                         <FaShieldAlt className="me-1 fs-6 text-primary" /> ● License Active
                     </div>
+                )}
+
+                {waAgentStatus && (
+                    <Link
+                        to="/settings"
+                        className={`badge ${
+                            waAgentStatus.isAgentConnected 
+                                ? 'bg-success bg-opacity-10 text-success border-success border-opacity-25' 
+                                : 'bg-danger bg-opacity-10 text-danger border-danger border-opacity-25'
+                        } border px-3 py-2 me-2 d-none d-md-flex align-items-center text-decoration-none`}
+                        style={{ borderRadius: '20px', fontSize: '11px', letterSpacing: '0.3px', cursor: 'pointer' }}
+                        title={waAgentStatus.isAgentConnected ? "Workshop PC Agent Online & Connected" : "Workshop PC Agent Offline - Click to launch settings"}
+                    >
+                        <FaWhatsapp className="me-1 fs-6" />
+                        {waAgentStatus.isAgentConnected ? "🟢 Agent Online" : "🔴 Agent Offline"}
+                    </Link>
                 )}
 
                 {waBalance && waBalance.featureEnabled && waBalance.costingEnabled && (

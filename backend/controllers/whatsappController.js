@@ -110,7 +110,7 @@ const sendMetaWhatsAppCloudMessage = async ({ phoneNumberId, systemToken, recipi
 };
 
 // Generic Real WhatsApp Gateway Dispatcher
-exports.processWhatsAppDispatch = async ({ garageId, recipientPhone, messageType, messageText, mediaBase64 = null, documentName = 'Document.pdf' }) => {
+const processWhatsAppDispatch = async ({ garageId, recipientPhone, messageType, messageText, mediaBase64 = null, documentName = 'Document.pdf', req = null }) => {
   const garageRes = await db.query(
     `SELECT id, name, phone, whatsapp_credit_balance, whatsapp_cost_per_msg, 
             whatsapp_provider, whatsapp_api_token, whatsapp_phone_number_id, whatsapp_api_url, 
@@ -157,67 +157,156 @@ exports.processWhatsAppDispatch = async ({ garageId, recipientPhone, messageType
   }
 
   const formattedRecipient = formatPhone(recipientPhone);
-  let gatewayMsgId = null;
+  let provider = garage.whatsapp_provider || 'local-bridge';
 
-  try {
-    const systemToken = process.env.META_SYSTEM_TOKEN || garage.whatsapp_api_token;
-    const phoneNumberId = garage.whatsapp_phone_number_id;
-
-    if (!phoneNumberId) {
-      throw new Error('WhatsApp Phone Number ID is not configured for this garage. Please contact Super Admin to assign your Meta Phone Number ID.');
-    }
-
-    if (!systemToken) {
-      throw new Error('META_SYSTEM_TOKEN is not configured in backend environment. Please set META_SYSTEM_TOKEN in server .env.');
-    }
-
-    gatewayMsgId = await sendMetaWhatsAppCloudMessage({
-      phoneNumberId,
-      systemToken,
-      recipientPhone: formattedRecipient,
-      messageText,
-      mediaBase64,
-      documentName
-    });
-  } catch (err) {
-    // Log to DB
-    await db.query(
-      `INSERT INTO whatsapp_logs (garage_id, recipient_phone, message_type, cost_deducted, balance_after, status, error_message)
-       VALUES ($1, $2, $3, 0, $4, 'failed', $5)`,
-      [garageId, formattedRecipient, messageType, balance, err.message]
-    );
-
-    if (err.message && err.message.includes('not registered on WhatsApp')) {
-       // Clean log without stack trace for expected validation errors
-       console.log(`[WhatsApp] Dispatch skipped: ${err.message}`);
-       throw new Error(err.message);
-    } else {
-       console.error("WhatsApp Gateway Network Exception:", err);
-       throw new Error(`WhatsApp API Dispatch Error: ${err.message}`);
-    }
+  // If Meta Cloud API is set as provider but no Phone Number ID exists, seamlessly use local-bridge session
+  if (provider === 'meta_cloud_api' && !garage.whatsapp_phone_number_id) {
+    provider = 'local-bridge';
   }
 
-  let newBalance = balance;
-  let deducted = 0;
+  if (provider === 'local-bridge' || provider === 'whatsapp-web') {
+    // Check if Remote Agent Socket is connected via Socket.io
+    const bridgeSockets = global.bridgeSockets || (req && req.app ? req.app.get('bridgeSockets') : null);
+    const agentSocket = bridgeSockets ? (bridgeSockets[String(garageId)] || bridgeSockets[Number(garageId)]) : null;
 
-  if (isCostingEnabled) {
-    newBalance = balance - costPerMsg;
-    deducted = costPerMsg;
+    // Strict Check: Require active Remote Agent Socket
+    if (!agentSocket) {
+      throw new Error('Workshop PC WhatsApp Agent is OFFLINE. Please start the 1-Click WhatsApp Agent on your workshop computer.');
+    }
+
+    // Mode 1: Local Workshop Computer Bridge
+    const logRes = await db.query(
+      `INSERT INTO whatsapp_logs (garage_id, recipient_phone, message_type, cost_deducted, balance_after, status, message_text, media_base64, document_name)
+       VALUES ($1, $2, $3, 0, $4, 'queued_for_bridge', $5, $6, $7) RETURNING id`,
+      [garageId, formattedRecipient, messageType, balance, messageText, mediaBase64, documentName]
+    );
+
+    const jobId = logRes.rows[0].id;
+
+    if (agentSocket) {
+      console.log(`⚡ [Socket.io Bridge] Instantly emitting job #${jobId} to Garage ${garageId} Local Bridge...`);
+      agentSocket.emit('send_whatsapp_message', {
+        id: jobId,
+        recipient_phone: formattedRecipient,
+        message_text: messageText,
+        media_base64: mediaBase64,
+        document_name: documentName
+      });
+
+      // Wait up to 6 seconds for real-time delivery ack from local agent
+      const ackResult = await new Promise((resolve) => {
+        let attempts = 0;
+        const ackInterval = setInterval(async () => {
+          attempts++;
+          try {
+            const checkRes = await db.query(
+              `SELECT status, error_message, gateway_msg_id FROM whatsapp_logs WHERE id = $1`,
+              [jobId]
+            );
+            const currentJob = checkRes.rows[0];
+            if (currentJob && currentJob.status === 'sent') {
+              clearInterval(ackInterval);
+              resolve({ success: true, gatewayMsgId: currentJob.gateway_msg_id });
+            } else if (currentJob && currentJob.status === 'failed') {
+              clearInterval(ackInterval);
+              resolve({ success: false, errorMessage: currentJob.error_message || 'Local PC Agent failed to send message' });
+            }
+          } catch (e) {}
+
+          if (attempts >= 6) {
+            clearInterval(ackInterval);
+            resolve({ success: true, mode: 'queued', message: 'Job queued for Local Agent processing' });
+          }
+        }, 1000);
+      });
+
+      if (ackResult.success === false) {
+        throw new Error(ackResult.errorMessage);
+      }
+
+      return { 
+        success: true, 
+        mode: 'local-bridge-ack', 
+        jobId: jobId, 
+        message: 'WhatsApp message delivered successfully to recipient!' 
+      };
+    }
+
+  } else if (provider === 'direct_click') {
+    // Mode 2: Direct 1-Click WhatsApp Link (Zero server memory, zero ban risk)
+    const encodedText = encodeURIComponent(messageText);
+    const waUrl = `https://wa.me/${formattedRecipient}?text=${encodedText}`;
 
     await db.query(
-      `UPDATE garages SET whatsapp_credit_balance = $1, updated_at = NOW() WHERE id = $2`,
-      [newBalance, garageId]
+      `INSERT INTO whatsapp_logs (garage_id, recipient_phone, message_type, gateway_msg_id, cost_deducted, balance_after, status)
+       VALUES ($1, $2, $3, 'DIRECT_CLICK', 0, $4, 'sent')`,
+      [garageId, formattedRecipient, messageType, balance]
     );
+
+    return { success: true, mode: 'direct_click', waUrl, messageText };
+
+  } else {
+    // Mode 3: Official Meta Cloud API Dispatch
+    try {
+      const systemToken = process.env.META_SYSTEM_TOKEN || garage.whatsapp_api_token;
+      const phoneNumberId = garage.whatsapp_phone_number_id;
+
+      if (!phoneNumberId) {
+        throw new Error('WhatsApp Phone Number ID is not configured for this garage.');
+      }
+
+      if (!systemToken) {
+        throw new Error('META_SYSTEM_TOKEN is not configured in backend environment. Please set META_SYSTEM_TOKEN in server .env.');
+      }
+
+      gatewayMsgId = await sendMetaWhatsAppCloudMessage({
+        phoneNumberId,
+        systemToken,
+        recipientPhone: formattedRecipient,
+        messageText,
+        mediaBase64,
+        documentName
+      });
+    } catch (err) {
+      await db.query(
+        `INSERT INTO whatsapp_logs (garage_id, recipient_phone, message_type, cost_deducted, balance_after, status, error_message)
+         VALUES ($1, $2, $3, 0, $4, 'failed', $5)`,
+        [garageId, formattedRecipient, messageType, balance, err.message]
+      );
+
+      if (err.message && err.message.includes('not registered on WhatsApp')) {
+         console.log(`[WhatsApp] Dispatch skipped: ${err.message}`);
+         throw new Error(err.message);
+      } else {
+         console.error("WhatsApp Gateway Network Exception:", err);
+         throw new Error(`WhatsApp API Dispatch Error: ${err.message}`);
+      }
+    }
+
+    let newBalance = balance;
+    let deducted = 0;
+
+    if (isCostingEnabled) {
+      newBalance = balance - costPerMsg;
+      deducted = costPerMsg;
+
+      await db.query(
+        `UPDATE garages SET whatsapp_credit_balance = $1, updated_at = NOW() WHERE id = $2`,
+        [newBalance, garageId]
+      );
+    }
+
+    await db.query(
+      `INSERT INTO whatsapp_logs (garage_id, recipient_phone, message_type, gateway_msg_id, cost_deducted, balance_after, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'sent')`,
+      [garageId, formattedRecipient, messageType, gatewayMsgId, deducted, newBalance]
+    );
+
+    return { success: true, costDeducted: deducted, remainingBalance: newBalance, gatewayMsgId };
   }
-
-  await db.query(
-    `INSERT INTO whatsapp_logs (garage_id, recipient_phone, message_type, gateway_msg_id, cost_deducted, balance_after, status)
-     VALUES ($1, $2, $3, $4, $5, $6, 'sent')`,
-    [garageId, formattedRecipient, messageType, gatewayMsgId, deducted, newBalance]
-  );
-
-  return { success: true, costDeducted: deducted, remainingBalance: newBalance, gatewayMsgId };
 };
+
+exports.processWhatsAppDispatch = processWhatsAppDispatch;
 
 // Controllers
 exports.sendInvoiceWhatsApp = async (req, res) => {
@@ -295,7 +384,8 @@ exports.sendInvoiceWhatsApp = async (req, res) => {
       messageType: 'invoice',
       messageText: message,
       mediaBase64: pdfBase64,
-      documentName: `${inv.invoice_number}.pdf`
+      documentName: `${inv.invoice_number}.pdf`,
+      req
     });
 
     res.json({
@@ -343,7 +433,8 @@ exports.sendJobSheetWhatsApp = async (req, res) => {
       garageId,
       recipientPhone: js.customer_phone,
       messageType: 'jobsheet',
-      messageText: message
+      messageText: message,
+      req
     });
 
     res.json({
@@ -389,7 +480,8 @@ exports.sendReminderWhatsApp = async (req, res) => {
       garageId,
       recipientPhone: phone,
       messageType: 'reminder',
-      messageText: message
+      messageText: message,
+      req
     });
 
     res.json({
@@ -493,24 +585,30 @@ exports.getWhatsAppStatus = async (req, res) => {
   try {
     const garageId = req.garageId;
     const { rows } = await db.query(
-      `SELECT id, name, phone, whatsapp_phone_number_id, feature_whatsapp FROM garages WHERE id = $1`,
+      `SELECT id, name, phone, whatsapp_status, whatsapp_provider, whatsapp_phone_number, whatsapp_phone_number_id, feature_whatsapp FROM garages WHERE id = $1`,
       [garageId]
     );
 
     if (rows.length === 0) return res.status(404).json({ success: false, message: 'Garage not found' });
     
     const garage = rows[0];
-    const isConfigured = Boolean(garage.whatsapp_phone_number_id);
+    const bridgeSockets = global.bridgeSockets || (req && req.app ? req.app.get('bridgeSockets') : null);
+    const agentSocket = bridgeSockets ? (bridgeSockets[String(garageId)] || bridgeSockets[Number(garageId)]) : null;
+    const isAgentConnected = !!agentSocket;
+
+    // Fully connected ONLY if Agent Socket is active AND WhatsApp Web is authenticated
+    const isConnected = isAgentConnected && (garage.whatsapp_status === 'connected');
 
     res.json({
       success: true,
-      status: isConfigured ? 'connected' : 'disconnected',
-      provider: 'meta_cloud_api',
+      status: isConnected ? 'connected' : 'disconnected',
+      isAgentConnected,
+      provider: garage.whatsapp_provider || 'local-bridge',
       phoneNumberId: garage.whatsapp_phone_number_id || null,
-      phoneNumber: garage.phone || null,
-      message: isConfigured 
-        ? 'Official Meta WhatsApp Cloud API is Active & Connected'
-        : 'Meta Phone Number ID is missing. Contact Super Admin to link your number.'
+      phoneNumber: isConnected ? (garage.whatsapp_phone_number || 'Workshop PC Agent') : null,
+      message: isConnected 
+        ? 'Workshop PC WhatsApp Agent is ONLINE & Connected'
+        : (isAgentConnected ? 'Agent Socket Online. Please scan QR Code on WhatsApp.' : 'Workshop PC WhatsApp Agent is OFFLINE. Please start the 1-Click WhatsApp Agent.')
     });
   } catch (error) {
     console.error('Error fetching WhatsApp status:', error);
@@ -522,49 +620,44 @@ exports.getWhatsAppQR = async (req, res) => {
   try {
     const garageId = req.garageId;
     
-    // We don't wait for the callback inside the response, 
-    // because generating QR takes a few seconds and the client is async.
-    // Instead, we will initiate it, and use Server-Sent Events or long-polling.
-    // For simplicity, we can wrap it in a Promise for a basic HTTP response if we know it generates fast, 
-    // or just let the frontend poll /status. 
-    // Best simple approach for HTTP request: Wait for first QR.
-    
-    // Set a timeout to prevent hanging
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout waiting for QR')), 25000));
-    
-    const qrPromise = new Promise((resolve) => {
-      whatsappManager.initializeClient(
-        garageId,
-        async (qrDataUrl) => {
-          resolve(qrDataUrl);
-        },
-        async () => {
-          // On Ready
-          await db.query(`UPDATE garages SET whatsapp_status = 'connected', whatsapp_provider = 'whatsapp-web' WHERE id = $1`, [garageId]);
-        },
-        async (reason) => {
-          // On Disconnected
-          await db.query(`UPDATE garages SET whatsapp_status = 'disconnected' WHERE id = $1`, [garageId]);
-        }
-      );
-    });
+    // Check if Local Agent Socket is connected for this garage
+    const bridgeSockets = global.bridgeSockets || (req && req.app ? req.app.get('bridgeSockets') : null);
+    const agentSocket = bridgeSockets ? (bridgeSockets[String(garageId)] || bridgeSockets[Number(garageId)]) : null;
 
-    try {
-      const qrDataUrl = await Promise.race([qrPromise, timeout]);
-      res.json({ success: true, qrCode: qrDataUrl });
-    } catch (e) {
-      const client = whatsappManager.getClient(garageId);
-      const state = client ? await client.getState().catch(() => null) : null;
-      if (state === 'CONNECTED') {
-         res.json({ success: true, message: 'Already connected', status: 'connected' });
-      } else {
-         res.status(500).json({ success: false, message: 'Failed to generate QR or already connected. Try again.' });
-      }
+    if (!agentSocket) {
+      return res.status(400).json({
+        success: false,
+        isAgentConnected: false,
+        message: 'Workshop PC Agent is OFFLINE. Please run the 1-Click WhatsApp Agent setup script on your computer first.'
+      });
     }
 
-  } catch (error) {
-    console.error('Error in getWhatsAppQR:', error);
-    res.status(500).json({ success: false, message: 'Server error generating QR' });
+    console.log(`📲 [Remote Control] Triggering QR Generation on Local Agent for Garage ${garageId}...`);
+    agentSocket.emit('request_agent_qr', { garageId });
+    agentSocket.emit('agent_generate_qr', { garageId });
+    
+    // Poll req.app for cached QR code from agent_qr_code event
+    let attempts = 0;
+    const checkInterval = setInterval(() => {
+      attempts++;
+      const cachedQr = req.app.get(`qr_code_${garageId}`);
+      if (cachedQr) {
+        clearInterval(checkInterval);
+        req.app.set(`qr_code_${garageId}`, null); // Clear single-use cache
+        return res.json({ success: true, isAgentConnected: true, qrCode: cachedQr });
+      }
+      if (attempts >= 12) {
+        clearInterval(checkInterval);
+        return res.json({
+          success: false,
+          isAgentConnected: true,
+          message: 'Local agent is connected, but QR code response timed out. Click Generate Connection QR Code button again.'
+        });
+      }
+    }, 1000);
+  } catch (err) {
+    console.error('Error in getWhatsAppQR:', err);
+    res.status(500).json({ success: false, message: 'Failed to generate QR code' });
   }
 };
 
@@ -613,6 +706,26 @@ exports.disconnectWhatsApp = async (req, res) => {
     
     await whatsappManager.logoutClient(garageId);
 
+    // Send remote agent_disconnect command down socket tunnel if Local PC Agent is connected
+    const bridgeSockets = req.app.get('bridgeSockets');
+    if (bridgeSockets && bridgeSockets[garageId]) {
+      console.log(`📲 [Remote Control] Emitting agent_disconnect to Local Agent for Garage ${garageId}...`);
+      bridgeSockets[garageId].emit('agent_disconnect', { garageId });
+    }
+
+    // Force clean local session folder on disk
+    const fs = require('fs');
+    const path = require('path');
+    const sessionPath = path.join(__dirname, `../.wwebjs_auth/session-garage_${garageId}`);
+    if (fs.existsSync(sessionPath)) {
+      try {
+        fs.rmSync(sessionPath, { recursive: true, force: true });
+        console.log(`[WhatsApp] Session folder forcefully cleaned for garage ${garageId}`);
+      } catch (cleanErr) {
+        console.error(`[WhatsApp] Clean session folder error:`, cleanErr);
+      }
+    }
+
     await db.query(
       `UPDATE garages 
        SET whatsapp_status = 'disconnected',
@@ -659,11 +772,11 @@ exports.sendLedgerWhatsApp = async (req, res) => {
       messageType: 'invoice', // We use invoice type so it charges properly and handles attachments
       messageText: message,
       mediaBase64: pdfBase64,
-      documentName: `${customerName.replace(/\s+/g, '_')}_Ledger_${cleanPeriodText}.pdf`
+      documentName: `${customerName.replace(/\s+/g, '_')}_Ledger_${cleanPeriodText}.pdf`,
+      req
     });
 
     res.json({
-      success: true,
       message: `Ledger PDF WhatsApp sent!`,
       remainingBalance: result.remainingBalance
     });
@@ -673,6 +786,209 @@ exports.sendLedgerWhatsApp = async (req, res) => {
     }
     console.error('Error sending Ledger WhatsApp:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to send WhatsApp message' });
+  }
+};
+
+// ==========================================================================
+// LOCAL WORKSHOP WHATSAPP BRIDGE ENDPOINTS
+// ==========================================================================
+
+// @desc    Poll pending queued messages for Local WhatsApp Bridge
+// @route   GET /api/whatsapp/bridge/pending
+exports.getPendingBridgeMessages = async (req, res) => {
+  try {
+    const garageId = req.query.garageId || req.garageId;
+    if (!garageId) return res.status(400).json({ success: false, message: 'Garage ID required' });
+
+    const { rows } = await db.query(
+      `SELECT id, recipient_phone, message_type, message_text, media_base64, document_name, created_at
+       FROM whatsapp_logs
+       WHERE garage_id = $1 AND status = 'queued_for_bridge'
+       ORDER BY id ASC LIMIT 5`,
+      [garageId]
+    );
+
+    res.json({ success: true, count: rows.length, jobs: rows });
+  } catch (err) {
+    console.error('Error in getPendingBridgeMessages:', err);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+// @desc    Acknowledge completed message by Local WhatsApp Bridge
+// @route   POST /api/whatsapp/bridge/ack
+exports.acknowledgeBridgeMessage = async (req, res) => {
+  try {
+    const { jobId, garageId, status, gatewayMsgId, errorMessage } = req.body;
+
+    if (status === 'sent') {
+      await db.query(
+        `UPDATE whatsapp_logs
+         SET status = 'sent', gateway_msg_id = $1, error_message = NULL
+         WHERE id = $2 AND garage_id = $3`,
+        [gatewayMsgId || `LOCAL_${Date.now()}`, jobId, garageId]
+      );
+    } else {
+      await db.query(
+        `UPDATE whatsapp_logs
+         SET status = 'failed', error_message = $1
+         WHERE id = $2 AND garage_id = $3`,
+        [errorMessage || 'Local bridge dispatch failed', jobId, garageId]
+      );
+    }
+
+    res.json({ success: true, message: 'Job acknowledged successfully' });
+  } catch (err) {
+    console.error('Error in acknowledgeBridgeMessage:', err);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+// @desc    Public Endpoint to download raw JS agent file for a garage
+exports.getAgentScript = async (req, res) => {
+  try {
+    const garageId = req.params.garageId || req.query.garageId || 1;
+    let { rows } = await db.query(`SELECT name, whatsapp_agent_secret FROM garages WHERE id = $1`, [garageId]);
+    
+    // Auto-generate secret if it doesn't exist
+    let agentSecret = rows.length > 0 ? rows[0].whatsapp_agent_secret : null;
+    if (rows.length > 0 && !agentSecret) {
+      const crypto = require('crypto');
+      agentSecret = crypto.randomUUID();
+      await db.query(`UPDATE garages SET whatsapp_agent_secret = $1 WHERE id = $2`, [agentSecret, garageId]);
+    }
+    
+    const garageName = rows.length > 0 ? rows[0].name : `Garage ${garageId}`;
+
+    let protocol = req.protocol || 'http';
+    let host = req.get('host') || 'localhost:5001';
+
+    // Force direct backend URL for local dev to bypass Vite self-signed SSL proxy
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      protocol = 'http';
+      host = 'localhost:5001';
+    }
+
+    const backendUrl = `${protocol}://${host}/api`;
+    const socketUrl = `${protocol}://${host}`;
+
+    const path = require('path');
+    const fs = require('fs');
+    const templatePath = path.join(__dirname, '../scripts/garage-whatsapp-bridge-template.js');
+
+    if (!fs.existsSync(templatePath)) {
+      return res.status(404).send('// Error: Bridge template script not found.');
+    }
+
+    let scriptContent = fs.readFileSync(templatePath, 'utf8');
+    scriptContent = scriptContent
+      .replace(/const GARAGE_ID = .*;/g, `const GARAGE_ID = ${garageId};`)
+      .replace(/const GARAGE_NAME = .*;/g, `const GARAGE_NAME = "${garageName}";`)
+      .replace(/const BACKEND_URL = .*;/g, `const BACKEND_URL = '${backendUrl}';`)
+      .replace(/const SOCKET_URL = .*;/g, `const SOCKET_URL = '${socketUrl}';`)
+      .replace(/const AGENT_SECRET = .*;/g, `const AGENT_SECRET = '${agentSecret}';`);
+
+    res.setHeader('Content-Type', 'application/javascript');
+    res.send(scriptContent);
+  } catch (err) {
+    console.error('Error serving agent script:', err);
+    res.status(500).send('// Server Error serving agent script');
+  }
+};
+
+// @desc    Generate 1-Click Windows .bat Batch Script for Local Agent Setup
+exports.downloadBridgeScript = async (req, res) => {
+  try {
+    const garageId = req.query.garageId || req.params.garageId || req.garageId || 1;
+    const { rows } = await db.query(`SELECT name FROM garages WHERE id = $1`, [garageId]);
+    const garageName = rows.length > 0 ? rows[0].name : `Garage ${garageId}`;
+
+    let protocol = req.protocol || 'http';
+    let host = req.get('host') || 'localhost:5001';
+    
+    // Force direct backend URL for local dev to bypass Vite self-signed SSL proxy
+    if (host.includes('localhost') || host.includes('127.0.0.1')) {
+      protocol = 'http';
+      host = 'localhost:5001';
+    }
+
+    const scriptDownloadUrl = `${protocol}://${host}/api/whatsapp/bridge/script/${garageId}`;
+
+    const batContent = `@echo off
+title Workshop WhatsApp Agent - ${garageName}
+color 0A
+
+echo ====================================================================
+echo               SAMAN MOTORS GARAGE MANAGEMENT SYSTEM
+echo             Workshop WhatsApp Agent (Windows Auto-Launcher)
+echo ====================================================================
+echo.
+echo Garage Name: ${garageName}
+echo Garage ID: ${garageId}
+echo.
+
+set "INSTALL_DIR=%LOCALAPPDATA%\\GarageWhatsAppAgent_${garageId}"
+if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%" >nul 2>&1
+
+cd /d "%INSTALL_DIR%"
+
+echo [1/3] Downloading agent configuration from SaaS Cloud...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '${scriptDownloadUrl}' -OutFile 'garage-${garageId}-agent.js' -UseBasicParsing } catch { Write-Host 'Download Error:' $_.Exception.Message }"
+
+if not exist "garage-${garageId}-agent.js" (
+  echo.
+  echo ❌ Error: Could not download agent configuration from cloud.
+  echo Please check your internet connection and try running this file again.
+  echo.
+  pause
+  exit /b 1
+)
+echo ✅ Agent configuration ready!
+
+if not exist "%INSTALL_DIR%\\node_modules\\whatsapp-web.js" (
+  echo.
+  echo [2/3] First-Time Setup: Installing required WhatsApp engine modules...
+  echo Please wait 15-30 seconds while npm downloads dependencies...
+  call npm install whatsapp-web.js puppeteer socket.io-client qrcode --no-audit --no-fund --loglevel=error
+  echo ✅ WhatsApp engine installed successfully!
+) else (
+  echo [2/3] WhatsApp engine modules verified.
+)
+
+:: Set NODE_PATH to ensure Node finds installed modules
+set "NODE_PATH=%INSTALL_DIR%\\node_modules"
+
+:: Register auto-startup in Windows Startup Folder
+echo Set WshShell = CreateObject^("WScript.Shell"^) > "Start-Silent-Background.vbs"
+echo WshShell.CurrentDirectory = "%INSTALL_DIR%" >> "Start-Silent-Background.vbs"
+echo WshShell.Run "node garage-${garageId}-agent.js", 0, false >> "Start-Silent-Background.vbs"
+echo Set WshShell = Nothing >> "Start-Silent-Background.vbs"
+
+set "STARTUP_DIR=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+if exist "%STARTUP_DIR%" (
+  copy /y "Start-Silent-Background.vbs" "%STARTUP_DIR%\\WorkshopWhatsAppAgent_${garageId}.vbs" >nul 2>&1
+  echo ✅ Registered in Windows Startup - Will auto-start silently on PC boot
+)
+
+echo.
+echo ====================================================================
+echo [3/3] Launching Workshop WhatsApp Agent Engine in Background...
+echo 🟢 The agent is now running silently. You can close this window!
+echo ====================================================================
+echo.
+
+cscript //nologo "Start-Silent-Background.vbs"
+
+echo ✅ Agent launched successfully.
+timeout /t 3 >nul
+`;
+
+    res.setHeader('Content-Type', 'application/x-msdos-program');
+    res.setHeader('Content-Disposition', `attachment; filename="Start-Garage-${garageId}-WhatsApp-Agent.bat"`);
+    res.send(batContent);
+  } catch (err) {
+    console.error('Error in downloadBridgeScript:', err);
+    res.status(500).json({ success: false, message: 'Server Error generating custom bridge script.' });
   }
 };
 

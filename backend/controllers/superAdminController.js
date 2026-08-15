@@ -37,6 +37,7 @@ exports.getAllGarages = async (req, res) => {
         COALESCE(CASE WHEN g.whatsapp_phone_number_id IS NOT NULL AND g.whatsapp_phone_number_id != '' THEN 'connected' ELSE g.whatsapp_status END, 'disconnected') AS whatsapp_status,
         g.feature_stock, g.feature_purchase, g.feature_analytics, g.feature_reminders,
         g.feature_tasks, g.feature_whatsapp, g.feature_whatsapp_utility, g.feature_whatsapp_marketing, g.feature_whatsapp_costing, g.feature_payroll,
+        g.whatsapp_agent_download_enabled,
         p.id AS plan_id, p.name AS plan_name,
         u.id AS owner_id, u.name AS owner_name, u.email AS owner_email, u.phone AS owner_phone,
         (SELECT COUNT(*) FROM garage_users gu WHERE gu.garage_id = g.id) AS user_count
@@ -196,7 +197,8 @@ exports.updateGarageSubscription = async (req, res) => {
     feature_whatsapp_marketing,
     feature_whatsapp_costing,
     feature_payroll,
-    is_active
+    is_active,
+    whatsapp_agent_download_enabled
   } = req.body;
 
   try {
@@ -219,8 +221,9 @@ exports.updateGarageSubscription = async (req, res) => {
         feature_whatsapp_costing = $15,
         feature_payroll = $16,
         is_active = $17,
+        whatsapp_agent_download_enabled = $18,
         updated_at = NOW()
-       WHERE id = $18`,
+       WHERE id = $19`,
       [
         parseFloat(custom_monthly_price || 0),
         parseFloat(one_time_setup_fee || 0),
@@ -239,6 +242,7 @@ exports.updateGarageSubscription = async (req, res) => {
         feature_whatsapp_costing !== false,
         feature_payroll !== false,
         is_active !== false,
+        whatsapp_agent_download_enabled === true,
         garageId
       ]
     );

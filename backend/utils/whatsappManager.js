@@ -3,6 +3,20 @@ const qrcode = require('qrcode');
 const path = require('path');
 const fs = require('fs');
 
+// Safely patch LocalAuth.logout to prevent Windows EBUSY file lock crash
+if (LocalAuth && LocalAuth.prototype) {
+    const originalLogout = LocalAuth.prototype.logout;
+    LocalAuth.prototype.logout = async function () {
+        try {
+            if (originalLogout) {
+                await originalLogout.call(this);
+            }
+        } catch (e) {
+            console.warn('⚠️ [WhatsApp LocalAuth] Suppressed Windows file lock error during logout:', e.message);
+        }
+    };
+}
+
 // In-memory store of active clients (key: garageId)
 const clients = {};
 
@@ -48,13 +62,33 @@ exports.initializeClient = (garageId, onQr, onReady, onDisconnected) => {
         }
     });
 
-    client.on('ready', () => {
+    client.on('ready', async () => {
         console.log(`[WhatsApp] Client is READY for garage ${garageId}`);
+        try {
+            const db = require('../config/db');
+            const info = client.info;
+            const phone = info?.wid?.user || info?.me?.user || null;
+            await db.query(
+                `UPDATE garages SET whatsapp_status = 'connected', whatsapp_provider = 'whatsapp-web', whatsapp_phone_number = COALESCE($1, whatsapp_phone_number), updated_at = NOW() WHERE id = $2`,
+                [phone, garageId]
+            );
+        } catch (e) {
+            console.error(`[WhatsApp] Failed DB update on ready for garage ${garageId}:`, e);
+        }
         if (onReady) onReady();
     });
 
-    client.on('authenticated', () => {
+    client.on('authenticated', async () => {
         console.log(`[WhatsApp] Client authenticated for garage ${garageId}`);
+        try {
+            const db = require('../config/db');
+            await db.query(
+                `UPDATE garages SET whatsapp_status = 'connected', whatsapp_provider = 'whatsapp-web', updated_at = NOW() WHERE id = $1`,
+                [garageId]
+            );
+        } catch (e) {
+            console.error(`[WhatsApp] Failed DB update on authenticated for garage ${garageId}:`, e);
+        }
     });
 
     client.on('auth_failure', msg => {

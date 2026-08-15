@@ -17,6 +17,10 @@ logs/
 *.log
 npm-debug.log*
 
+# WhatsApp Agent Folders
+.wwebjs_auth/
+.wwebjs_cache/
+
 # OS & Editor Files
 .DS_Store
 Thumbs.db

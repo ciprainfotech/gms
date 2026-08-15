@@ -393,7 +393,7 @@ const PayrollPage = () => {
       date: new Date().toISOString().split('T')[0],
       payment_method: 'Cash',
       notes: '',
-      send_whatsapp: Boolean(activeGarage?.whatsapp_phone_number_id)
+      send_whatsapp: true
     });
     setShowTxModal(true);
   };
@@ -538,10 +538,6 @@ const PayrollPage = () => {
     }
     if (activeGarage.feature_whatsapp_utility === false) {
       setToast({ type: 'error', title: 'Feature Disabled', message: 'Utility messaging is disabled for your account by your Super Admin.' });
-      return;
-    }
-    if (!activeGarage.whatsapp_phone_number_id) {
-      setToast({ type: 'error', title: 'WhatsApp Not Configured', message: 'Meta WhatsApp Phone Number ID is not configured for your garage. Contact Super Admin.' });
       return;
     }
     if (!staff.phone) {
