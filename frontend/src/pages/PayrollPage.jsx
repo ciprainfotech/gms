@@ -11,9 +11,11 @@ import api, { API_BASE_URL } from '../api/api.js';
 import CustomToast from '../components/CustomToast';
 import LoadingOverlay from '../components/LoadingOverlay';
 import ConfirmModal from '../components/ConfirmModal';
+import { useGarage } from '../contexts/GarageContext';
 
 const PayrollPage = () => {
   const outletContext = useOutletContext();
+  const { features } = useGarage();
   const activeGarage = outletContext?.activeGarage;
   const isSuspended = activeGarage?.is_active === false;
 

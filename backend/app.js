@@ -137,8 +137,15 @@ app.listen(PORT, async () => {
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(50);
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(20);
+
+      -- Vehicles table schema integrity
+      ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS color VARCHAR(50);
+      ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vin VARCHAR(100);
+      ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS fuel_type VARCHAR(50);
+      ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS year INTEGER;
+      ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
     `);
-    console.log('[DB Schema] Staff lifecycle, 3-tier SaaS fees, and Meta WhatsApp columns verified.');
+    console.log('[DB Schema] Staff lifecycle, 3-tier SaaS fees, Vehicles, and Meta WhatsApp columns verified.');
 
     // Auto-seed Indian Vehicle Makes and Models if empty or incomplete
     const makeCheck = await db.query('SELECT COUNT(*) FROM makes');
