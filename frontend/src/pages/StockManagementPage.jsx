@@ -5,6 +5,8 @@ import {
 } from 'react-icons/fa';
 
 import api from '../api/api'; 
+import useDebounce from '../hooks/useDebounce';
+import { validateNumber, sanitizeString } from '../utils/validators';
 import SaaSDataPagination from '../components/ui/SaaSDataPagination';
 import '../App.css'; 
 import '../StockManagementPage.css'; 
@@ -24,6 +26,7 @@ const StockManagementPage = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState('inventory'); 
     const [searchTerm, setSearchTerm] = useState('');
+    const debouncedSearchTerm = useDebounce(searchTerm, 300);
     const [filterType, setFilterType] = useState(''); 
 
     // Item Form Modal State
@@ -78,14 +81,14 @@ const StockManagementPage = () => {
     const filteredItems = useMemo(() => {
         if (isLoading) return [];
         return masterItems.filter(item => {
-            const lowerSearchTerm = searchTerm.toLowerCase();
-            const matchesSearch = !searchTerm ||
-                item.name.toLowerCase().includes(lowerSearchTerm) ||
+            const lowerSearchTerm = debouncedSearchTerm.toLowerCase();
+            const matchesSearch = !debouncedSearchTerm ||
+                (item.name && item.name.toLowerCase().includes(lowerSearchTerm)) ||
                 (item.partNo && item.partNo.toLowerCase().includes(lowerSearchTerm));
             const matchesType = !filterType || item.type === filterType;
             return matchesSearch && matchesType;
         });
-    }, [searchTerm, filterType, masterItems, isLoading]);
+    }, [debouncedSearchTerm, filterType, masterItems, isLoading]);
 
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
@@ -136,14 +139,45 @@ const StockManagementPage = () => {
         }
     };
 
+    // Helper validation for item payload
+    const validateItemPayload = (data) => {
+        if (!data.name || !data.name.trim()) return "Item Name is required.";
+        if (!data.type) return "Item Type is required.";
+        
+        if (data.unitPrice !== '' && data.unitPrice !== undefined && Number(data.unitPrice) < 0) {
+            return "Unit Price cannot be negative.";
+        }
+        if (data.lubeCharge !== '' && data.lubeCharge !== undefined && Number(data.lubeCharge) < 0) {
+            return "Lube Charge cannot be negative.";
+        }
+        if (data.labourCharge !== '' && data.labourCharge !== undefined && Number(data.labourCharge) < 0) {
+            return "Labour Charge cannot be negative.";
+        }
+        if (data.type === 'Spare' && data.stockQty !== '' && data.stockQty !== undefined && Number(data.stockQty) < 0) {
+            return "Stock Quantity cannot be negative.";
+        }
+        return null;
+    };
+
     // --- CRUD Operations ---
     const handleAddItemSubmit = async (e) => {
         e.preventDefault();
-        if (!formData.name || !formData.type) { setFormError("Item Name and Type are required."); return; }
+        const validationErr = validateItemPayload(formData);
+        if (validationErr) { setFormError(validationErr); return; }
         setFormError('');
         
+        const payload = {
+            ...formData,
+            name: sanitizeString(formData.name),
+            partNo: sanitizeString(formData.partNo) || null,
+            unitPrice: formData.unitPrice === '' ? 0 : Number(formData.unitPrice),
+            lubeCharge: formData.lubeCharge === '' ? 0 : Number(formData.lubeCharge),
+            labourCharge: formData.labourCharge === '' ? 0 : Number(formData.labourCharge),
+            stockQty: formData.type === 'Spare' ? (formData.stockQty === '' ? 0 : Number(formData.stockQty)) : null
+        };
+
         try {
-            const response = await api.post('/master-items', formData);
+            const response = await api.post('/master-items', payload);
             const data = await response.json();
 
             if (response.ok) {
@@ -160,11 +194,22 @@ const StockManagementPage = () => {
 
     const handleEditItemSubmit = async (e) => {
         e.preventDefault();
-        if (!formData.name || !formData.type) { setFormError("Item Name and Type are required."); return; }
+        const validationErr = validateItemPayload(formData);
+        if (validationErr) { setFormError(validationErr); return; }
         setFormError('');
 
+        const payload = {
+            ...formData,
+            name: sanitizeString(formData.name),
+            partNo: sanitizeString(formData.partNo) || null,
+            unitPrice: formData.unitPrice === '' ? 0 : Number(formData.unitPrice),
+            lubeCharge: formData.lubeCharge === '' ? 0 : Number(formData.lubeCharge),
+            labourCharge: formData.labourCharge === '' ? 0 : Number(formData.labourCharge),
+            stockQty: formData.type === 'Spare' ? (formData.stockQty === '' ? 0 : Number(formData.stockQty)) : null
+        };
+
         try {
-            const response = await api.put(`/master-items/${modalState.data.id}`, formData);
+            const response = await api.put(`/master-items/${modalState.data.id}`, payload);
             const data = await response.json();
 
             if (response.ok) {

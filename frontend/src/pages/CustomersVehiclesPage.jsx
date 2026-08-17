@@ -5,6 +5,8 @@ import {
     FaUserPlus, FaSearch, FaCar, FaPlus, FaEdit, FaTrashAlt, FaPhoneAlt, FaEnvelope, FaMapMarkerAlt, FaIdCardAlt, FaInfoCircle, FaEllipsisV, FaHistory, FaWrench, FaCarSide, FaUserCircle, FaTimes, FaBuilding, FaCity, FaClipboardList, FaUsers, FaGasPump, FaPalette, FaPlug // Added more icons
 } from 'react-icons/fa';
 import api from '../api/api.js';
+import useDebounce from '../hooks/useDebounce.js';
+import { validatePhone, validateVehicleNumber, validateEmail, sanitizeString } from '../utils/validators.js';
 import {
     getCustomers, getVehicles, findCustomerById, findVehiclesByCustomerId,
     addVehicle, updateCustomer, updateVehicle, deleteCustomerById, deleteVehicleById,
@@ -53,6 +55,7 @@ const CustomersVehiclesPage = () => {
     const [selectedCustomer, setSelectedCustomer] = useState(null);
     const [selectedCustomerVehicles, setSelectedCustomerVehicles] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
+    const debouncedSearchTerm = useDebounce(searchTerm, 300);
     const customerListRef = useRef(null);
 
     // Modal & Form States
@@ -87,21 +90,19 @@ const CustomersVehiclesPage = () => {
         }
     }, [location.pathname, location.state, navigate]);
 
-
-
-    // --- Memoized Filtering ---
+    // --- Memoized Filtering with Debounce ---
     const filteredCustomers = useMemo(() => {
         if (isLoading) return [];
-        if (!searchTerm.trim()) return allCustomers;
-        const lowerSearchTerm = searchTerm.toLowerCase();
-        const customerIdsFromVehicleMatch = new Set(allVehicles.filter(v => v.carNumber.toLowerCase().includes(lowerSearchTerm)).map(v => v.customerId));
+        if (!debouncedSearchTerm.trim()) return allCustomers;
+        const lowerSearchTerm = debouncedSearchTerm.toLowerCase();
+        const customerIdsFromVehicleMatch = new Set(allVehicles.filter(v => (v.carNumber || '').toLowerCase().includes(lowerSearchTerm)).map(v => v.customerId));
         return allCustomers.filter(c =>
-            c.name.toLowerCase().includes(lowerSearchTerm) ||
-            c.phone.includes(searchTerm) || // Keep exact search for phone
+            (c.name || '').toLowerCase().includes(lowerSearchTerm) ||
+            (c.phone || '').includes(debouncedSearchTerm) ||
             (c.email && c.email.toLowerCase().includes(lowerSearchTerm)) ||
             customerIdsFromVehicleMatch.has(c.id)
         );
-    }, [searchTerm, allCustomers, allVehicles, isLoading]);
+    }, [debouncedSearchTerm, allCustomers, allVehicles, isLoading]);
 
     // --- Effects ---
     // Update vehicles list when selected customer or main vehicle list changes
@@ -233,20 +234,20 @@ const CustomersVehiclesPage = () => {
     // --- CRUD Operations ---
     const handleAddVehicleSubmit = async (e) => {
         e.preventDefault();
-        if (!formData.carNumber || !formData.make || !formData.model) { setFormError("Reg No, Make, and Model are required."); return; }
+        const vehicleValidation = validateVehicleNumber(formData.carNumber, true);
+        if (!vehicleValidation.isValid) { setFormError(vehicleValidation.error); return; }
+        if (!formData.make || !formData.model) { setFormError("Vehicle Make and Model are required."); return; }
         if (formData.year && (isNaN(parseInt(formData.year)) || formData.year.toString().length !== 4)) { setFormError("Valid 4-digit year required."); return; }
         setFormError('');
 
         // Map text fields to the numeric IDs your backend requires
-       // Match the payload to what your backend expects
-        // Match the payload to what your backend expects
         const vehiclePayload = {
             customer_id: formData.customerId,
             make_id: masterMakes.find(m => m.name === formData.make)?.id || formData.make_id, 
             model_id: availableModels.find(m => m.name === formData.model)?.id || formData.model_id, 
-            car_number: formData.carNumber,
+            car_number: vehicleValidation.formatted,
             year: parseInt(formData.year) || null,
-            vin: formData.vin || null,
+            vin: sanitizeString(formData.vin) || null,
             fuel_type: formData.fuelType || null,
             color: formData.color || null
         };
@@ -280,7 +281,9 @@ const CustomersVehiclesPage = () => {
 
   const handleUpdateVehicleSubmit = async (e) => {
         e.preventDefault();
-        if (!formData.carNumber || !formData.make || !formData.model) { setFormError("Reg No, Make, and Model are required."); return; }
+        const vehicleValidation = validateVehicleNumber(formData.carNumber, true);
+        if (!vehicleValidation.isValid) { setFormError(vehicleValidation.error); return; }
+        if (!formData.make || !formData.model) { setFormError("Reg No, Make, and Model are required."); return; }
         if (formData.year && (isNaN(parseInt(formData.year)) || formData.year.toString().length !== 4)) { setFormError("Valid 4-digit year required."); return; }
         setFormError('');
         
@@ -292,9 +295,9 @@ const CustomersVehiclesPage = () => {
             // Find dropdown ID, OR fallback to exact ID. (NO MORE "|| 1" DEFAULT!)
             model_id: availableModels.find(m => m.name === formData.model)?.id || modalState.data.model_id, 
             
-            car_number: formData.carNumber,
+            car_number: vehicleValidation.formatted,
             year: parseInt(formData.year) || null,
-            vin: formData.vin || null,
+            vin: sanitizeString(formData.vin) || null,
             fuel_type: formData.fuelType || null,
             color: formData.color || null
         };
@@ -329,23 +332,28 @@ const CustomersVehiclesPage = () => {
 
      const handleUpdateCustomerSubmit = async (e) => {
         e.preventDefault();
-        if (!formData.name || !formData.phone) { setFormError("Name and Phone are required."); return; }
+        if (!formData.name || !formData.name.trim()) { setFormError("Customer name is required."); return; }
+        
+        const phoneValidation = validatePhone(formData.phone, true);
+        if (!phoneValidation.isValid) { setFormError(phoneValidation.error); return; }
+
+        if (formData.email && formData.email.trim()) {
+            const emailValidation = validateEmail(formData.email, false);
+            if (!emailValidation.isValid) { setFormError(emailValidation.error); return; }
+        }
         setFormError('');
         
         try {
-            // 👉 THE FIX: Combine City into the Address string, because 
-            // the database only has an 'address' column!
             let combinedAddress = formData.address || '';
             if (formData.city) {
                 combinedAddress = combinedAddress ? `${combinedAddress}, ${formData.city}` : formData.city;
             }
 
-            // Create the payload exactly how the backend expects it
             const payloadToSave = {
-                name: formData.name,
-                phone: formData.phone,
-                email: formData.email,
-                address: combinedAddress
+                name: sanitizeString(formData.name),
+                phone: phoneValidation.cleanPhone,
+                email: sanitizeString(formData.email) || null,
+                address: sanitizeString(combinedAddress) || null
             };
 
             // 1. Send the PUT request with the combined payload

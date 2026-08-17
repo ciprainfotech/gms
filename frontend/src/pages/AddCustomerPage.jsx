@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Container, Card, Form, Row, Col, Button, Alert, Spinner, InputGroup } from 'react-bootstrap';
 import { FaUserPlus, FaUser, FaCar, FaSave, FaTimes, FaPhone, FaEnvelope, FaMapMarkerAlt, FaCity, FaEdit } from 'react-icons/fa';
 import api from '../api/api.js';
+import { validatePhone, validateVehicleNumber, validateEmail, sanitizeString } from '../utils/validators.js';
 
 const AddCustomerPage = () => {
     const navigate = useNavigate();
@@ -133,12 +134,13 @@ const AddCustomerPage = () => {
     const handleCustomerChange = (e) => setCustomer({ ...customer, [e.target.name]: e.target.value });
     
     const handlePhoneBlur = async () => {
-        if (customer.phone.length < 8) return; 
+        const phoneValidation = validatePhone(customer.phone, false);
+        if (!phoneValidation.isValid || !phoneValidation.cleanPhone) return;
         
         setIsCheckingPhone(true);
         setFoundCustomerAlert(false);
         try {
-            const res = await api.get(`/customers/check-phone/${customer.phone}`);
+            const res = await api.get(`/customers/check-phone/${phoneValidation.cleanPhone}`);
             const result = await res.json();
             
             if (result.exists) {
@@ -146,13 +148,14 @@ const AddCustomerPage = () => {
                     ...prev,
                     id: result.data.id, // Save ID so we Update instead of Create
                     name: result.data.name,
+                    phone: phoneValidation.cleanPhone,
                     email: result.data.email || "",
                     address: result.data.address || ""
                 }));
                 setFoundCustomerAlert(true);
             } else {
                 // If phone doesn't exist, clear the ID so it creates a new customer
-                setCustomer(prev => ({ ...prev, id: "" }));
+                setCustomer(prev => ({ ...prev, id: "", phone: phoneValidation.cleanPhone }));
             }
         } catch (err) {
             console.error("Error looking up phone:", err);
@@ -191,13 +194,47 @@ const AddCustomerPage = () => {
         else navigate('/customers-vehicles');
     };
     
-    // --- Submission Logic ---
+    // --- Submission Logic with Strict Pre-API Validation ---
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        
-        if (!customer.name || !customer.phone || !vehicle.make_id || !vehicle.model_id || !vehicle.carNumber) {
-            setError("Please fill in all required fields: Name, Phone, Vehicle Make, Model, and Number.");
+
+        // 1. Mandatory Field Checks
+        if (!customer.name.trim()) {
+            setError("Customer name is required.");
+            return;
+        }
+
+        // 2. Phone Validation (Strict 10-digit Indian Mobile)
+        const phoneValidation = validatePhone(customer.phone, true);
+        if (!phoneValidation.isValid) {
+            setError(phoneValidation.error);
+            return;
+        }
+
+        // 3. Email Validation (if provided)
+        if (customer.email && customer.email.trim()) {
+            const emailValidation = validateEmail(customer.email, false);
+            if (!emailValidation.isValid) {
+                setError(emailValidation.error);
+                return;
+            }
+        }
+
+        // 4. Vehicle Number Validation
+        const vehicleValidation = validateVehicleNumber(vehicle.carNumber, true);
+        if (!vehicleValidation.isValid) {
+            setError(vehicleValidation.error);
+            return;
+        }
+
+        // 5. Vehicle Make & Model
+        if (!vehicle.make_id) {
+            setError("Please select a vehicle make.");
+            return;
+        }
+        if (!vehicle.model_id) {
+            setError("Please select a vehicle model.");
             return;
         }
         
@@ -207,7 +244,12 @@ const AddCustomerPage = () => {
                 ? `${customer.address ? customer.address + ', ' : ''}${customer.city}` 
                 : customer.address;
 
-            const customerPayload = { name: customer.name, phone: customer.phone, email: customer.email, address: fullAddress };
+            const customerPayload = { 
+                name: sanitizeString(customer.name), 
+                phone: phoneValidation.cleanPhone, 
+                email: sanitizeString(customer.email) || null, 
+                address: sanitizeString(fullAddress) || null 
+            };
             let finalCustomerId = customer.id; // May be filled from Edit Mode OR Phone Lookup
 
             // 1. Handle Customer (Update if exists, Create if new)
@@ -228,9 +270,9 @@ const AddCustomerPage = () => {
                 customer_id: finalCustomerId, 
                 make_id: vehicle.make_id,
                 model_id: vehicle.model_id,
-                car_number: vehicle.carNumber,
+                car_number: vehicleValidation.formatted,
                 year: vehicle.vehicleYear ? parseInt(vehicle.vehicleYear) : null,
-                vin: vehicle.vehicleVin || null,
+                vin: sanitizeString(vehicle.vehicleVin) || null,
                 fuel_type: vehicle.fuel_type || null,
                 color: vehicle.color || null
             };

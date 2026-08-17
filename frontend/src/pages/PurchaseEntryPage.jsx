@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 // Completely replaced staticData with your custom API wrapper
 import api from '../api/api';
 import CustomToast from '../components/CustomToast';
+import { validatePhone, validateNumber, sanitizeString } from '../utils/validators';
 
 import '../App.css';
 import '../PurchaseEntryPage.css';
@@ -198,15 +199,23 @@ const PurchaseEntryPage = () => {
         e.preventDefault();
         setSupplierFormError('');
         
-        if (!newSupplierData.name || !newSupplierData.phone) {
-            setSupplierFormError("Supplier Name and Phone are required."); return;
+        if (!newSupplierData.name || !newSupplierData.name.trim()) {
+            setSupplierFormError("Supplier name is required."); return;
         }
-        if (!/^\d{10}$/.test(newSupplierData.phone)) {
-            setSupplierFormError("Please enter a valid 10-digit phone number."); return;
+        
+        const phoneValidation = validatePhone(newSupplierData.phone, true);
+        if (!phoneValidation.isValid) {
+            setSupplierFormError(phoneValidation.error); return;
         }
 
         try {
-            const response = await api.post('/suppliers', newSupplierData);
+            const response = await api.post('/suppliers', {
+                ...newSupplierData,
+                name: sanitizeString(newSupplierData.name),
+                phone: phoneValidation.cleanPhone,
+                contactPerson: sanitizeString(newSupplierData.contactPerson),
+                city: sanitizeString(newSupplierData.city)
+            });
             const addedSupplier = await response.json();
 
             if (response.ok) {
@@ -230,6 +239,7 @@ const PurchaseEntryPage = () => {
 
     // --- Database Save Purchase Bill ---
     const handleSavePurchase = async () => {
+        if (isSaving) return;
         if (!billDetails.supplierId) { setToast({ type: 'error', title: 'Validation', message: "Please select a Supplier." }); supplierSelectRef.current?.focus(); return; }
         if (!billDetails.billNumber.trim()) { setToast({ type: 'error', title: 'Validation', message: "Please enter the Bill/Invoice No." }); billNumberRef.current?.focus(); return; }
         if (!billDetails.billDate) { setToast({ type: 'error', title: 'Validation', message: "Please select the Bill Date." }); return; }

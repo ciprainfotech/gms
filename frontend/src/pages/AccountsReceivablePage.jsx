@@ -4,13 +4,15 @@ import { Container, Card, Table, Badge, Button, Row, Col, Spinner, Accordion, Bu
 import {
     FaMoneyBillWave, FaPaperPlane, FaFileInvoiceDollar, FaUserCircle, FaListUl, FaUsers, FaInfoCircle,
     FaSearch, FaFileDownload, FaPrint, FaCheckCircle, FaExclamationCircle, FaClock, FaCalendarAlt,
-    FaFolderOpen, FaFolder, FaTrashAlt, FaShieldAlt
+    FaFolderOpen, FaFolder, FaTrashAlt, FaShieldAlt, FaChevronDown, FaChevronRight, FaCar, FaPhoneAlt,
+    FaEnvelope, FaEye, FaWhatsapp, FaCreditCard, FaReceipt
 } from 'react-icons/fa';
 import api from '../api/api';
 import RecordPaymentModal from '../components/RecordPaymentModal';
 import CustomerStatementModal from '../components/CustomerStatementModal';
 import ConfirmModal from '../components/ConfirmModal';
 import CustomToast from '../components/CustomToast';
+import '../AccountsReceivablePage.css';
 
 import PageShell from '../components/ui/PageShell';
 import StatCard from '../components/ui/StatCard';
@@ -47,6 +49,12 @@ const AccountsReceivablePage = () => {
     const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'unpaid' | 'paid' | 'partial'
     const [searchTerm, setSearchTerm] = useState('');
 
+    // --- Quick Filter for Party Accounts ---
+    const [quickFilter, setQuickFilter] = useState('all'); // 'all' | 'pending' | 'overdue' | 'settled'
+
+    // --- Expanded Party Rows State ---
+    const [expandedPartyIds, setExpandedPartyIds] = useState([]);
+
     // --- Date Range Filter State ---
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
@@ -54,9 +62,6 @@ const AccountsReceivablePage = () => {
     // --- Pagination State ---
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
-
-    // --- Accordion Active Keys (Expand/Collapse All) ---
-    const [expandedCustomerKeys, setExpandedCustomerKeys] = useState([]);
 
     // --- Customer Statement Modal State ---
     const [showStatementModal, setShowStatementModal] = useState(false);
@@ -234,26 +239,53 @@ const AccountsReceivablePage = () => {
         };
     }, [processedInvoices, filteredInvoices]);
 
-    // Expand top 3 customer keys by default
-    useEffect(() => {
-        if (customerWiseDues.length > 0 && expandedCustomerKeys.length === 0) {
-            setExpandedCustomerKeys(customerWiseDues.slice(0, 3).map(c => String(c.customerId)));
+    // --- Quick Filter counts & Filtered Customers Calculation ---
+    const { quickCounts, filteredPartyAccounts } = useMemo(() => {
+        const counts = {
+            all: customerWiseDues.length,
+            pending: customerWiseDues.filter(c => c.totalDue > 0).length,
+            overdue: customerWiseDues.filter(c => c.invoices.some(i => i.status === 'Overdue')).length,
+            settled: customerWiseDues.filter(c => c.totalDue <= 0).length
+        };
+
+        let list = customerWiseDues;
+        if (quickFilter === 'pending') {
+            list = customerWiseDues.filter(c => c.totalDue > 0);
+        } else if (quickFilter === 'overdue') {
+            list = customerWiseDues.filter(c => c.invoices.some(i => i.status === 'Overdue'));
+        } else if (quickFilter === 'settled') {
+            list = customerWiseDues.filter(c => c.totalDue <= 0);
         }
-    }, [customerWiseDues]);
+
+        return { quickCounts: counts, filteredPartyAccounts: list };
+    }, [customerWiseDues, quickFilter]);
+
+    // Auto-expand first party on initial load so user immediately sees how it works
+    useEffect(() => {
+        if (filteredPartyAccounts.length > 0 && expandedPartyIds.length === 0) {
+            setExpandedPartyIds([filteredPartyAccounts[0].customerId]);
+        }
+    }, [filteredPartyAccounts]);
+
+    const toggleExpandParty = (customerId) => {
+        setExpandedPartyIds(prev => 
+            prev.includes(customerId) ? prev.filter(id => id !== customerId) : [...prev, customerId]
+        );
+    };
 
     const handleExpandAll = () => {
-        setExpandedCustomerKeys(customerWiseDues.map(c => String(c.customerId)));
+        setExpandedPartyIds(filteredPartyAccounts.map(c => c.customerId));
     };
 
     const handleCollapseAll = () => {
-        setExpandedCustomerKeys([]);
+        setExpandedPartyIds([]);
     };
 
     // --- Pagination Calculation ---
     const paginatedCustomers = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
-        return customerWiseDues.slice(startIndex, startIndex + itemsPerPage);
-    }, [customerWiseDues, currentPage, itemsPerPage]);
+        return filteredPartyAccounts.slice(startIndex, startIndex + itemsPerPage);
+    }, [filteredPartyAccounts, currentPage, itemsPerPage]);
 
     const paginatedInvoices = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
@@ -261,7 +293,7 @@ const AccountsReceivablePage = () => {
     }, [filteredInvoices, currentPage, itemsPerPage]);
 
     const totalPages = Math.ceil(
-        (viewMode === 'customer' ? customerWiseDues.length : filteredInvoices.length) / itemsPerPage
+        (viewMode === 'customer' ? filteredPartyAccounts.length : filteredInvoices.length) / itemsPerPage
     );
 
 
@@ -486,153 +518,302 @@ const AccountsReceivablePage = () => {
         }
     };
     // --- Sub-Components ---
-    const CustomerWiseView = () => (
-        <div>
-            <div className="d-flex justify-content-between align-items-center mb-3 px-1">
-                <span className="small text-muted fw-medium">
-                    Showing <strong className="text-dark">{paginatedCustomers.length}</strong> of <strong className="text-dark">{customerWiseDues.length}</strong> Party Accounts
-                </span>
-                <div className="d-flex gap-2">
-                    <Button variant="light" size="sm" onClick={handleExpandAll} className="px-3 fw-medium border shadow-sm text-secondary hover-primary">
-                        <FaFolderOpen className="me-2"/> Expand All
+    const PartyWiseView = () => (
+        <div className="party-table-card">
+            {/* Table Header Controls & Quick Filters */}
+            <div className="p-3 bg-white border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                    <button 
+                        type="button" 
+                        className={`quick-filter-chip ${quickFilter === 'all' ? 'active' : ''}`}
+                        onClick={() => { setQuickFilter('all'); setCurrentPage(1); }}
+                    >
+                        All Accounts <span className="chip-badge">{quickCounts.all}</span>
+                    </button>
+                    <button 
+                        type="button" 
+                        className={`quick-filter-chip ${quickFilter === 'pending' ? 'active' : ''}`}
+                        onClick={() => { setQuickFilter('pending'); setCurrentPage(1); }}
+                    >
+                        Pending Dues <span className="chip-badge">{quickCounts.pending}</span>
+                    </button>
+                    <button 
+                        type="button" 
+                        className={`quick-filter-chip ${quickFilter === 'overdue' ? 'active' : ''}`}
+                        onClick={() => { setQuickFilter('overdue'); setCurrentPage(1); }}
+                    >
+                        Overdue <span className="chip-badge">{quickCounts.overdue}</span>
+                    </button>
+                    <button 
+                        type="button" 
+                        className={`quick-filter-chip ${quickFilter === 'settled' ? 'active' : ''}`}
+                        onClick={() => { setQuickFilter('settled'); setCurrentPage(1); }}
+                    >
+                        Settled <span className="chip-badge">{quickCounts.settled}</span>
+                    </button>
+                </div>
+
+                <div className="d-flex align-items-center gap-2">
+                    <Button variant="light" size="sm" onClick={handleExpandAll} className="px-3 fw-medium border shadow-sm text-secondary hover-primary" style={{ fontSize: '12px' }}>
+                        <FaFolderOpen className="me-1"/> Expand All
                     </Button>
-                    <Button variant="light" size="sm" onClick={handleCollapseAll} className="px-3 fw-medium border shadow-sm text-secondary hover-primary">
-                        <FaFolder className="me-2"/> Collapse All
+                    <Button variant="light" size="sm" onClick={handleCollapseAll} className="px-3 fw-medium border shadow-sm text-secondary hover-primary" style={{ fontSize: '12px' }}>
+                        <FaFolder className="me-1"/> Collapse All
                     </Button>
                 </div>
             </div>
 
-            <Accordion 
-              alwaysOpen 
-              activeKey={expandedCustomerKeys} 
-              onSelect={(keys) => setExpandedCustomerKeys(keys)}
-              className="saas-accordion"
-            >
-                {paginatedCustomers.length === 0 ? (
-                    <div className="text-center p-5 text-muted bg-white border border-light rounded-4 shadow-sm">
-                        <FaInfoCircle size="2em" className="mb-3 text-secondary"/>
-                        <h5 className="fw-bold text-dark">No Customers Found</h5>
-                        <p>No matching accounts found for the current search/date filters.</p>
-                    </div>
-                ) : (
-                    paginatedCustomers.map((customer) => (
-                        <Accordion.Item key={customer.customerId} eventKey={String(customer.customerId)} className="mb-2 border-light rounded-3 shadow-sm overflow-hidden bg-white">
-                            <Accordion.Header as="div" bsPrefix="custom-accordion-header">
-                                <div className="d-flex w-100 justify-content-between align-items-center py-1 pe-3">
-                                    <div className="d-flex align-items-center">
-                                        <div className="bg-primary bg-opacity-10 text-primary p-2 rounded-circle me-3 ms-2 d-flex align-items-center justify-content-center" style={{ width: '36px', height: '36px' }}>
-                                            <FaUserCircle size="1.2em" />
-                                        </div>
-                                        <div>
-                                            <h6 className="fw-bold mb-0 text-dark" style={{ fontSize: '13.5px' }}>{customer.customerName}</h6>
-                                            <small className="text-secondary fw-medium" style={{ fontSize: '11.5px' }}>
-                                                {customer.invoiceCount} Invoice(s) {customer.phone ? <span className="ms-2">📱 {customer.phone}</span> : ''}
-                                            </small>
-                                        </div>
-                                    </div>
-                                    <div className="d-flex align-items-center gap-3">
-                                        <div className="text-end me-4">
-                                            <small className="d-block text-secondary text-uppercase fw-bold" style={{ fontSize: '9px', letterSpacing: '0.5px' }}>Outstanding</small>
-                                            <strong style={{ fontSize: '13.5px' }} className={customer.totalDue > 0 ? 'text-danger' : 'text-success'}>
-                                                {formatCurrency(customer.totalDue)}
-                                            </strong>
-                                        </div>
+            {/* Full-Width Table */}
+            <div className="table-responsive">
+                <Table hover className="party-table mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th style={{ width: '40px' }} className="text-center"></th>
+                            <th style={{ minWidth: '220px' }}>Customer / Party</th>
+                            <th className="text-center" style={{ minWidth: '110px' }}>Invoices</th>
+                            <th className="text-end" style={{ minWidth: '130px' }}>Total Billed</th>
+                            <th className="text-end" style={{ minWidth: '130px' }}>Total Paid</th>
+                            <th className="text-end" style={{ minWidth: '140px' }}>Outstanding Due</th>
+                            <th className="text-center" style={{ minWidth: '110px' }}>Status</th>
+                            <th className="text-center" style={{ minWidth: '180px' }}>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {paginatedCustomers.length === 0 ? (
+                            <tr>
+                                <td colSpan="8" className="text-center py-5 text-muted">
+                                    <FaInfoCircle size="2em" className="mb-3 text-secondary opacity-50"/>
+                                    <h6 className="fw-bold text-dark mb-1">No Party Accounts Found</h6>
+                                    <p className="small mb-0">No matching accounts found for the current search/filters.</p>
+                                </td>
+                            </tr>
+                        ) : (
+                            paginatedCustomers.map((customer) => {
+                                const isExpanded = expandedPartyIds.includes(customer.customerId);
+                                const hasOverdue = customer.invoices.some(i => i.status === 'Overdue');
+                                const isSettled = customer.totalDue <= 0;
+                                
+                                // Extract unique vehicles for this customer
+                                const vehicles = Array.from(new Set(customer.invoices.map(i => i.vehicleNumber).filter(Boolean)));
 
-                                        {/* Action Buttons */}
-                                        <Button 
-                                          variant="outline-secondary" 
-                                          size="sm" 
-                                          className="fw-medium px-3 border-light shadow-sm"
-                                          onClick={(e) => { e.stopPropagation(); handleOpenStatementModal(customer); }}
+                                return (
+                                    <React.Fragment key={customer.customerId}>
+                                        {/* Main Party Summary Row */}
+                                        <tr 
+                                            className={`party-row ${isExpanded ? 'is-expanded' : ''}`}
+                                            onClick={() => toggleExpandParty(customer.customerId)}
                                         >
-                                            <FaPrint className="me-2 text-muted" /> Statement
-                                        </Button>
+                                            <td className="text-center px-3" onClick={(e) => { e.stopPropagation(); toggleExpandParty(customer.customerId); }}>
+                                                <FaChevronRight className={`chevron-icon ${isExpanded ? 'expanded' : ''}`} />
+                                            </td>
+                                            <td>
+                                                <div className="d-flex align-items-center">
+                                                    <div className="bg-primary bg-opacity-10 text-primary p-2 rounded-circle me-3 d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '38px', height: '38px' }}>
+                                                        <FaUserCircle size="1.3em" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="fw-bold text-dark mb-0" style={{ fontSize: '14px' }}>
+                                                            {customer.customerName}
+                                                        </div>
+                                                        <div className="d-flex align-items-center gap-2 mt-1">
+                                                            {customer.phone && (
+                                                                <span className="text-secondary small fw-medium">
+                                                                    <FaPhoneAlt size={10} className="me-1 opacity-50" />{customer.phone}
+                                                                </span>
+                                                            )}
+                                                            {vehicles.length > 0 && (
+                                                                <span className="badge bg-light text-secondary border fw-normal py-1 px-2" style={{ fontSize: '11px' }}>
+                                                                    <FaCar className="me-1 opacity-75"/>{vehicles.slice(0, 2).join(', ')}{vehicles.length > 2 ? ` +${vehicles.length - 2}` : ''}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="text-center">
+                                                <span className="badge bg-light text-dark border px-2 py-1 fw-semibold" style={{ fontSize: '12px' }}>
+                                                    {customer.invoiceCount} {customer.invoiceCount === 1 ? 'Invoice' : 'Invoices'}
+                                                </span>
+                                            </td>
+                                            <td className="text-end fw-semibold text-dark">
+                                                {formatCurrency(customer.totalBilled)}
+                                            </td>
+                                            <td className="text-end fw-semibold text-success">
+                                                {formatCurrency(customer.totalPaid)}
+                                            </td>
+                                            <td className="text-end fw-bold">
+                                                <span className={isSettled ? 'text-success' : 'text-danger'}>
+                                                    {formatCurrency(customer.totalDue)}
+                                                </span>
+                                            </td>
+                                            <td className="text-center">
+                                                {isSettled ? (
+                                                    <span className="badge-settled">Settled</span>
+                                                ) : hasOverdue ? (
+                                                    <span className="badge-overdue">Overdue</span>
+                                                ) : (
+                                                    <span className="badge-pending">Pending</span>
+                                                )}
+                                            </td>
+                                            <td className="text-center" onClick={(e) => e.stopPropagation()}>
+                                                <div className="d-flex justify-content-center gap-2 align-items-center">
+                                                    <OverlayTrigger placement="top" overlay={<Tooltip>Print / Share Statement</Tooltip>}>
+                                                        <Button 
+                                                            variant="outline-secondary" 
+                                                            size="sm" 
+                                                            className="fw-medium px-2 py-1 border-light shadow-sm"
+                                                            onClick={() => handleOpenStatementModal(customer)}
+                                                            style={{ fontSize: '12px' }}
+                                                        >
+                                                            <FaPrint className="me-1 text-muted" /> Statement
+                                                        </Button>
+                                                    </OverlayTrigger>
 
-                                        {activeGarage?.feature_reminders && customer.totalDue > 0 && (
-                                            <Button 
-                                              variant="primary" 
-                                              size="sm" 
-                                              className="fw-medium px-3 shadow-sm"
-                                              onClick={(e) => { e.stopPropagation(); handleRemindAllForCustomer(customer.customerId, customer.customerName); }} 
-                                              disabled={loadingStates[`cust-${customer.customerId}`] || activeGarage?.feature_whatsapp_utility === false}
-                                              title={activeGarage?.feature_whatsapp_utility === false ? "WhatsApp Utility messaging is disabled by Super Admin" : "Send payment reminders via WhatsApp"}
-                                            >
-                                                {loadingStates[`cust-${customer.customerId}`] ? <Spinner size="sm" /> : <><FaPaperPlane className="me-2"/> Remind</>}
-                                            </Button>
-                                        )}
+                                                    {activeGarage?.feature_reminders && customer.totalDue > 0 && (
+                                                        <OverlayTrigger placement="top" overlay={<Tooltip>{activeGarage?.feature_whatsapp_utility === false ? "WhatsApp messaging disabled by Super Admin" : "Send WhatsApp Payment Reminders"}</Tooltip>}>
+                                                            <Button 
+                                                                variant="primary" 
+                                                                size="sm" 
+                                                                className="fw-medium px-2 py-1 shadow-sm"
+                                                                onClick={() => handleRemindAllForCustomer(customer.customerId, customer.customerName)}
+                                                                disabled={loadingStates[`cust-${customer.customerId}`] || activeGarage?.feature_whatsapp_utility === false}
+                                                                style={{ fontSize: '12px' }}
+                                                            >
+                                                                {loadingStates[`cust-${customer.customerId}`] ? <Spinner size="sm" /> : <><FaPaperPlane className="me-1"/> Remind</>}
+                                                            </Button>
+                                                        </OverlayTrigger>
+                                                    )}
 
-                                        <Button 
-                                          variant="light" 
-                                          size="sm" 
-                                          className="text-danger border shadow-sm px-2 hover-danger"
-                                          title="Delete / Clear Customer Account"
-                                          onClick={(e) => { e.stopPropagation(); promptDeleteCustomer(customer); }}
-                                        >
-                                            <FaTrashAlt />
-                                        </Button>
-                                    </div>
-                                </div>
-                            </Accordion.Header>
-                            <Accordion.Body className="p-0 border-top border-light" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                                <Table hover responsive className="mb-0 saas-table align-middle" style={{ minWidth: '800px' }}>
-                                    <thead className="bg-light sticky-top" style={{ zIndex: 1 }}>
-                                        <tr>
-                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold border-bottom-0">Invoice Number</th>
-                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold border-bottom-0">Date Issued</th>
-                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold border-bottom-0">Due Date</th>
-                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-end border-bottom-0">Total Billed</th>
-                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-end border-bottom-0">Amount Paid</th>
-                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-end border-bottom-0">Amount Due</th>
-                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-center border-bottom-0">Status</th>
-                                            <th className="py-3 px-4 text-uppercase text-secondary small fw-bold text-center border-bottom-0" style={{ width: '150px' }}>Actions</th>
+                                                    <OverlayTrigger placement="top" overlay={<Tooltip>Clear / Delete Account</Tooltip>}>
+                                                        <Button 
+                                                            variant="light" 
+                                                            size="sm" 
+                                                            className="text-danger border shadow-sm px-2 py-1 hover-danger"
+                                                            onClick={() => promptDeleteCustomer(customer)}
+                                                        >
+                                                            <FaTrashAlt size={12} />
+                                                        </Button>
+                                                    </OverlayTrigger>
+                                                </div>
+                                            </td>
                                         </tr>
-                                    </thead>
-                                    <tbody>
-                                        {customer.invoices.map(inv => (
-                                            <tr key={inv.id} className="border-bottom border-light">
-                                                <td className="fw-bold px-4"><Link to={`/invoices/${inv.id}/view`} className="text-dark text-decoration-none hover-primary">{inv.invoiceNumber}</Link></td>
-                                                <td className="px-4 text-secondary">{formatDate(inv.dateIssued)}</td>
-                                                <td className="px-4 text-secondary">{formatDate(inv.dueDate)}</td>
-                                                <td className="px-4 text-end fw-semibold text-dark">{formatCurrency(inv.grandTotal)}</td>
-                                                <td className="px-4 text-end text-success fw-medium">{formatCurrency(inv.amountPaid)}</td>
-                                                <td className="px-4 text-end fw-bold text-danger">{formatCurrency(inv.amountDue)}</td>
-                                                <td className="px-4 text-center">
-                                                    <span className={`saas-badge ${inv.status === 'Paid' ? 'saas-badge-success' : inv.status === 'Overdue' ? 'saas-badge-danger' : 'saas-badge-warning'}`}>
-                                                        {inv.status}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 text-center">
-                                                    <div className="d-flex justify-content-center gap-2">
-                                                        <OverlayTrigger placement="top" overlay={<Tooltip>Record / Edit Payments</Tooltip>}>
-                                                            <button className="btn btn-link text-success p-0 border-0 hover-success" onClick={() => handleShowPaymentModal(inv)}>
-                                                                <FaMoneyBillWave size={18} />
-                                                            </button>
-                                                        </OverlayTrigger>
 
-                                                        {activeGarage?.feature_reminders && inv.amountDue > 0 && (
-                                                            <OverlayTrigger placement="top" overlay={<Tooltip>{activeGarage?.feature_whatsapp_utility === false ? "WhatsApp utility messaging is disabled by Super Admin." : "Send WhatsApp Reminder"}</Tooltip>}>
-                                                                <button className="btn btn-link text-primary p-0 border-0 hover-primary" onClick={() => handleSendSingleReminder(inv)} disabled={loadingStates[inv.id] || activeGarage?.feature_whatsapp_utility === false}>
-                                                                    {loadingStates[inv.id] ? <Spinner size="sm" /> : <FaPaperPlane size={18} />}
-                                                                </button>
-                                                            </OverlayTrigger>
-                                                        )}
+                                        {/* Expanded Full-Width Nested Invoices Ledger */}
+                                        {isExpanded && (
+                                            <tr>
+                                                <td colSpan="8" className="p-0 border-0">
+                                                    <div className="party-expanded-container">
+                                                        {/* Top Mini Summary Row for this Party */}
+                                                        <div className="row g-3 mb-3 align-items-center">
+                                                            <div className="col-md-4">
+                                                                <div className="party-mini-card d-flex justify-content-between align-items-center">
+                                                                    <div>
+                                                                        <small className="text-muted fw-bold text-uppercase d-block" style={{ fontSize: '10px', letterSpacing: '0.5px' }}>Total Invoices Billed</small>
+                                                                        <span className="fw-bold text-dark" style={{ fontSize: '15px' }}>{formatCurrency(customer.totalBilled)}</span>
+                                                                    </div>
+                                                                    <FaFileInvoiceDollar className="text-primary opacity-25" size={24} />
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-4">
+                                                                <div className="party-mini-card d-flex justify-content-between align-items-center">
+                                                                    <div>
+                                                                        <small className="text-muted fw-bold text-uppercase d-block" style={{ fontSize: '10px', letterSpacing: '0.5px' }}>Total Amount Paid</small>
+                                                                        <span className="fw-bold text-success" style={{ fontSize: '15px' }}>{formatCurrency(customer.totalPaid)}</span>
+                                                                    </div>
+                                                                    <FaMoneyBillWave className="text-success opacity-25" size={24} />
+                                                                </div>
+                                                            </div>
+                                                            <div className="col-md-4">
+                                                                <div className="party-mini-card d-flex justify-content-between align-items-center" style={{ borderLeft: `4px solid ${customer.totalDue > 0 ? '#ef4444' : '#10b981'}` }}>
+                                                                    <div>
+                                                                        <small className="text-muted fw-bold text-uppercase d-block" style={{ fontSize: '10px', letterSpacing: '0.5px' }}>Outstanding Balance</small>
+                                                                        <span className={`fw-bold ${customer.totalDue > 0 ? 'text-danger' : 'text-success'}`} style={{ fontSize: '15px' }}>
+                                                                            {formatCurrency(customer.totalDue)}
+                                                                        </span>
+                                                                    </div>
+                                                                    <FaClock className={customer.totalDue > 0 ? 'text-danger opacity-25' : 'text-success opacity-25'} size={24} />
+                                                                </div>
+                                                            </div>
+                                                        </div>
 
-                                                        <OverlayTrigger placement="top" overlay={<Tooltip>View Detailed Invoice</Tooltip>}>
-                                                            <Link to={`/invoices/${inv.id}/view`} className="btn btn-link text-secondary p-0 border-0 hover-primary">
-                                                                <FaListUl size={18} />
-                                                            </Link>
-                                                        </OverlayTrigger>
+                                                        {/* Nested Invoices Table */}
+                                                        <div className="nested-invoice-table shadow-sm">
+                                                            <Table hover responsive className="mb-0 align-middle">
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th className="px-3">Invoice Number</th>
+                                                                        <th>Vehicle</th>
+                                                                        <th>Issued Date</th>
+                                                                        <th>Due Date</th>
+                                                                        <th className="text-end">Total Billed</th>
+                                                                        <th className="text-end">Amount Paid</th>
+                                                                        <th className="text-end">Amount Due</th>
+                                                                        <th className="text-center">Status</th>
+                                                                        <th className="text-center" style={{ width: '130px' }}>Actions</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {customer.invoices.map(inv => (
+                                                                        <tr key={inv.id}>
+                                                                            <td className="px-3 fw-bold">
+                                                                                <Link to={`/invoices/${inv.id}/view`} className="text-dark text-decoration-none hover-primary">
+                                                                                    {inv.invoiceNumber}
+                                                                                </Link>
+                                                                            </td>
+                                                                            <td>
+                                                                                <span className="badge bg-light text-secondary border fw-medium px-2 py-1">
+                                                                                    {inv.vehicleNumber || 'N/A'}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td className="text-secondary">{formatDate(inv.dateIssued)}</td>
+                                                                            <td className="text-secondary">{formatDate(inv.dueDate)}</td>
+                                                                            <td className="text-end fw-semibold text-dark">{formatCurrency(inv.grandTotal)}</td>
+                                                                            <td className="text-end text-success fw-medium">{formatCurrency(inv.amountPaid)}</td>
+                                                                            <td className="text-end fw-bold text-danger">{formatCurrency(inv.amountDue)}</td>
+                                                                            <td className="text-center">
+                                                                                <span className={`saas-badge ${inv.status === 'Paid' ? 'saas-badge-success' : inv.status === 'Overdue' ? 'saas-badge-danger' : 'saas-badge-warning'}`}>
+                                                                                    {inv.status}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td className="text-center">
+                                                                                <div className="d-flex justify-content-center gap-2">
+                                                                                    <OverlayTrigger placement="top" overlay={<Tooltip>Record / Edit Payments</Tooltip>}>
+                                                                                        <button className="btn btn-link text-success p-0 border-0 hover-success" onClick={() => handleShowPaymentModal(inv)}>
+                                                                                            <FaMoneyBillWave size={17} />
+                                                                                        </button>
+                                                                                    </OverlayTrigger>
+
+                                                                                    {activeGarage?.feature_reminders && inv.amountDue > 0 && (
+                                                                                        <OverlayTrigger placement="top" overlay={<Tooltip>{activeGarage?.feature_whatsapp_utility === false ? "WhatsApp utility messaging is disabled by Super Admin." : "Send WhatsApp Reminder"}</Tooltip>}>
+                                                                                            <button className="btn btn-link text-primary p-0 border-0 hover-primary" onClick={() => handleSendSingleReminder(inv)} disabled={loadingStates[inv.id] || activeGarage?.feature_whatsapp_utility === false}>
+                                                                                                {loadingStates[inv.id] ? <Spinner size="sm" /> : <FaPaperPlane size={16} />}
+                                                                                            </button>
+                                                                                        </OverlayTrigger>
+                                                                                    )}
+
+                                                                                    <OverlayTrigger placement="top" overlay={<Tooltip>View Detailed Invoice</Tooltip>}>
+                                                                                        <Link to={`/invoices/${inv.id}/view`} className="btn btn-link text-secondary p-0 border-0 hover-primary">
+                                                                                            <FaListUl size={16} />
+                                                                                        </Link>
+                                                                                    </OverlayTrigger>
+                                                                                </div>
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </Table>
+                                                        </div>
                                                     </div>
                                                 </td>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </Table>
-                            </Accordion.Body>
-                        </Accordion.Item>
-                    ))
-                )}
-            </Accordion>
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })
+                        )}
+                    </tbody>
+                </Table>
+            </div>
         </div>
     );
 
@@ -838,7 +1019,7 @@ const AccountsReceivablePage = () => {
                 </FilterBar>
 
                 {/* Main Views */}
-                {viewMode === 'customer' ? <CustomerWiseView /> : <InvoiceWiseView />}
+                {viewMode === 'customer' ? <PartyWiseView /> : <InvoiceWiseView />}
 
                 {/* Pagination */}
                 {totalPages > 1 && (

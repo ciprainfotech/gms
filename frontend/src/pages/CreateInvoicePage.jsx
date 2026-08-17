@@ -181,14 +181,39 @@ const CreateInvoicePage = () => {
         };
     }, [invoiceDraft, discountType, discountValue, taxRate]);
 
-    // 1. Opens the Confirmation Modal
+    // 1. Opens the Confirmation Modal with Pre-Validation
     const promptFinalize = () => {
         if (!invoiceDraft || !invoiceTotals) return;
+        setError('');
+
+        const dVal = parseFloat(discountValue) || 0;
+        if (dVal < 0) {
+            setError("Discount cannot be a negative value.");
+            return;
+        }
+
+        if (discountType === 'Percent' && dVal > 100) {
+            setError("Percentage discount cannot exceed 100%.");
+            return;
+        }
+
+        if (discountType === 'Fixed' && dVal > (invoiceDraft.subtotal || 0)) {
+            setError("Fixed discount cannot exceed the invoice subtotal.");
+            return;
+        }
+
+        const tVal = parseFloat(taxRate) || 0;
+        if (tVal < 0 || tVal > 100) {
+            setError("Tax rate must be between 0% and 100%.");
+            return;
+        }
+
         setShowConfirmModal(true);
     };
 
     // 2. The actual API call (Runs securely when they click "Yes" in your modal)
     const executeFinalizeInvoice = async () => {
+        if (isFinalizing) return;
         setShowConfirmModal(false); 
         setIsFinalizing(true);
         setError('');
@@ -197,8 +222,8 @@ const CreateInvoicePage = () => {
             jobSheetId: invoiceDraft.jobSheetId,
             dateIssued: workingDate || invoiceDraft.dateIssued || new Date().toISOString().split('T')[0],
             discountType,
-            discountValue: parseFloat(discountValue) || 0,
-            taxRate: parseFloat(taxRate) || 0,
+            discountValue: Math.max(0, parseFloat(discountValue) || 0),
+            taxRate: Math.max(0, parseFloat(taxRate) || 0),
             notes: "",
         };
         

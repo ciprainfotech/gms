@@ -34,6 +34,17 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     checkAuth();
+
+    const handleSessionExpired = () => {
+      setUser(null);
+      setGarage(null);
+      setIsAuthenticated(false);
+    };
+
+    window.addEventListener('session_expired', handleSessionExpired);
+    return () => {
+      window.removeEventListener('session_expired', handleSessionExpired);
+    };
   }, [checkAuth]);
 
   const login = useCallback(async (userData, garageData) => {

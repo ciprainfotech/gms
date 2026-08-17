@@ -9,6 +9,7 @@ import api, { API_BASE_URL, SERVER_BASE_URL } from '../api/api.js';
 import CustomToast from '../components/CustomToast';
 import LoadingOverlay from '../components/LoadingOverlay';
 import ConfirmModal from '../components/ConfirmModal';
+import { validatePhone, validateEmail, validateGSTIN, sanitizeString } from '../utils/validators.js';
 
 const ProfileSettingsPage = () => {
   const outletContext = useOutletContext();
@@ -248,9 +249,35 @@ const ProfileSettingsPage = () => {
 
   const handleUserUpdate = async (e) => {
     e.preventDefault();
+    if (saving) return;
+
+    if (!userForm.name || !userForm.name.trim()) {
+      setToast({ type: 'error', title: 'Validation Error', message: 'Name is required.' });
+      return;
+    }
+
+    const phoneValidation = validatePhone(userForm.phone, true);
+    if (!phoneValidation.isValid) {
+      setToast({ type: 'error', title: 'Validation Error', message: phoneValidation.error });
+      return;
+    }
+
+    if (userForm.email && userForm.email.trim()) {
+      const emailValidation = validateEmail(userForm.email, false);
+      if (!emailValidation.isValid) {
+        setToast({ type: 'error', title: 'Validation Error', message: emailValidation.error });
+        return;
+      }
+    }
+
     setSaving(true);
     try {
-      const res = await api.put('/profile/user', userForm);
+      const res = await api.put('/profile/user', {
+        ...userForm,
+        name: sanitizeString(userForm.name),
+        phone: phoneValidation.cleanPhone,
+        email: sanitizeString(userForm.email) || null
+      });
       const data = await res.json();
       if (res.ok) {
         setToast({ type: 'success', title: 'Profile Updated', message: 'Personal profile details updated successfully.' });
@@ -266,6 +293,18 @@ const ProfileSettingsPage = () => {
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
+    if (saving) return;
+
+    if (!passwordForm.currentPassword) {
+      setToast({ type: 'error', title: 'Validation Error', message: 'Current password is required.' });
+      return;
+    }
+
+    if (!passwordForm.newPassword || passwordForm.newPassword.length < 6) {
+      setToast({ type: 'error', title: 'Validation Error', message: 'New password must be at least 6 characters long.' });
+      return;
+    }
+
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       setToast({ type: 'error', title: 'Validation Error', message: 'New password and confirmation do not match.' });
       return;
@@ -293,9 +332,47 @@ const ProfileSettingsPage = () => {
 
   const handleGarageUpdate = async (e) => {
     e.preventDefault();
+    if (saving) return;
+
+    if (!garageForm.name || !garageForm.name.trim()) {
+      setToast({ type: 'error', title: 'Validation Error', message: 'Garage name is required.' });
+      return;
+    }
+
+    if (garageForm.phone && garageForm.phone.trim()) {
+      const phoneValidation = validatePhone(garageForm.phone, false);
+      if (!phoneValidation.isValid) {
+        setToast({ type: 'error', title: 'Validation Error', message: phoneValidation.error });
+        return;
+      }
+    }
+
+    if (garageForm.email && garageForm.email.trim()) {
+      const emailValidation = validateEmail(garageForm.email, false);
+      if (!emailValidation.isValid) {
+        setToast({ type: 'error', title: 'Validation Error', message: emailValidation.error });
+        return;
+      }
+    }
+
+    if (garageForm.gst_number && garageForm.gst_number.trim()) {
+      const gstValidation = validateGSTIN(garageForm.gst_number, false);
+      if (!gstValidation.isValid) {
+        setToast({ type: 'error', title: 'Validation Error', message: gstValidation.error });
+        return;
+      }
+    }
+
     setSaving(true);
     try {
-      const res = await api.put('/profile/garage', garageForm);
+      const res = await api.put('/profile/garage', {
+        ...garageForm,
+        name: sanitizeString(garageForm.name),
+        phone: sanitizeString(garageForm.phone),
+        email: sanitizeString(garageForm.email),
+        gst_number: garageForm.gst_number ? garageForm.gst_number.toUpperCase().trim() : '',
+        address: sanitizeString(garageForm.address)
+      });
       const data = await res.json();
       if (res.ok) {
         setToast({ type: 'success', title: 'Garage Settings Saved', message: 'Garage profile & invoice prefixes updated!' });

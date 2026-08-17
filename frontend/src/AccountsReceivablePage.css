@@ -1,0 +1,193 @@
+/* AccountsReceivablePage.css */
+
+.party-table-card {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+}
+
+.party-table {
+    margin-bottom: 0;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.party-table thead th {
+    background-color: #f8fafc !important;
+    color: #475569;
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 14px 18px;
+    border-bottom: 1px solid #e2e8f0 !important;
+    white-space: nowrap;
+}
+
+.party-table tbody tr.party-row {
+    transition: background-color 0.15s ease;
+    cursor: pointer;
+}
+
+.party-table tbody tr.party-row:hover {
+    background-color: #f1f5f9 !important;
+}
+
+.party-table tbody tr.party-row.is-expanded {
+    background-color: #f8fafc !important;
+    border-left: 3px solid #2563eb;
+}
+
+.party-table tbody td {
+    padding: 14px 18px;
+    vertical-align: middle;
+    border-bottom: 1px solid #edf2f7;
+    font-size: 13.5px;
+}
+
+/* Chevron icon animation */
+.chevron-icon {
+    transition: transform 0.2s ease;
+    color: #94a3b8;
+}
+
+.chevron-icon.expanded {
+    transform: rotate(90deg);
+    color: #2563eb;
+}
+
+/* Expanded nested details panel */
+.party-expanded-container {
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    border-bottom: 2px solid #cbd5e1;
+    padding: 16px 20px 20px 20px;
+}
+
+.party-mini-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+
+.nested-invoice-table {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.nested-invoice-table thead th {
+    background-color: #f1f5f9 !important;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #e2e8f0 !important;
+    white-space: nowrap;
+}
+
+.nested-invoice-table tbody td {
+    padding: 11px 14px;
+    font-size: 13px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.nested-invoice-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.nested-invoice-table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+/* Quick Filter Chips */
+.quick-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12.5px;
+    font-weight: 600;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.quick-filter-chip:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+.quick-filter-chip.active {
+    background: #2563eb;
+    color: #ffffff;
+    border-color: #2563eb;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
+
+.quick-filter-chip.active .chip-badge {
+    background: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+}
+
+.chip-badge {
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+}
+
+/* Status Badges */
+.badge-overdue {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+}
+
+.badge-pending {
+    background-color: #fef3c7;
+    color: #b45309;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+}
+
+.badge-settled {
+    background-color: #dcfce7;
+    color: #15803d;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+}
+
+.action-btn-link {
+    background: transparent;
+    border: none;
+    padding: 4px 6px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.action-btn-link:hover {
+    background: #e2e8f0;
+}

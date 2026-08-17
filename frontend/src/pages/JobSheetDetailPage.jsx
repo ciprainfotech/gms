@@ -10,6 +10,7 @@ import {
 } from 'react-icons/fa';
 import api from '../api/api'; 
 import { useGlobalDate } from '../contexts/GlobalDateContext';
+import { validateKMReading, validateNumber, sanitizeString } from '../utils/validators';
 
 // --- HELPER FUNCTIONS ---
 const formatCurrency = (amount) => {
@@ -162,7 +163,6 @@ const JobSheetDetailPage = () => {
 
     const validateForm = (isFinalizingAction) => {
         const errors = {};
-        const kmNum = Number(kmReading);
 
         if (isFinalizingAction) {
             if (!kmReading || String(kmReading).trim() === '') {
@@ -173,8 +173,11 @@ const JobSheetDetailPage = () => {
             }
         }
         
-        if (kmReading && (isNaN(kmNum) || kmNum < 0)) {
-            errors.kmReading = 'Please enter a valid, non-negative number for KM reading.';
+        if (kmReading && String(kmReading).trim() !== '') {
+            const kmRes = validateKMReading(kmReading, vehicleDetails?.km_reading, isFinalizingAction);
+            if (!kmRes.isValid) {
+                errors.kmReading = kmRes.error;
+            }
         }
 
         setValidationErrors(errors);
