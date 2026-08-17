@@ -33,7 +33,8 @@ const Dashboard = () => {
   const location = useLocation();
   const { garage, isSuspended } = useGarage();
   const toast = useToast();
-  const { workingDate } = useGlobalDate();
+  const { workingDate, today } = useGlobalDate();
+  const isToday = workingDate === today;
 
   // --- State ---
   const [jobs, setJobs] = useState([]);
@@ -109,9 +110,8 @@ const Dashboard = () => {
       try {
         let url = '/dashboard/kanban-data';
         if (workingDate) {
-          const d = new Date(workingDate);
-          const formattedDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-          url = `/dashboard/kanban-data?date=${formattedDate}`;
+          // Send the raw YYYY-MM-DD string directly to prevent local timezone shifts
+          url = `/dashboard/kanban-data?date=${workingDate}`;
         }
         const res = await api.get(url);
         if (!res.ok) throw new Error('Could not fetch dashboard data.');
@@ -351,7 +351,7 @@ const Dashboard = () => {
           <Col md={3}>
             <Card className="border-0 shadow-sm rounded-4 p-3 d-flex flex-row align-items-center justify-content-between" style={{ backgroundColor: '#FFFFFF', borderLeft: '4px solid #10B981' }}>
               <div>
-                <small className="text-muted fw-bold text-uppercase" style={{ fontSize: '10px', letterSpacing: '0.5px' }}>Completed Today</small>
+                <small className="text-muted fw-bold text-uppercase" style={{ fontSize: '10px', letterSpacing: '0.5px' }}>{isToday ? 'Completed Today' : 'Completed'}</small>
                 <h3 className="fw-bold text-success mb-0 mt-0.5">{completedJobs.length}</h3>
               </div>
               <div className="rounded-circle p-2.5 d-flex align-items-center justify-content-center" style={{ backgroundColor: '#ECFDF5', color: '#10B981', width: '42px', height: '42px' }}>
@@ -436,7 +436,7 @@ const Dashboard = () => {
           <div className="kanban-column shadow-sm rounded-4 overflow-hidden" data-status="Completed" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
             <div className="kanban-column-header p-3 bg-white border-bottom d-flex align-items-center justify-content-between" style={{ borderTop: '3px solid #10B981' }}>
               <h5 className="kanban-column-title mb-0 fw-bold d-flex align-items-center text-dark" style={{ fontSize: '15px' }}>
-                <FaCheckDouble className="text-success me-2" /> Completed Today
+                <FaCheckDouble className="text-success me-2" /> {isToday ? 'Completed Today' : 'Completed'}
               </h5>
               <Badge bg="success" pill className="fw-bold px-2.5 py-1">{completedJobs.length}</Badge>
             </div>
@@ -446,8 +446,8 @@ const Dashboard = () => {
                   <div className="rounded-circle mx-auto mb-3 d-flex align-items-center justify-content-center" style={{ width: '56px', height: '56px', backgroundColor: '#ECFDF5', color: '#10B981' }}>
                     <FaCheckCircle className="fs-3 opacity-75" />
                   </div>
-                  <h6 className="fw-bold text-dark mb-1">No Deliveries Yet</h6>
-                  <p className="text-muted small mb-0">Completed vehicle repairs for today will be listed here.</p>
+                  <h6 className="fw-bold text-dark mb-1">{isToday ? 'No Deliveries Yet' : 'No Completed Jobs'}</h6>
+                  <p className="text-muted small mb-0">Completed vehicle repairs for {isToday ? 'today' : 'this date'} will be listed here.</p>
                 </div>
               ) : (
                 completedJobs.map(job => (

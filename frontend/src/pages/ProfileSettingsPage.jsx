@@ -866,21 +866,31 @@ const ProfileSettingsPage = () => {
                           {garageForm?.whatsapp_agent_download_enabled ? (
                             <>
                               <div className="mb-4">
-                                <a 
-                                  href={`${API_BASE_URL}/whatsapp/bridge/download?garageId=${garageForm?.id || 1}`}
+                                <button 
                                   className="btn btn-success btn-lg rounded-pill px-5 fw-bold shadow-sm"
-                                  target="_blank"
-                                  rel="noreferrer"
+                                  onClick={async () => {
+                                    try {
+                                      const res = await fetch(`${API_BASE_URL}/whatsapp/bridge/token`, { credentials: 'include' });
+                                      const data = await res.json();
+                                      if (data.success && data.token) {
+                                        window.open(`${API_BASE_URL}/whatsapp/bridge/download?token=${data.token}`, '_blank');
+                                      } else {
+                                        alert('Failed to generate download link. Please try again.');
+                                      }
+                                    } catch(e) {
+                                      alert('Network error. Please check your connection.');
+                                    }
+                                  }}
                                 >
                                   🚀 Download 1-Click Agent Setup
-                                </a>
+                                </button>
                               </div>
 
                               <div className="p-3 bg-light rounded-4 text-start mt-3" style={{ maxWidth: '540px', margin: '0 auto' }}>
                                 <h6 className="fw-bold text-dark small mb-2">⚡ Quick 3-Step Setup Instructions:</h6>
                                 <ol className="small text-muted mb-0 ps-3" style={{ lineHeight: '1.7' }}>
                                   <li>Click the green <strong>Download 1-Click Agent Setup</strong> button above.</li>
-                                  <li>Double-click the downloaded file (<code>Start-Garage-{garageForm?.id || 1}-WhatsApp-Agent.bat</code>) on your workshop PC.</li>
+                                  <li>Double-click the downloaded <code>.bat</code> file on your workshop PC.</li>
                                   <li>Once launched, <strong>Step 2 (Generate QR Code)</strong> will unlock automatically!</li>
                                 </ol>
                               </div>

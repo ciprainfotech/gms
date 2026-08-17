@@ -7,14 +7,15 @@ const whatsappController = require('../controllers/whatsappController');
 router.get('/webhook', whatsappController.verifyWebhook);
 router.post('/webhook', whatsappController.handleWebhook);
 
-// Public bridge script endpoint (called by 1-Click .bat launcher on PC)
+// Public: agent script download (JWT-verified inside controller — no user cookie needed by .bat file)
 router.get('/bridge/script/:garageId', whatsappController.getAgentScript);
-
-// Public batch file download endpoint (browser href doesn't have Bearer token)
 router.get('/bridge/download', whatsappController.downloadBridgeScript);
 
 // Protected routes
 router.use(authorizeGarage);
+
+// Generate a signed short-lived download token (called by frontend Settings page)
+router.get('/bridge/token', whatsappController.generateAgentToken);
 
 router.get('/balance', whatsappController.getWhatsAppBalance);
 router.get('/logs', whatsappController.getWhatsAppLogs);

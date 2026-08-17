@@ -3,7 +3,10 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 const GlobalDateContext = createContext();
 
 export const GlobalDateProvider = ({ children }) => {
-    const getTodayString = () => new Date().toISOString().split('T')[0];
+    const getTodayString = () => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
     const today = getTodayString();
 
     // This initializer runs once when the app loads

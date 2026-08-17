@@ -144,15 +144,27 @@ const Header = ({ onMenuToggle, onLogout, user, garage }) => {
                     <Link
                         to="/settings"
                         className={`badge ${
-                            waAgentStatus.isAgentConnected 
+                            waAgentStatus.status === 'connected'
                                 ? 'bg-success bg-opacity-10 text-success border-success border-opacity-25' 
+                                : waAgentStatus.isAgentConnected
+                                ? 'bg-warning bg-opacity-10 text-warning border-warning border-opacity-25'
                                 : 'bg-danger bg-opacity-10 text-danger border-danger border-opacity-25'
                         } border px-3 py-2 me-2 d-none d-md-flex align-items-center text-decoration-none`}
                         style={{ borderRadius: '20px', fontSize: '11px', letterSpacing: '0.3px', cursor: 'pointer' }}
-                        title={waAgentStatus.isAgentConnected ? "Workshop PC Agent Online & Connected" : "Workshop PC Agent Offline - Click to launch settings"}
+                        title={
+                            waAgentStatus.status === 'connected'
+                                ? "WhatsApp Connected & Ready to send messages"
+                                : waAgentStatus.isAgentConnected
+                                ? "Agent PC is online, but WhatsApp is unlinked or needs QR Scan. Click to connect."
+                                : "Workshop PC Agent is Offline. Click to launch agent settings."
+                        }
                     >
                         <FaWhatsapp className="me-1 fs-6" />
-                        {waAgentStatus.isAgentConnected ? "🟢 Agent Online" : "🔴 Agent Offline"}
+                        {waAgentStatus.status === 'connected'
+                            ? "🟢 WhatsApp Online"
+                            : waAgentStatus.isAgentConnected
+                            ? "🟡 Scan WhatsApp QR"
+                            : "🔴 Agent Offline"}
                     </Link>
                 )}
 
@@ -185,15 +197,15 @@ const Header = ({ onMenuToggle, onLogout, user, garage }) => {
                             <FaUserCircle className="fs-3 text-primary" />
                         </div>
                         <div className="d-flex flex-column text-start ms-1">
-                            <span className="user-name fw-bold">{user ? user.name : '...'}</span>
+                            <span className="user-name fw-bold">{user?.name || user?.email || 'System User'}</span>
                             {garage?.name && <small className="text-muted" style={{ fontSize: '10px', marginTop: '-3px' }}>{garage.name}</small>}
                         </div>
                     </div>
 
                     <div className={`user-dropdown ${isDropdownOpen ? 'is-open' : ''}`}>
                         <div className="dropdown-header">
-                            <span className="dropdown-user-name">{user ? user.name : 'Loading...'}</span>
-                            <span className="dropdown-user-email">{user ? user.email : '...'}</span>
+                            <span className="dropdown-user-name">{user?.name || 'System User'}</span>
+                            <span className="dropdown-user-email">{user?.email || '...'}</span>
                             {garage?.name && <small className="d-block text-primary fw-bold mt-1">{garage.name}</small>}
                             {user?.is_super_admin && (
                                 <span className="badge bg-danger mt-1 text-uppercase" style={{ fontSize: '9px' }}>

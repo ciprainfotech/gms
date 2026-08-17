@@ -2,6 +2,10 @@ const db = require('../config/db');
 const whatsappManager = require('../utils/whatsappManager');
 const { MessageMedia } = require('whatsapp-web.js');
 const pdfGenerator = require('../utils/pdfGenerator');
+const jwt = require('jsonwebtoken');
+
+// Secret for signing one-time agent-script download tokens (never exposed to client)
+const AGENT_SCRIPT_SECRET = process.env.AGENT_SCRIPT_SECRET || process.env.JWT_SECRET || 'cipra_agent_script_secret_2026';
 
 // Helper to format phone number to standard E.164 (without + or spaces)
 const formatPhone = (phone) => {
@@ -221,7 +225,9 @@ const processWhatsAppDispatch = async ({ garageId, recipientPhone, messageType, 
       });
 
       if (ackResult.success === false) {
-        throw new Error(ackResult.errorMessage);
+        const err = new Error(ackResult.errorMessage);
+        err.code = 'AGENT_DISPATCH_FAILED';
+        throw err;
       }
 
       return { 
@@ -398,11 +404,11 @@ exports.sendInvoiceWhatsApp = async (req, res) => {
       return res.status(402).json({ success: false, code: 'INSUFFICIENT_FUNDS', message: error.message });
     }
     
-    if (error.message && error.message.includes('not registered on WhatsApp')) {
-       return res.status(400).json({ success: false, message: error.message });
+    if (error.code === 'AGENT_DISPATCH_FAILED' || (error.message && (error.message.includes('OFFLINE') || error.message.includes('unauthenticated') || error.message.includes('not registered') || error.message.includes('Local PC Agent')))) {
+      return res.status(400).json({ success: false, message: error.message });
     }
     
-    console.error('Error sending invoice WhatsApp:', error);
+    console.error('Error in WhatsApp controller:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to send WhatsApp message' });
   }
 };
@@ -466,12 +472,18 @@ exports.sendReminderWhatsApp = async (req, res) => {
     
     if (type === 'single_invoice') {
         const formattedAmt = parseFloat(amountDue || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
-        // Format date to DD-MM-YYYY
-        const formattedDate = new Date(invoiceDate).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        message = `Hello *${customerName || 'Valued Customer'}* 👋,\n\nThis is a payment reminder for your vehicle *${carNumber || 'N/A'}*.\n\n📄 *Invoice Details:*\n  Invoice No: *${invoiceNumber}*\n  Date: *${formattedDate}*\n  Amount Due: *${formattedAmt}*\n\nPlease arrange for the payment at your earliest convenience. Contact us at ${garagePhone} for any queries.`;
+        // Format date safely (prevent RangeError: Invalid time value)
+        let formattedDate = 'N/A';
+        if (invoiceDate) {
+          const d = new Date(invoiceDate);
+          if (!isNaN(d.getTime())) {
+            formattedDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+          }
+        }
+        message = `Hello *${customerName || 'Valued Customer'}* 👋,\n\nThis is a payment reminder for your vehicle *${carNumber || 'N/A'}*.\n\n📄 *Invoice Details:*\n  Invoice No: *${invoiceNumber || 'N/A'}*\n  Date: *${formattedDate}*\n  Amount Due: *${formattedAmt}*\n\nPlease arrange for the payment at your earliest convenience. Contact us at ${garagePhone} for any queries.`;
     } else if (type === 'general_reminder') {
         const formattedTotal = parseFloat(totalDue || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
-        message = `Hello *${customerName || 'Valued Customer'}* 👋,\n\nThis is a general payment reminder for your pending invoices.\n\n📄 *Pending Summary:*\n  Total Invoices: *${invoiceCount}*\n  Total Amount Due: *${formattedTotal}*\n\nPlease arrange for the payment at your earliest convenience. Contact us at ${garagePhone} for any queries.`;
+        message = `Hello *${customerName || 'Valued Customer'}* 👋,\n\nThis is a general payment reminder for your pending invoices.\n\n📄 *Pending Summary:*\n  Total Invoices: *${invoiceCount || 1}*\n  Total Amount Due: *${formattedTotal}*\n\nPlease arrange for the payment at your earliest convenience. Contact us at ${garagePhone} for any queries.`;
     } else {
         message = `Hello *${customerName || 'Valued Customer'}* 👋,\n\nThis is a reminder from our garage regarding your vehicle *${carNumber || ''}*.\n\nPlease contact us at ${garagePhone} to schedule your visit.`;
     }
@@ -487,12 +499,18 @@ exports.sendReminderWhatsApp = async (req, res) => {
     res.json({
       success: true,
       message: `Reminder WhatsApp sent!`,
-      remainingBalance: result.remainingBalance
+      remainingBalance: result?.remainingBalance
     });
   } catch (error) {
     if (error.code === 'INSUFFICIENT_FUNDS') {
       return res.status(402).json({ success: false, code: 'INSUFFICIENT_FUNDS', message: error.message });
     }
+
+    if (error.code === 'AGENT_DISPATCH_FAILED' || (error.message && (error.message.includes('OFFLINE') || error.message.includes('unauthenticated') || error.message.includes('not registered') || error.message.includes('Local PC Agent')))) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+
+    console.error('Error sending reminder WhatsApp:', error);
     res.status(500).json({ success: false, message: error.message || 'Failed to send WhatsApp message' });
   }
 };
@@ -646,7 +664,7 @@ exports.getWhatsAppQR = async (req, res) => {
         req.app.set(`qr_code_${garageId}`, null); // Clear single-use cache
         return res.json({ success: true, isAgentConnected: true, qrCode: cachedQr });
       }
-      if (attempts >= 12) {
+      if (attempts >= 60) {
         clearInterval(checkInterval);
         return res.json({
           success: false,
@@ -844,10 +862,25 @@ exports.acknowledgeBridgeMessage = async (req, res) => {
   }
 };
 
-// @desc    Public Endpoint to download raw JS agent file for a garage
+// @desc    Serve the raw JS agent script — requires a valid signed JWT token
 exports.getAgentScript = async (req, res) => {
   try {
-    const garageId = req.params.garageId || req.query.garageId || 1;
+    // --- Token verification: only signed .bat files can download the agent script ---
+    const downloadToken = req.query.token;
+    if (!downloadToken) {
+      return res.status(401).send('// Unauthorized: Missing download token.');
+    }
+    let tokenPayload;
+    try {
+      tokenPayload = jwt.verify(downloadToken, AGENT_SCRIPT_SECRET);
+    } catch (e) {
+      return res.status(401).send('// Unauthorized: Token expired or invalid.');
+    }
+    if (!['agent_script', 'agent_script_download'].includes(tokenPayload.purpose)) {
+      return res.status(403).send('// Forbidden: Invalid token purpose.');
+    }
+
+    const garageId = tokenPayload.garageId || req.params.garageId;
     let { rows } = await db.query(`SELECT name, whatsapp_agent_secret FROM garages WHERE id = $1`, [garageId]);
     
     // Auto-generate secret if it doesn't exist
@@ -896,99 +929,182 @@ exports.getAgentScript = async (req, res) => {
   }
 };
 
+// @desc    Generate a signed one-time download token for the agent .bat installer
+exports.generateAgentToken = async (req, res) => {
+  try {
+    const garageId = req.garageId;
+    const token = jwt.sign(
+      { garageId, purpose: 'agent_script_download' },
+      AGENT_SCRIPT_SECRET,
+      { expiresIn: '10m' } // Token valid 10 minutes — enough to click Download
+    );
+    res.json({ success: true, token });
+  } catch (err) {
+    console.error('Error generating agent token:', err);
+    res.status(500).json({ success: false, message: 'Could not generate download token.' });
+  }
+};
+
 // @desc    Generate 1-Click Windows .bat Batch Script for Local Agent Setup
+// @access  Protected (requires valid signed agent token via ?token=)
 exports.downloadBridgeScript = async (req, res) => {
   try {
-    const garageId = req.query.garageId || req.params.garageId || req.garageId || 1;
-    const { rows } = await db.query(`SELECT name FROM garages WHERE id = $1`, [garageId]);
-    const garageName = rows.length > 0 ? rows[0].name : `Garage ${garageId}`;
+    // --- Verify signed token (prevents unauthorized .bat downloads) ---
+    const downloadToken = req.query.token;
+    if (!downloadToken) {
+      return res.status(401).json({ success: false, message: 'Missing download token. Please generate a new download link from Settings.' });
+    }
+
+    let tokenPayload;
+    try {
+      tokenPayload = jwt.verify(downloadToken, AGENT_SCRIPT_SECRET);
+    } catch (e) {
+      return res.status(401).json({ success: false, message: 'Download link has expired or is invalid. Please generate a new one from Settings.' });
+    }
+
+    if (tokenPayload.purpose !== 'agent_script_download') {
+      return res.status(403).json({ success: false, message: 'Invalid token purpose.' });
+    }
+
+    const garageId = tokenPayload.garageId;
+
+    // --- Fetch garage info ---
+    const { rows } = await db.query(
+      `SELECT id, name, phone, whatsapp_provider FROM garages WHERE id = $1`,
+      [garageId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Garage not found.' });
+    }
+    const garage = rows[0];
+    const garageName = garage.name || `Garage ${garageId}`;
+
+    // Create a safe slug for file naming: e.g. "Saman Motors" -> "Saman-Motors"
+    const garageSlug = garageName.replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const agentFileName = `garage-${garageId}-agent.js`;
+    const batFileName = `${garageSlug}-WhatsApp-Agent.bat`;
+    const installDirName = `CipraWA_${garageSlug}_${garageId}`;
+
+    // --- Determine base URL for agent script download ---
+    // Generate a fresh signed token for the agent.js script (separate from the .bat token)
+    const scriptToken = jwt.sign(
+      { garageId, purpose: 'agent_script' },
+      AGENT_SCRIPT_SECRET,
+      { expiresIn: '30d' } // Script token lasts 30 days; agent re-downloads on each .bat run
+    );
 
     let protocol = req.protocol || 'http';
     let host = req.get('host') || 'localhost:5001';
-    
-    // Force direct backend URL for local dev to bypass Vite self-signed SSL proxy
     if (host.includes('localhost') || host.includes('127.0.0.1')) {
       protocol = 'http';
       host = 'localhost:5001';
     }
 
-    const scriptDownloadUrl = `${protocol}://${host}/api/whatsapp/bridge/script/${garageId}`;
+    const scriptDownloadUrl = `${protocol}://${host}/api/whatsapp/bridge/script/${garageId}?token=${scriptToken}`;
 
+    // --- Generate .bat content (NO DB credentials, NO secrets, NO sensitive info) ---
     const batContent = `@echo off
-title Workshop WhatsApp Agent - ${garageName}
+title ${garageName} - Cipra WhatsApp Agent
 color 0A
 
-echo ====================================================================
-echo               SAMAN MOTORS GARAGE MANAGEMENT SYSTEM
-echo             Workshop WhatsApp Agent (Windows Auto-Launcher)
-echo ====================================================================
+echo ================================================================
+echo         CIPRA GMS - Workshop WhatsApp Agent Installer
+echo ================================================================
 echo.
-echo Garage Name: ${garageName}
-echo Garage ID: ${garageId}
+echo  Garage : ${garageName}
 echo.
 
-set "INSTALL_DIR=%LOCALAPPDATA%\\GarageWhatsAppAgent_${garageId}"
-if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%" >nul 2>&1
-
-cd /d "%INSTALL_DIR%"
-
-echo [1/3] Downloading agent configuration from SaaS Cloud...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '${scriptDownloadUrl}' -OutFile 'garage-${garageId}-agent.js' -UseBasicParsing } catch { Write-Host 'Download Error:' $_.Exception.Message }"
-
-if not exist "garage-${garageId}-agent.js" (
+:: ---------- Check Node.js is installed ----------
+where node >nul 2>&1
+if errorlevel 1 (
+  echo  ERROR: Node.js is not installed on this PC.
   echo.
-  echo ❌ Error: Could not download agent configuration from cloud.
-  echo Please check your internet connection and try running this file again.
+  echo  Please download and install Node.js from: https://nodejs.org
+  echo  Then run this file again.
   echo.
   pause
   exit /b 1
 )
-echo ✅ Agent configuration ready!
+echo  Node.js found.
 
+:: ---------- Setup install folder ----------
+set "INSTALL_DIR=%LOCALAPPDATA%\\${installDirName}"
+if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
+cd /d "%INSTALL_DIR%"
+
+:: ---------- STEP 1: Download latest agent engine from cloud ----------
+echo.
+echo [1/3] Downloading latest agent from Cipra Cloud...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; [System.Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '${scriptDownloadUrl}' -OutFile '${agentFileName}' -UseBasicParsing; Write-Host 'OK' } catch { Write-Host ('FAIL: ' + $_.Exception.Message) }"
+
+if not exist "${agentFileName}" (
+  echo.
+  echo  ERROR: Could not download agent from Cipra Cloud.
+  echo  Check your internet connection and try again.
+  echo.
+  pause
+  exit /b 1
+)
+echo  Agent downloaded successfully.
+
+:: ---------- STEP 2: Install Node.js dependencies ----------
 if not exist "%INSTALL_DIR%\\node_modules\\whatsapp-web.js" (
   echo.
-  echo [2/3] First-Time Setup: Installing required WhatsApp engine modules...
-  echo Please wait 15-30 seconds while npm downloads dependencies...
-  call npm install whatsapp-web.js puppeteer socket.io-client qrcode --no-audit --no-fund --loglevel=error
-  echo ✅ WhatsApp engine installed successfully!
+  echo [2/3] First-time setup: Installing WhatsApp engine...
+  echo  This will take 1-3 minutes. Please wait and do NOT close this window.
+  echo.
+  call npm install --prefix "%INSTALL_DIR%" whatsapp-web.js puppeteer socket.io-client qrcode --no-audit --no-fund --loglevel=error
+  if errorlevel 1 (
+    echo.
+    echo  ERROR: Failed to install WhatsApp engine modules.
+    echo  Please check your internet connection and try again.
+    echo.
+    pause
+    exit /b 1
+  )
+  echo  WhatsApp engine installed successfully!
 ) else (
-  echo [2/3] WhatsApp engine modules verified.
+  echo [2/3] WhatsApp engine verified.
 )
 
-:: Set NODE_PATH to ensure Node finds installed modules
-set "NODE_PATH=%INSTALL_DIR%\\node_modules"
+:: ---------- Stop any previous running instance ----------
+echo  Stopping any old agent instance...
+wmic process where "name='node.exe' and commandline like '%%${agentFileName}%%'" call terminate >nul 2>&1
+timeout /t 2 /nobreak >nul
 
-:: Register auto-startup in Windows Startup Folder
-echo Set WshShell = CreateObject^("WScript.Shell"^) > "Start-Silent-Background.vbs"
-echo WshShell.CurrentDirectory = "%INSTALL_DIR%" >> "Start-Silent-Background.vbs"
-echo WshShell.Run "node garage-${garageId}-agent.js", 0, false >> "Start-Silent-Background.vbs"
-echo Set WshShell = Nothing >> "Start-Silent-Background.vbs"
+:: ---------- Create silent background launcher (with correct module path) ----------
+(
+  echo Set WshShell = CreateObject("WScript.Shell"^)
+  echo WshShell.CurrentDirectory = "%INSTALL_DIR%"
+  echo WshShell.Environment("Process"^)("NODE_PATH"^) = "%INSTALL_DIR%\\node_modules"
+  echo WshShell.Run "node ${agentFileName}", 0, false
+  echo Set WshShell = Nothing
+) > "run-agent.vbs"
 
-set "STARTUP_DIR=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
-if exist "%STARTUP_DIR%" (
-  copy /y "Start-Silent-Background.vbs" "%STARTUP_DIR%\\WorkshopWhatsAppAgent_${garageId}.vbs" >nul 2>&1
-  echo ✅ Registered in Windows Startup - Will auto-start silently on PC boot
+:: ---------- Register in Windows Startup for auto-launch on PC boot ----------
+set "STARTUP=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+if exist "%STARTUP%" (
+  copy /y "run-agent.vbs" "%STARTUP%\\CipraWA_${garageSlug}.vbs" >nul
+  echo  Auto-start on Windows boot: Enabled.
 )
 
+:: ---------- STEP 3: Launch agent silently ----------
 echo.
-echo ====================================================================
-echo [3/3] Launching Workshop WhatsApp Agent Engine in Background...
-echo 🟢 The agent is now running silently. You can close this window!
-echo ====================================================================
+echo [3/3] Launching WhatsApp Agent silently...
+cscript //nologo "run-agent.vbs"
 echo.
-
-cscript //nologo "Start-Silent-Background.vbs"
-
-echo ✅ Agent launched successfully.
-timeout /t 3 >nul
+echo  Agent is running in the background.
+echo  You can close this window safely.
+echo.
+timeout /t 4 >nul
 `;
 
     res.setHeader('Content-Type', 'application/x-msdos-program');
-    res.setHeader('Content-Disposition', `attachment; filename="Start-Garage-${garageId}-WhatsApp-Agent.bat"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${batFileName}"`);
     res.send(batContent);
   } catch (err) {
     console.error('Error in downloadBridgeScript:', err);
-    res.status(500).json({ success: false, message: 'Server Error generating custom bridge script.' });
+    res.status(500).json({ success: false, message: 'Server Error generating installer script.' });
   }
 };
 

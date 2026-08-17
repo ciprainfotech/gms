@@ -41,8 +41,10 @@ const socket = io(SOCKET_URL, {
 
 socket.on('connect', () => {
   console.log(`⚡ [Tunnel Connected] Linked to SaaS Cloud Server (Garage ID: ${GARAGE_ID})`);
-  // Report agent online status
   socket.emit('agent_online', { garageId: GARAGE_ID });
+  if (!client || !client.info) {
+    socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
+  }
 });
 
 socket.on('disconnect', () => {
@@ -89,9 +91,11 @@ const initWhatsAppClient = () => {
         '--no-first-run',
         '--no-zygote',
         '--single-process',
-        '--disable-gpu'
+        '--disable-gpu',
+        '--disable-blink-features=AutomationControlled'
       ]
-    }
+    },
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   });
 
   client.on('qr', async (qr) => {
@@ -126,16 +130,20 @@ const initWhatsAppClient = () => {
 
   client.on('auth_failure', (msg) => {
     isInitializing = false;
-    console.error(`❌ [Auth Failure] Session expired or invalid:`, msg);
-    socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected' });
+    console.error(`❌ [Auth Failure] Session expired or unlinked:`, msg);
+    socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
+    if (client) {
+      try { client.destroy().catch(() => {}); } catch (e) {}
+      client = null;
+    }
   });
 
   client.on('disconnected', (reason) => {
     isInitializing = false;
-    console.log(`⚠️ [Disconnected] WhatsApp session closed:`, reason);
-    socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected' });
+    console.log(`⚠️ [Disconnected] WhatsApp session unlinked from phone:`, reason);
+    socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
     if (client) {
-      client.destroy().catch(() => {});
+      try { client.destroy().catch(() => {}); } catch (e) {}
       client = null;
     }
   });
@@ -144,10 +152,31 @@ const initWhatsAppClient = () => {
     isInitializing = false;
     console.error(`❌ [Init Error] Chrome failed to launch:`, err.message);
     client = null;
+    socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
   });
 
   return client;
 };
+
+// Active Health Check: Polls WhatsApp Web state every 3s to instantly detect when device is unlinked on phone
+setInterval(async () => {
+  if (client && !isInitializing) {
+    try {
+      const state = await client.getState().catch(() => null);
+      if (!state || state !== 'CONNECTED') {
+        console.log(`⚠️ [Unlinked Detected] Session state is ${state || 'DISCONNECTED'}. Syncing yellow status to cloud...`);
+        socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
+        try { await client.destroy().catch(() => {}); } catch (e) {}
+        client = null;
+      }
+    } catch (e) {
+      console.log(`⚠️ [Unlinked Detected] Session error. Syncing yellow status to cloud...`);
+      socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
+      try { await client.destroy().catch(() => {}); } catch (e) {}
+      client = null;
+    }
+  }
+}, 3000);
 
 // 2. REMOTE CONTROL: Remote QR Generation Request from SaaS Web UI
 socket.on('agent_generate_qr', () => {
@@ -164,16 +193,16 @@ socket.on('agent_generate_qr', () => {
   }
 });
 
-// 3. REMOTE CONTROL: Remote Disconnect Request from SaaS Web UI
+// 3. REMOTE CONTROL: Remote Disconnect Request from SaaS Web UI (Unlinks phone automatically)
 socket.on('agent_disconnect', async () => {
-  console.log(`📩 [Remote Command] SaaS Web Settings requested Disconnect...`);
+  console.log(`📩 [Remote Command] SaaS Web Settings requested Disconnect & Phone Unlink...`);
   if (client) {
     try {
-      await client.logout();
-      await client.destroy();
-      console.log(`[WhatsApp Agent] Client logged out and destroyed.`);
+      await client.logout().catch(() => {});
+      await client.destroy().catch(() => {});
+      console.log(`[WhatsApp Agent] Client logged out from phone and destroyed.`);
     } catch (e) {
-      console.error(`[WhatsApp Agent] Error destroying client:`, e.message);
+      console.error(`[WhatsApp Agent] Error logging out client:`, e.message);
     }
     client = null;
   }
@@ -186,12 +215,10 @@ socket.on('agent_disconnect', async () => {
     try {
       fs.rmSync(sessionPath, { recursive: true, force: true });
       console.log(`[WhatsApp Agent] Session directory cleaned.`);
-    } catch (err) {
-      console.error(`[WhatsApp Agent] Failed to clean session dir:`, err.message);
-    }
+    } catch (err) {}
   }
 
-  socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected' });
+  socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
 });
 
 // 4. MESSAGE DISPATCH: Process real-time dispatches from SaaS Web UI
@@ -214,7 +241,32 @@ socket.on('send_whatsapp_message', async (job) => {
     const delayMs = Math.floor(Math.random() * 2000) + 2000;
     await new Promise((r) => setTimeout(r, delayMs));
 
-    const chatId = `${job.recipient_phone}@c.us`;
+    // 1. Clean phone number: remove +, spaces, dashes, parentheses
+    let cleanPhone = String(job.recipient_phone || '').replace(/\D/g, '');
+    if (cleanPhone.length === 10) {
+      cleanPhone = '91' + cleanPhone; // Auto-prepend India country code '91' if 10 digits
+    }
+
+    if (!cleanPhone) {
+      throw new Error(`Invalid recipient phone number: ${job.recipient_phone}`);
+    }
+
+    // 2. Resolve official WhatsApp Number ID via WhatsApp Web directory
+    console.log(`🔍 Resolving WhatsApp JID for +${cleanPhone}...`);
+    const numberDetails = await client.getNumberId(cleanPhone).catch(() => null);
+    const chatId = numberDetails?._serialized || `${cleanPhone}@c.us`;
+
+    // 3. Human typing state simulation for natural delivery
+    try {
+      const chat = await client.getChatById(chatId).catch(() => null);
+      if (chat) {
+        await chat.sendStateTyping().catch(() => {});
+        const typingDuration = Math.floor(Math.random() * 1500) + 1000;
+        await new Promise((r) => setTimeout(r, typingDuration));
+        await chat.clearState().catch(() => {});
+      }
+    } catch (e) {}
+
     let sentMsg = null;
 
     if (job.media_base64) {
@@ -253,13 +305,36 @@ socket.on('send_whatsapp_message', async (job) => {
   }
 });
 
+// Helper: Clear stale Windows Chrome SingletonLock files before launch
+const removeStaleLocks = (dirPath) => {
+  try {
+    const path = require('path');
+    const fs = require('fs');
+    if (!fs.existsSync(dirPath)) return;
+    const lock1 = path.join(dirPath, 'SingletonLock');
+    const lock2 = path.join(dirPath, 'Default', 'SingletonLock');
+    const lock3 = path.join(dirPath, 'SingletonCookie');
+    const lock4 = path.join(dirPath, 'SingletonSocket');
+    [lock1, lock2, lock3, lock4].forEach(l => {
+      if (fs.existsSync(l)) {
+        try { fs.rmSync(l, { force: true }); } catch(e) {}
+      }
+    });
+  } catch(e) {}
+};
+
 // Auto-boot client if saved session exists on disk
 const path = require('path');
 const fs = require('fs');
 const savedSession = path.join(__dirname, `.wwebjs_auth/session-workshop_agent_garage_${GARAGE_ID}`);
+
 if (fs.existsSync(savedSession)) {
   console.log(`📂 [Saved Session Found] Auto-restoring WhatsApp Web connection...`);
+  removeStaleLocks(savedSession);
   initWhatsAppClient();
 } else {
   console.log(`ℹ️ [Ready] Waiting for "Generate QR Code" command from your SaaS Web Settings screen...`);
+  setTimeout(() => {
+    socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
+  }, 1000);
 }

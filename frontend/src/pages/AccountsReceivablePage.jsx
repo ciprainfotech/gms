@@ -61,6 +61,7 @@ const AccountsReceivablePage = () => {
     // --- Customer Statement Modal State ---
     const [showStatementModal, setShowStatementModal] = useState(false);
     const [selectedCustomerForStatement, setSelectedCustomerForStatement] = useState(null);
+    const [isSendingLedger, setIsSendingLedger] = useState(false);
 
     // --- Customer Deletion Confirmation Modal State ---
     const [showDeleteCustomerModal, setShowDeleteCustomerModal] = useState(false);
@@ -412,45 +413,36 @@ const AccountsReceivablePage = () => {
     };
 
     const handleSendLedgerWhatsApp = async (customerData, transactions, totalBilled, totalPaid, totalDue, periodText) => {
-        const isOnline = await checkAgentOnline();
-        if (!isOnline) return;
-
         if (!customerData.phone) {
             setToast({ type: 'error', title: 'Missing Phone', message: `Cannot send ledger. Customer ${customerData.customerName} does not have a phone number.` });
             return;
         }
 
-        setConfirmModal({
-            isOpen: true,
-            title: 'Confirm Send Ledger',
-            message: `Generate and send the ledger PDF for the selected range to ${customerData.customerName} via WhatsApp?`,
-            action: async () => {
-                setLoadingStates(prev => ({ ...prev, [`ledger-${customerData.customerId}`]: true }));
-                try {
-                    const payload = {
-                        phone: customerData.phone,
-                        customerName: customerData.customerName,
-                        totalBilled,
-                        totalPaid,
-                        totalDue,
-                        transactions,
-                        periodText
-                    };
+        setIsSendingLedger(true);
+        try {
+            const payload = {
+                phone: customerData.phone,
+                customerName: customerData.customerName,
+                totalBilled,
+                totalPaid,
+                totalDue,
+                transactions,
+                periodText
+            };
 
-                    const response = await api.post('/whatsapp/send-ledger', payload);
+            const response = await api.post('/whatsapp/send-ledger', payload);
                     if (!response.ok) {
                         const errData = await response.json().catch(() => ({}));
                         throw new Error(errData.message || 'Failed to send ledger');
                     }
                     
-                    setToast({ type: 'success', title: 'Ledger Sent', message: `Ledger sent to ${customerData.customerName} successfully.` });
-                } catch (error) { 
-                    setToast({ type: 'error', title: 'Error', message: `An error occurred: ${error.message}` });
-                } finally { 
-                    setLoadingStates(prev => ({ ...prev, [`ledger-${customerData.customerId}`]: false })); 
-                }
-            }
-        });
+            setToast({ type: 'success', title: 'Ledger Sent', message: `Ledger sent to ${customerData.customerName} successfully.` });
+        } catch (error) { 
+            setToast({ type: 'error', title: 'Error', message: `An error occurred: ${error.message}` });
+        } finally { 
+            setIsSendingLedger(false);
+            setLoadingStates(prev => ({ ...prev, [`ledger-${customerData.customerId}`]: false })); 
+        }
     };
 
     // Payment Modal handlers
@@ -892,9 +884,9 @@ const AccountsReceivablePage = () => {
                     show={showStatementModal} 
                     onHide={() => setShowStatementModal(false)} 
                     customer={selectedCustomerForStatement} 
-                    garageProfile={garageProfile} 
+                    garage={garageProfile} 
                     onSendWhatsApp={handleSendLedgerWhatsApp}
-                    loadingWhatsApp={loadingStates[`ledger-${selectedCustomerForStatement.customerId}`]}
+                    isSendingLedger={isSendingLedger || loadingStates[`ledger-${selectedCustomerForStatement.customerId}`]}
                 />
             )}
 

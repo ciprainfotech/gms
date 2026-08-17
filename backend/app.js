@@ -159,6 +159,30 @@ io.on('connection', (socket) => {
       // Instantly notify web app room that agent connected
       io.to(`garage_${garageId}`).emit('saas_status_changed', { garageId, isAgentConnected: true });
 
+      // Auto-flush any pending queued_for_bridge messages sitting in database
+      (async () => {
+        try {
+          const db = require('./config/db');
+          const pending = await db.query(
+            `SELECT * FROM whatsapp_logs WHERE garage_id = $1 AND status = 'queued_for_bridge' ORDER BY id ASC LIMIT 20`,
+            [garageId]
+          );
+          if (pending.rows.length > 0) {
+            console.log(`📦 [Auto-Flush] Re-dispatching ${pending.rows.length} pending queued messages for Garage #${garageId}...`);
+            for (const job of pending.rows) {
+              socket.emit('send_whatsapp_message', {
+                id: job.id,
+                recipient_phone: job.recipient_phone,
+                message_text: job.message_text,
+                media_base64: job.media_base64,
+                document_name: job.document_name
+              });
+              await new Promise(r => setTimeout(r, 1200));
+            }
+          }
+        } catch (e) {}
+      })();
+
       socket.on('disconnect', () => {
         console.log(`🔌 [Socket.io Bridge] Garage ${garageId} Agent Disconnected`);
         if (bridgeSockets[String(garageId)] === socket) delete bridgeSockets[String(garageId)];
@@ -181,15 +205,17 @@ io.on('connection', (socket) => {
       console.log(`🔔 [Socket.io Bridge] Status change for Garage ${data.garageId}: ${data.status}`);
       try {
         const db = require('./config/db');
-        let phoneNumQueryPart = `whatsapp_phone_number = COALESCE($2, whatsapp_phone_number)`;
         if (data.status === 'disconnected') {
-          phoneNumQueryPart = `whatsapp_phone_number = NULL`;
+          await db.query(
+            `UPDATE garages SET whatsapp_status = $1, whatsapp_phone_number = NULL, updated_at = NOW() WHERE id = $2`,
+            [data.status, data.garageId]
+          );
+        } else {
+          await db.query(
+            `UPDATE garages SET whatsapp_status = $1, whatsapp_phone_number = COALESCE($2, whatsapp_phone_number), updated_at = NOW() WHERE id = $3`,
+            [data.status, data.phoneNumber || null, data.garageId]
+          );
         }
-
-        await db.query(
-          `UPDATE garages SET whatsapp_status = $1, ${phoneNumQueryPart}, updated_at = NOW() WHERE id = $3`,
-          [data.status, data.phoneNumber || null, data.garageId]
-        );
       } catch (err) {
         console.error(`[Socket.io Bridge DB Error]:`, err.message);
       }
@@ -208,9 +234,18 @@ io.on('connection', (socket) => {
           );
         } else {
           await db.query(
-            `UPDATE whatsapp_logs SET status = 'failed', error_message = $1 WHERE id = $2 AND garage_id = $3`,
+            `UPDATE whatsapp_logs SET status = 'failed', error_message = $1 WHERE id = $2 AND garage_id = $3 AND status != 'sent'`,
             [data.errorMessage || 'Dispatch failed on local agent', data.jobId, data.garageId]
           );
+
+          // If the failure was due to unauthenticated / expired session, auto-sync DB and UI state
+          if (data.errorMessage && (data.errorMessage.includes('not authenticated') || data.errorMessage.includes('Session expired') || data.errorMessage.includes('Evaluation failed'))) {
+            await db.query(
+              `UPDATE garages SET whatsapp_status = 'disconnected', whatsapp_phone_number = NULL, updated_at = NOW() WHERE id = $1`,
+              [data.garageId]
+            );
+            io.to(`garage_${data.garageId}`).emit('saas_status_changed', { garageId: data.garageId, status: 'disconnected', isAgentConnected: true });
+          }
         }
       } catch (err) {
         console.error(`[Socket.io Bridge Job Ack Error]:`, err.message);
