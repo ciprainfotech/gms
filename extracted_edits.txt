@@ -1,5 +1,0 @@
-RESTORED CSS
-JSX FIX: "Update AuthPage JSX to match new compact, professional layout"
-JSX FIX: "Add faint background rail track inside the button progress track"
-JSX FIX: "Fix login timing to start API immediately but buffer result until 3s animation completes. Also fix the line CSS to be exactly pinned to wrench center."
-JSX FIX: "Add full frontend validation: required fields, email format check, password min length, inline error messages per field, real-time feedback on blur/change, prevents API call if invalid"
