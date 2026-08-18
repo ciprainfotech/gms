@@ -41,7 +41,7 @@ async function getFullInvoiceWithPayments(clientId, invoiceId, garageId) {
                 'paymentMethod', p.payment_method,
                 'notes', p.notes,
                 'createdAt', p.created_at,
-                'updatedAt', p.updated_at
+                'updatedAt', p.created_at
             ) ORDER BY p.date_paid ASC, p.created_at ASC) FILTER (WHERE p.id IS NOT NULL), '[]') AS paymentRecords
          FROM invoices i
          JOIN customers c ON i.customer_id = c.id

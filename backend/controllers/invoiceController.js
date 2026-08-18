@@ -20,7 +20,7 @@ async function getFullInvoiceWithPaymentsAndVehicleDetails(clientId, invoiceId =
                     'paymentMethod', p.payment_method,
                     'notes', p.notes,
                     'createdAt', p.created_at,
-                    'updatedAt', p.updated_at
+                    'updatedAt', p.created_at
                 ) ORDER BY p.date_paid ASC, p.created_at ASC) AS payment_records
             FROM payments p
             GROUP BY p.invoice_id

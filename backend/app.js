@@ -310,6 +310,10 @@ server.listen(PORT, '0.0.0.0', async () => {
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS vin VARCHAR(100);
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS fuel_type VARCHAR(50);
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS year INTEGER;
+
+      -- Payments table schema integrity
+      ALTER TABLE payments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+      ALTER TABLE payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
       -- WhatsApp logs table & columns schema integrity
       CREATE TABLE IF NOT EXISTS whatsapp_logs (
           id SERIAL PRIMARY KEY,
