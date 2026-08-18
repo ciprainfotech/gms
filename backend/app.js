@@ -32,6 +32,7 @@ const staffRoutes = require('./routes/staffRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // --- Middleware ---
 

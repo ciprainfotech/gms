@@ -893,13 +893,13 @@ exports.getAgentScript = async (req, res) => {
     
     const garageName = rows.length > 0 ? rows[0].name : `Garage ${garageId}`;
 
-    let protocol = req.protocol || 'http';
     let host = req.get('host') || 'localhost:5001';
-
-    // Force direct backend URL for local dev to bypass Vite self-signed SSL proxy
+    let protocol = 'http';
     if (host.includes('localhost') || host.includes('127.0.0.1')) {
       protocol = 'http';
       host = 'localhost:5001';
+    } else {
+      protocol = 'https';
     }
 
     const backendUrl = `${protocol}://${host}/api`;
@@ -993,11 +993,13 @@ exports.downloadBridgeScript = async (req, res) => {
       { expiresIn: '30d' } // Script token lasts 30 days; agent re-downloads on each .bat run
     );
 
-    let protocol = req.protocol || 'http';
     let host = req.get('host') || 'localhost:5001';
+    let protocol = 'http';
     if (host.includes('localhost') || host.includes('127.0.0.1')) {
       protocol = 'http';
       host = 'localhost:5001';
+    } else {
+      protocol = 'https';
     }
 
     const scriptDownloadUrl = `${protocol}://${host}/api/whatsapp/bridge/script/${garageId}?token=${scriptToken}`;
@@ -1035,7 +1037,12 @@ cd /d "%INSTALL_DIR%"
 :: ---------- STEP 1: Download latest agent engine from cloud ----------
 echo.
 echo [1/3] Downloading latest agent from Cipra Cloud...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; [System.Net.ServicePointManager]::ServerCertificateValidationCallback={$true}; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; try { Invoke-WebRequest -Uri '${scriptDownloadUrl}' -OutFile '${agentFileName}' -UseBasicParsing; Write-Host 'OK' } catch { Write-Host ('FAIL: ' + $_.Exception.Message) }"
+node -e "const https = require('https'), http = require('http'), fs = require('fs'); const url = '${scriptDownloadUrl}'; function fetchScript(targetUrl) { const client = targetUrl.startsWith('https') ? https : http; client.get(targetUrl, (res) => { if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) { fetchScript(res.headers.location); } else if (res.statusCode === 200) { const file = fs.createWriteStream('${agentFileName}'); res.pipe(file); file.on('finish', () => file.close()); } }); } fetchScript(url);" >nul 2>&1
+
+timeout /t 1 /nobreak >nul
+if not exist "${agentFileName}" (
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 -bor [System.Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls; try { (New-Object System.Net.WebClient).DownloadFile('${scriptDownloadUrl}', '${agentFileName}'); Write-Host 'OK' } catch { try { Invoke-WebRequest -Uri '${scriptDownloadUrl}' -OutFile '${agentFileName}' -UseBasicParsing; Write-Host 'OK' } catch { Write-Host ('FAIL: ' + $_.Exception.Message) } }"
+)
 
 if not exist "${agentFileName}" (
   echo.
