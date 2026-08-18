@@ -161,10 +161,10 @@ const processWhatsAppDispatch = async ({ garageId, recipientPhone, messageType, 
   }
 
   const formattedRecipient = formatPhone(recipientPhone);
-  let provider = garage.whatsapp_provider || 'local-bridge';
+  let provider = (garage.whatsapp_provider || 'local-bridge').trim();
 
-  // If Meta Cloud API is set as provider but no Phone Number ID exists, seamlessly use local-bridge session
-  if (provider === 'meta_cloud_api' && !garage.whatsapp_phone_number_id) {
+  // If no Meta Cloud Phone Number ID is configured for this garage, seamlessly use the local-bridge PC agent
+  if (!garage.whatsapp_phone_number_id && provider !== 'direct_click') {
     provider = 'local-bridge';
   }
 

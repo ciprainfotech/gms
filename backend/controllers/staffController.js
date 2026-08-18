@@ -1,6 +1,19 @@
 const db = require('../config/db');
 const { processWhatsAppDispatch } = require('./whatsappController');
 
+// ─── Helper: Safely format Date to YYYY-MM-DD string ─────────────────────────
+const formatDateStr = (d) => {
+  if (!d) return null;
+  if (typeof d === 'string') return d.split('T')[0];
+  if (d instanceof Date) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  return null;
+};
+
 // ─── Helper: first & last day of month ──────────────────────────────────────
 const monthBounds = (month) => {
   const [y, m] = month.split('-').map(Number);
@@ -12,8 +25,8 @@ const monthBounds = (month) => {
 // ─── Helper: is a staff member active during a given month? ─────────────────
 const isActiveInMonth = (staff, month) => {
   const { firstDay, lastDay } = monthBounds(month);
-  const joinedDate = staff.joined_date ? staff.joined_date.toString().split('T')[0] : null;
-  const leavingDate = staff.leaving_date ? staff.leaving_date.toString().split('T')[0] : null;
+  const joinedDate = formatDateStr(staff.joined_date);
+  const leavingDate = formatDateStr(staff.leaving_date);
 
   if (!joinedDate) return false;
   if (joinedDate > lastDay) return false;           // joined after this month
@@ -30,7 +43,9 @@ exports.getAllStaff = async (req, res) => {
     const garageId = req.garageId;
     const { rows } = await db.query(
       `SELECT id, garage_id, name, phone, role, salary_type, base_salary,
-              status, joined_date, leaving_date, leaving_notes, created_at, updated_at
+              status, TO_CHAR(joined_date, 'YYYY-MM-DD') as joined_date, 
+              TO_CHAR(leaving_date, 'YYYY-MM-DD') as leaving_date, 
+              leaving_notes, created_at, updated_at
        FROM staff WHERE garage_id = $1 ORDER BY status ASC, name ASC`,
       [garageId]
     );
@@ -61,7 +76,10 @@ exports.addStaff = async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO staff (garage_id, name, phone, role, salary_type, base_salary, joined_date, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
-       RETURNING *`,
+       RETURNING id, garage_id, name, phone, role, salary_type, base_salary,
+                 status, TO_CHAR(joined_date, 'YYYY-MM-DD') as joined_date, 
+                 TO_CHAR(leaving_date, 'YYYY-MM-DD') as leaving_date, 
+                 leaving_notes, created_at, updated_at`,
       [garageId, name.trim(), phone ? phone.trim() : null, role.trim(),
        salary_type || 'monthly', parseFloat(base_salary || 0), joined_date]
     );
@@ -88,14 +106,14 @@ exports.updateStaff = async (req, res) => {
 
     // Check if new joined_date conflicts with existing attendance/transactions
     const conflictCheck = await db.query(
-      `SELECT MIN(date) as earliest_attendance FROM attendance WHERE staff_id = $1`,
+      `SELECT TO_CHAR(MIN(date), 'YYYY-MM-DD') as earliest_attendance FROM attendance WHERE staff_id = $1`,
       [id]
     );
     const earliest = conflictCheck.rows[0]?.earliest_attendance;
-    if (earliest && joined_date > earliest.toString().split('T')[0]) {
+    if (earliest && joined_date > earliest) {
       return res.status(400).json({
         success: false,
-        message: `Cannot set joining date after ${earliest.toString().split('T')[0]} — attendance records already exist from that date.`
+        message: `Cannot set joining date after ${earliest} — attendance records already exist from that date.`
       });
     }
 
@@ -104,7 +122,10 @@ exports.updateStaff = async (req, res) => {
        SET name = $1, phone = $2, role = $3, salary_type = $4, base_salary = $5,
            joined_date = $6, updated_at = NOW()
        WHERE id = $7 AND garage_id = $8
-       RETURNING *`,
+       RETURNING id, garage_id, name, phone, role, salary_type, base_salary,
+                 status, TO_CHAR(joined_date, 'YYYY-MM-DD') as joined_date, 
+                 TO_CHAR(leaving_date, 'YYYY-MM-DD') as leaving_date, 
+                 leaving_notes, created_at, updated_at`,
       [name.trim(), phone ? phone.trim() : null, role.trim(),
        salary_type || 'monthly', parseFloat(base_salary || 0), joined_date, id, garageId]
     );
@@ -169,14 +190,14 @@ exports.resignStaff = async (req, res) => {
 
     // Get staff to validate
     const staffRes = await db.query(
-      'SELECT * FROM staff WHERE id = $1 AND garage_id = $2',
+      "SELECT id, name, TO_CHAR(joined_date, 'YYYY-MM-DD') as joined_date FROM staff WHERE id = $1 AND garage_id = $2",
       [id, garageId]
     );
     if (staffRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Staff member not found.' });
     }
     const staff = staffRes.rows[0];
-    const joinedDate = staff.joined_date?.toString().split('T')[0];
+    const joinedDate = staff.joined_date;
 
     if (joinedDate && leaving_date < joinedDate) {
       return res.status(400).json({
@@ -191,7 +212,10 @@ exports.resignStaff = async (req, res) => {
       `UPDATE staff
        SET status = $1, leaving_date = $2, leaving_notes = $3, updated_at = NOW()
        WHERE id = $4 AND garage_id = $5
-       RETURNING *`,
+       RETURNING id, garage_id, name, phone, role, salary_type, base_salary,
+                 status, TO_CHAR(joined_date, 'YYYY-MM-DD') as joined_date, 
+                 TO_CHAR(leaving_date, 'YYYY-MM-DD') as leaving_date, 
+                 leaving_notes, created_at, updated_at`,
       [finalStatus, leaving_date, leaving_notes || null, id, garageId]
     );
 
@@ -216,7 +240,10 @@ exports.reactivateStaff = async (req, res) => {
       `UPDATE staff
        SET status = 'active', leaving_date = NULL, leaving_notes = NULL, updated_at = NOW()
        WHERE id = $1 AND garage_id = $2
-       RETURNING *`,
+       RETURNING id, garage_id, name, phone, role, salary_type, base_salary,
+                 status, TO_CHAR(joined_date, 'YYYY-MM-DD') as joined_date, 
+                 TO_CHAR(leaving_date, 'YYYY-MM-DD') as leaving_date, 
+                 leaving_notes, created_at, updated_at`,
       [id, garageId]
     );
 
@@ -246,7 +273,8 @@ exports.getDailyAttendance = async (req, res) => {
 
     const { rows } = await db.query(
       `SELECT s.id as staff_id, s.name, s.role, s.phone,
-              s.joined_date, s.leaving_date, s.status,
+              TO_CHAR(s.joined_date, 'YYYY-MM-DD') as joined_date, 
+              TO_CHAR(s.leaving_date, 'YYYY-MM-DD') as leaving_date, s.status,
               COALESCE(a.status, 'Holiday') as attendance_status, a.notes
        FROM staff s
        LEFT JOIN attendance a ON s.id = a.staff_id AND a.date = $1
@@ -281,17 +309,17 @@ exports.saveBulkAttendance = async (req, res) => {
 
       // Validate date is within staff's employment period
       const staffRes = await db.query(
-        'SELECT joined_date, leaving_date FROM staff WHERE id = $1 AND garage_id = $2',
+        "SELECT TO_CHAR(joined_date, 'YYYY-MM-DD') as joined_date, TO_CHAR(leaving_date, 'YYYY-MM-DD') as leaving_date FROM staff WHERE id = $1 AND garage_id = $2",
         [staff_id, garageId]
       );
       if (staffRes.rows.length === 0) continue;
 
       const s = staffRes.rows[0];
-      const jd = s.joined_date?.toString().split('T')[0];
-      const ld = s.leaving_date?.toString().split('T')[0];
+      const jd = s.joined_date;
+      const ld = s.leaving_date;
 
-      if (jd && targetDate < jd) continue; // silently skip — before joining
-      if (ld && targetDate > ld) continue; // silently skip — after leaving
+      if (jd && targetDate < jd) continue; // skip before joining date
+      if (ld && targetDate > ld) continue; // skip after leaving date
 
       await db.query(
         `INSERT INTO attendance (garage_id, staff_id, date, status, notes)
@@ -324,8 +352,8 @@ exports.getMonthlyAttendanceSummary = async (req, res) => {
       `SELECT
          s.id as staff_id,
          s.status,
-         s.joined_date,
-         s.leaving_date,
+         TO_CHAR(s.joined_date, 'YYYY-MM-DD') as joined_date,
+         TO_CHAR(s.leaving_date, 'YYYY-MM-DD') as leaving_date,
          COALESCE(att.present_count, 0) as present_count,
          COALESCE(att.half_day_count, 0) as half_day_count,
          COALESCE(att.absent_count, 0) as absent_count,
@@ -402,7 +430,8 @@ exports.getStaffLedger = async (req, res) => {
     const { id } = req.params;
 
     const { rows } = await db.query(
-      `SELECT * FROM staff_transactions
+      `SELECT id, garage_id, staff_id, type, amount, TO_CHAR(date, 'YYYY-MM-DD') as date, payment_method, notes, created_at
+       FROM staff_transactions
        WHERE staff_id = $1 AND garage_id = $2
        ORDER BY date DESC, created_at DESC`,
       [id, garageId]
@@ -425,12 +454,15 @@ exports.recordTransaction = async (req, res) => {
     }
 
     // Validate date against staff joining date
-    const staffRes = await db.query('SELECT * FROM staff WHERE id = $1 AND garage_id = $2', [staff_id, garageId]);
+    const staffRes = await db.query(
+      "SELECT id, name, phone, base_salary, salary_type, status, TO_CHAR(joined_date, 'YYYY-MM-DD') as joined_date FROM staff WHERE id = $1 AND garage_id = $2",
+      [staff_id, garageId]
+    );
     if (staffRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Staff member not found.' });
     }
     const staff = staffRes.rows[0];
-    const joinedDate = staff.joined_date?.toString().split('T')[0];
+    const joinedDate = staff.joined_date;
 
     if (joinedDate && date < joinedDate) {
       return res.status(400).json({
@@ -442,7 +474,7 @@ exports.recordTransaction = async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO staff_transactions (garage_id, staff_id, type, amount, date, payment_method, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
+       RETURNING id, garage_id, staff_id, type, amount, TO_CHAR(date, 'YYYY-MM-DD') as date, payment_method, notes, created_at`,
       [garageId, staff_id, type, parseFloat(amount), date, payment_method || 'Cash', notes || null]
     );
 
@@ -554,7 +586,10 @@ exports.sendStaffWhatsAppSummary = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Month parameter is required.' });
     }
 
-    const staffRes = await db.query('SELECT * FROM staff WHERE id = $1 AND garage_id = $2', [id, garageId]);
+    const staffRes = await db.query(
+      "SELECT id, name, phone, base_salary, salary_type, status, TO_CHAR(leaving_date, 'YYYY-MM-DD') as leaving_date FROM staff WHERE id = $1 AND garage_id = $2",
+      [id, garageId]
+    );
     if (staffRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Staff member not found.' });
     }
@@ -616,7 +651,7 @@ exports.sendStaffWhatsAppSummary = async (req, res) => {
     const formattedPending = pendingSalary.toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
 
     const resignedNote = staff.status !== 'active'
-      ? `\n⚠️ _Note: ${staff.name} has ${staff.status} on ${staff.leaving_date?.toString().split('T')[0] || 'unknown date'}._`
+      ? `\n⚠️ _Note: ${staff.name} has ${staff.status} on ${staff.leaving_date || 'unknown date'}._`
       : '';
 
     const message = `Hello *${staff.name}* 👋,\n\nHere is your accounts & payroll summary for *${monthName}*:${resignedNote}\n\n📊 *Attendance Stats:*\n  - Present: *${present}* days\n  - Half Days: *${halfDay}* days\n  - Holidays: *${holiday}* days\n  - Absents: *${absent}* days\n  - Paid Days Count: *${paidDays}* days\n\n💵 *Salary & Accounts Breakdown:*\n  - Base Salary: *${formattedBase}* (${staff.salary_type})\n  - Dynamic Salary Earned: *${formattedEarned}*\n  - Total Advances Taken: *${formattedAdvances}*\n  - Salary Payouts Received: *${formattedPaid}*\n  - *Net Pending Balance: ${formattedPending}*\n\nIf you have any questions or find any discrepancies, please contact management.`;
