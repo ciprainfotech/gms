@@ -3,6 +3,44 @@ const numberToWords = require('number-to-words');
 const fs = require('fs');
 const path = require('path');
 
+// Helper to find system Chrome or Chromium binary if Puppeteer default is missing in container
+const getExecutablePath = () => {
+    if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
+    const possiblePaths = [
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium',
+        '/usr/bin/chromium-browser',
+        '/snap/bin/chromium',
+        'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+        'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'
+    ];
+    for (const p of possiblePaths) {
+        if (fs.existsSync(p)) return p;
+    }
+    return undefined;
+};
+
+const launchPuppeteerBrowser = async () => {
+    const execPath = getExecutablePath();
+    const launchOptions = {
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process'
+        ]
+    };
+    if (execPath) {
+        launchOptions.executablePath = execPath;
+    }
+    return await puppeteer.launch(launchOptions);
+};
+
 // Robust Currency Formatter
 const formatCurrency = (amount) => {
     const numericAmount = Number(amount) || 0;
@@ -297,10 +335,7 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
     `;
 
     // Spin up puppeteer to generate PDF
-    const browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    const browser = await launchPuppeteerBrowser();
     
     try {
         const page = await browser.newPage();
@@ -509,10 +544,7 @@ exports.generateLedgerPDF = async (customerName, transactions, totalBilled, tota
     </html>
     `;
 
-    const browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
+    const browser = await launchPuppeteerBrowser();
     
     try {
         const page = await browser.newPage();
