@@ -197,7 +197,8 @@ const CreateInvoicePage = () => {
             return;
         }
 
-        if (discountType === 'Fixed' && dVal > (invoiceDraft.subtotal || 0)) {
+        const draftSubTotal = parseFloat(invoiceDraft.subTotal ?? invoiceDraft.subtotal ?? 0);
+        if (discountType === 'Fixed' && dVal > draftSubTotal) {
             setError("Fixed discount cannot exceed the invoice subtotal.");
             return;
         }

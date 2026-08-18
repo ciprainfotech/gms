@@ -192,10 +192,10 @@ const InvoicesPage = () => {
       )
     },
     {
-      key: 'vehicle_car_number',
+      key: 'vehicle_number',
       label: 'Vehicle',
       sortable: true,
-      render: (val, row) => val || row.car_number || 'N/A'
+      render: (val, row) => val || row.vehicle_car_number || row.car_number || 'N/A'
     },
     {
       key: 'grand_total',
