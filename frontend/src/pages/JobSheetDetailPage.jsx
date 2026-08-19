@@ -6,10 +6,11 @@ import {
 } from 'react-bootstrap';
 import {
     FaArrowLeft, FaSave, FaPrint, FaCheckSquare, FaTrash, FaPencilAlt, FaPlus, FaCheck, FaTimes, FaUser, FaCar,
-    FaMapMarkerAlt, FaPhone, FaEnvelope, FaCalendarAlt, FaTachometerAlt, FaStickyNote, FaBarcode, FaHashtag, FaExclamationTriangle, FaInfoCircle
+    FaMapMarkerAlt, FaPhone, FaEnvelope, FaCalendarAlt, FaTachometerAlt, FaStickyNote, FaBarcode, FaHashtag, FaExclamationTriangle, FaInfoCircle, FaBolt, FaBoxes
 } from 'react-icons/fa';
 import api from '../api/api'; 
 import { useGlobalDate } from '../contexts/GlobalDateContext';
+import { useToast } from '../contexts/ToastContext';
 import { validateKMReading, validateNumber, sanitizeString } from '../utils/validators';
 
 // --- HELPER FUNCTIONS ---
@@ -35,6 +36,7 @@ const formatDate = (dateString) => {
 };
 
 const JobSheetDetailPage = () => {
+    const toast = useToast();
     const { today } = useGlobalDate();
     const { jobSheetId } = useParams();
     const navigate = useNavigate();
@@ -76,6 +78,18 @@ const JobSheetDetailPage = () => {
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [successMessage, setSuccessMessage] = useState('');
     const [successNavigation, setSuccessNavigation] = useState(null);
+
+    // In-Place Master Item Creation Modal State
+    const [showNewItemModal, setShowNewItemModal] = useState(false);
+    const [savingNewItem, setSavingNewItem] = useState(false);
+    const [newItemForm, setNewItemForm] = useState({
+        name: '', partNo: '', type: 'Spare', unitPrice: '', stockQty: '10', lubeCharge: '0', labourCharge: '0'
+    });
+
+    // Quick Restock Modal State
+    const [showRestockModal, setShowRestockModal] = useState(false);
+    const [restocking, setRestocking] = useState(false);
+    const [restockQty, setRestockQty] = useState('5');
 
     // --- DATA FETCHING & INITIALIZATION ---
     useEffect(() => {
@@ -185,11 +199,39 @@ const JobSheetDetailPage = () => {
     };
 
 
+    // Search input value for in-flow item creation
+    const [selectInputValue, setSelectInputValue] = useState('');
+
+    // Dynamically compute uncommitted draft quantity and remaining available stock for the selected item
+    const selectedItemStockInfo = useMemo(() => {
+        if (!selectedMasterItem) return { totalStock: 0, draftedQty: 0, availableStock: 0 };
+        
+        const itemId = selectedMasterItem.value || selectedMasterItem.id;
+        const totalStock = parseFloat(selectedMasterItem.stockQty ?? selectedMasterItem.stock_qty ?? 0);
+        
+        const currentItems = Array.isArray(addedItems) ? addedItems : [];
+        const draftedQty = currentItems.reduce((acc, item) => {
+            const mId = item.masterItemId || item.master_item_id;
+            return mId === itemId ? acc + (parseFloat(item.quantity) || 0) : acc;
+        }, 0);
+
+        const availableStock = Math.max(0, totalStock - draftedQty);
+        return { totalStock, draftedQty, availableStock };
+    }, [selectedMasterItem, addedItems]);
+
+    // Ensure React-Select value prop matches option by value property
+    const currentSelectValue = useMemo(() => {
+        if (!selectedMasterItem) return null;
+        const targetId = selectedMasterItem.value || selectedMasterItem.id;
+        return selectOptions.find(opt => opt.value === targetId) || selectedMasterItem;
+    }, [selectedMasterItem, selectOptions]);
+
     // --- LOCAL ITEM MANIPULATION HANDLERS ---
     
     // Auto-focus quantity field when an item is selected
     const handleSelectChange = (selectedOption) => {
         setSelectedMasterItem(selectedOption);
+        setSelectInputValue(''); // Clear typed search string so React-Select renders selected label cleanly
         if (selectedOption) {
             setTimeout(() => {
                 if (qtyRef.current) {
@@ -200,6 +242,20 @@ const JobSheetDetailPage = () => {
         }
     };
 
+    // Helper to open the new item modal pre-filled with search text
+    const openNewItemModalWithSearch = (searchName) => {
+        setNewItemForm({
+            name: searchName || '',
+            partNo: '',
+            type: 'Spare',
+            unitPrice: '',
+            stockQty: '10',
+            lubeCharge: '0',
+            labourCharge: '0'
+        });
+        setShowNewItemModal(true);
+    };
+
     // Auto-trigger add when Enter is pressed in Quantity field
     const handleQuantityKeyDown = (e) => {
         if (e.key === 'Enter') {
@@ -208,32 +264,41 @@ const JobSheetDetailPage = () => {
         }
     };
 
-    const handleAddItem = () => {
-        const parsedQty = parseFloat(quantity);
-        if (!selectedMasterItem || isNaN(parsedQty) || parsedQty <= 0 || isReadOnly) return;
-        
-        const masterItemData = masterItems.find(item => item.id === selectedMasterItem.value);
-        if (!masterItemData) return;
-
+    // Execute actual item insertion or reduction in addedItems array
+    const executeAddItem = (masterItemData, parsedQty) => {
         const currentItems = Array.isArray(addedItems) ? addedItems : [];
-        const existingItemIndex = currentItems.findIndex(item => item.masterItemId === selectedMasterItem.value);
+        const targetId = masterItemData.value || masterItemData.id;
+        const existingItemIndex = currentItems.findIndex(item => item.masterItemId === targetId || item.master_item_id === targetId);
         let updatedItems;
 
         if (existingItemIndex > -1) { 
-            updatedItems = currentItems.map((item, index) => {
-                if (index === existingItemIndex) {
-                    const newQuantity = item.quantity + parsedQty;
-                    return { ...item, quantity: newQuantity, ...calculateLineTotals(masterItemData, newQuantity) };
+            const newQuantity = currentItems[existingItemIndex].quantity + parsedQty;
+            if (newQuantity <= 0) {
+                // If negative adjustment brings quantity to zero or less, remove item from table
+                updatedItems = currentItems.filter((_, index) => index !== existingItemIndex);
+                if (toast?.info) toast.info(`Removed "${masterItemData.name}" from job sheet.`);
+            } else {
+                updatedItems = currentItems.map((item, index) => {
+                    if (index === existingItemIndex) {
+                        return { ...item, quantity: newQuantity, ...calculateLineTotals(masterItemData, newQuantity) };
+                    }
+                    return item;
+                });
+                if (parsedQty < 0 && toast?.success) {
+                    toast.success(`Reduced "${masterItemData.name}" by ${Math.abs(parsedQty)}. New quantity: ${newQuantity}`);
                 }
-                return item;
-            });
+            }
         } else { 
+            if (parsedQty <= 0) {
+                if (toast?.error) toast.error(`Item "${masterItemData.name}" is not in job sheet yet to reduce quantity.`);
+                return;
+            }
             const unitPrice = parseFloat(masterItemData.unitPrice ?? masterItemData.unit_price ?? 0);
             const lubeCharge = parseFloat(masterItemData.lubeCharge ?? masterItemData.lube_charge ?? 0);
             const labourCharge = parseFloat(masterItemData.labourCharge ?? masterItemData.labour_charge ?? 0);
             const newItem = {
-                masterItemId: masterItemData.id,
-                master_item_id: masterItemData.id,
+                masterItemId: targetId,
+                master_item_id: targetId,
                 name: masterItemData.name,
                 partNo: masterItemData.partNo || masterItemData.part_no || '',
                 quantity: parsedQty,
@@ -250,6 +315,7 @@ const JobSheetDetailPage = () => {
         
         setAddedItems(updatedItems);
         setSelectedMasterItem(null);
+        setSelectInputValue('');
         setQuantity(1);
 
         // Return focus to the search dropdown for the next item
@@ -258,6 +324,115 @@ const JobSheetDetailPage = () => {
                 selectRef.current.focus();
             }
         }, 0);
+    };
+
+    const handleAddItem = () => {
+        const parsedQty = parseFloat(quantity);
+        if (!selectedMasterItem || isNaN(parsedQty) || parsedQty === 0 || isReadOnly) return;
+        
+        const masterItemData = masterItems.find(item => item.id === selectedMasterItem.value) || selectedMasterItem;
+        if (!masterItemData) return;
+
+        // Check stock requirement for Spare parts when adding POSITIVE quantity
+        if (masterItemData.type === 'Spare' && parsedQty > 0) {
+            const availableStock = selectedItemStockInfo.availableStock;
+            if (parsedQty > availableStock) {
+                const deficit = parsedQty - availableStock;
+                setRestockQty(Math.max(10, Math.ceil(deficit)).toString());
+                setShowRestockModal(true);
+                return; // Pauses addition until user confirms Quick Restock popup
+            }
+        }
+
+        executeAddItem(masterItemData, parsedQty);
+    };
+
+    // --- IN-PLACE STOCK CREATION & QUICK RESTOCK HANDLERS ---
+    const handleCreateNewItem = async (e) => {
+        e.preventDefault();
+        if (!newItemForm.name.trim()) {
+            toast?.error ? toast.error('Item name is required.') : setError('Item name is required.');
+            return;
+        }
+        setSavingNewItem(true);
+        try {
+            const res = await api.post('/master-items', {
+                name: newItemForm.name.trim(),
+                partNo: newItemForm.partNo.trim() || null,
+                type: newItemForm.type,
+                unitPrice: parseFloat(newItemForm.unitPrice) || 0,
+                stockQty: newItemForm.type === 'Spare' ? (parseFloat(newItemForm.stockQty) || 0) : null,
+                lubeCharge: parseFloat(newItemForm.lubeCharge) || 0,
+                labourCharge: parseFloat(newItemForm.labourCharge) || 0
+            });
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || 'Failed to create item in inventory.');
+            }
+            const createdItem = await res.json();
+            setMasterItems(prev => [...prev, createdItem]);
+
+            const newOption = {
+                value: createdItem.id,
+                label: `${createdItem.name} (${createdItem.partNo || createdItem.part_no || 'SVC'}) - [${formatCurrency(createdItem.unitPrice ?? createdItem.unit_price ?? 0)}]`,
+                ...createdItem
+            };
+            setSelectedMasterItem(newOption);
+            setShowNewItemModal(false);
+            setSelectInputValue('');
+            setNewItemForm({ name: '', partNo: '', type: 'Spare', unitPrice: '', stockQty: '10', lubeCharge: '0', labourCharge: '0' });
+            if (toast?.success) toast.success(`Item "${createdItem.name}" created & selected!`);
+
+            // Shift focus directly to Quantity field so user can type quantity and press Enter!
+            setTimeout(() => {
+                if (qtyRef.current) {
+                    qtyRef.current.focus();
+                    qtyRef.current.select();
+                }
+            }, 100);
+        } catch (err) {
+            if (toast?.error) toast.error(err.message);
+            else setError(err.message);
+        } finally {
+            setSavingNewItem(false);
+        }
+    };
+
+    const handleQuickRestock = async (e) => {
+        e.preventDefault();
+        if (!selectedMasterItem) return;
+        const addQty = parseFloat(restockQty);
+        if (isNaN(addQty) || addQty <= 0) {
+            if (toast?.error) toast.error('Please enter a valid stock quantity greater than 0.');
+            return;
+        }
+        setRestocking(true);
+        try {
+            const itemId = selectedMasterItem.value || selectedMasterItem.id;
+            const res = await api.patch(`/master-items/${itemId}/restock`, { addedQty: addQty });
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.message || 'Failed to restock item.');
+            }
+            const data = await res.json();
+            const updatedItem = data.item;
+
+            setMasterItems(prev => prev.map(it => it.id === itemId ? { ...it, ...updatedItem } : it));
+            const updatedMasterItemData = { ...selectedMasterItem, ...updatedItem, stockQty: updatedItem.stockQty, stock_qty: updatedItem.stockQty };
+            setSelectedMasterItem(updatedMasterItemData);
+
+            setShowRestockModal(false);
+            if (toast?.success) toast.success(`Restocked ${addQty} units & added item to job sheet!`);
+
+            // Automatically execute item addition in flow!
+            const parsedQty = parseFloat(quantity) || 1;
+            executeAddItem(updatedMasterItemData, parsedQty);
+        } catch (err) {
+            if (toast?.error) toast.error(err.message);
+            else setError(err.message);
+        } finally {
+            setRestocking(false);
+        }
     };
 
     const promptRemoveItem = (itemId) => {
@@ -588,7 +763,9 @@ const JobSheetDetailPage = () => {
                 <Card className="shadow-sm border-print-0">
                     {!isReadOnly && (
                         <div className="d-print-none">
-                            <Card.Header className="bg-light-subtle border-bottom-0"><h5 className="h6 mb-0 text-muted"><FaPlus className="me-2" />Add Service / Spare Part</h5></Card.Header>
+                            <Card.Header className="bg-light-subtle border-bottom-0">
+                                <h5 className="h6 mb-0 text-muted"><FaPlus className="me-2" />Add Service / Spare Part</h5>
+                            </Card.Header>
                             <Card.Body className="pt-3 pb-4 bg-light-subtle">
                                 <Row className="g-2 align-items-end">
                                     <Col lg={6} md={12} sm={12} className="mb-2 mb-lg-0">
@@ -597,9 +774,43 @@ const JobSheetDetailPage = () => {
                                             ref={selectRef}
                                             id="itemSelect" 
                                             options={selectOptions} 
-                                            value={selectedMasterItem} 
+                                            value={currentSelectValue} 
                                             onChange={handleSelectChange} 
-                                            placeholder="Search or select an item..." 
+                                            inputValue={selectInputValue}
+                                            onInputChange={(val, action) => {
+                                                if (action.action === 'input-change') {
+                                                    setSelectInputValue(val);
+                                                } else if (action.action === 'set-value' || action.action === 'menu-close') {
+                                                    setSelectInputValue('');
+                                                }
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && selectInputValue.trim() && !selectedMasterItem) {
+                                                    const query = selectInputValue.trim().toLowerCase();
+                                                    const hasMatchingOption = selectOptions.some(opt => {
+                                                        const labelStr = (opt.label || '').toLowerCase();
+                                                        const nameStr = (opt.name || '').toLowerCase();
+                                                        const partStr = (opt.partNo || opt.part_no || '').toLowerCase();
+                                                        return labelStr.includes(query) || nameStr.includes(query) || partStr.includes(query);
+                                                    });
+                                                    if (!hasMatchingOption) {
+                                                        e.preventDefault();
+                                                        openNewItemModalWithSearch(selectInputValue.trim());
+                                                    }
+                                                }
+                                            }}
+                                            noOptionsMessage={() => (
+                                                selectInputValue.trim() ? (
+                                                    <div 
+                                                        onClick={() => openNewItemModalWithSearch(selectInputValue.trim())}
+                                                        className="text-primary fw-bold p-2 text-center"
+                                                        style={{ cursor: 'pointer' }}
+                                                    >
+                                                        <FaPlus className="me-1" /> Add "{selectInputValue.trim()}" as new item to inventory
+                                                    </div>
+                                                ) : "Type to search items..."
+                                            )}
+                                            placeholder="Search or select an item (type new name & hit Enter)..." 
                                             isClearable 
                                             isDisabled={isSavingDraft || isFinalizing} 
                                             classNamePrefix="react-select" 
@@ -611,7 +822,6 @@ const JobSheetDetailPage = () => {
                                             ref={qtyRef}
                                             id="quantityInput" 
                                             type="number" 
-                                            min="0.01" 
                                             step="any"
                                             value={quantity} 
                                             onChange={(e) => setQuantity(e.target.value)} 
@@ -621,11 +831,30 @@ const JobSheetDetailPage = () => {
                                         />
                                     </Col>
                                     <Col lg={4} md={8} sm={7}>
-                                        <Button variant="primary" className="w-100" onClick={handleAddItem} disabled={!selectedMasterItem || quantity <= 0 || isSavingDraft || isFinalizing}>
-                                            <FaPlus className="me-1" /> Add to Job Sheet
+                                        <Button 
+                                            variant="primary" 
+                                            className="w-100" 
+                                            onClick={handleAddItem} 
+                                            disabled={!selectedMasterItem || !quantity || parseFloat(quantity) === 0 || isSavingDraft || isFinalizing}
+                                        >
+                                            <FaPlus className="me-1" /> Add / Adjust Job Sheet
                                         </Button>
                                     </Col>
                                 </Row>
+
+                                {selectedMasterItem && selectedMasterItem.type === 'Spare' && (
+                                    <div className="mt-2 pt-2 border-top d-flex align-items-center gap-2">
+                                        {selectedItemStockInfo.availableStock > 0 ? (
+                                            <Badge bg="success" className="px-2 py-1">
+                                                Available Stock: {selectedItemStockInfo.availableStock} units remaining {selectedItemStockInfo.draftedQty > 0 ? `(${selectedItemStockInfo.draftedQty} already drafted)` : ''}
+                                            </Badge>
+                                        ) : (
+                                            <Badge bg="danger" className="px-2 py-1">
+                                                OUT OF STOCK ({selectedItemStockInfo.availableStock} units remaining) {selectedItemStockInfo.draftedQty > 0 ? `(${selectedItemStockInfo.draftedQty} already drafted)` : ''} — Entering qty auto-prompts restock
+                                            </Badge>
+                                        )}
+                                    </div>
+                                )}
                             </Card.Body>
                         </div>
                     )}
@@ -805,6 +1034,140 @@ const JobSheetDetailPage = () => {
                         Okay
                     </Button>
                 </Modal.Body>
+            </Modal>
+
+            {/* Modal: Add New Item to Master Inventory In-Place */}
+            <Modal show={showNewItemModal} onHide={() => setShowNewItemModal(false)} centered size="lg">
+                <Form onSubmit={handleCreateNewItem}>
+                    <Modal.Header closeButton className="bg-light">
+                        <Modal.Title className="h5 fw-bold text-dark d-flex align-items-center gap-2">
+                            <FaBoxes className="text-primary" /> Add New Item to Master Inventory
+                        </Modal.Title>
+                    </Modal.Header>
+                    <Modal.Body>
+                        <Row className="g-3">
+                            <Col md={8}>
+                                <Form.Label className="fw-bold small">Item Name *</Form.Label>
+                                <Form.Control
+                                    type="text"
+                                    placeholder="e.g. Engine Oil 5W30, Brake Pad Front"
+                                    value={newItemForm.name}
+                                    onChange={(e) => setNewItemForm({ ...newItemForm, name: e.target.value })}
+                                    required
+                                />
+                            </Col>
+                            <Col md={4}>
+                                <Form.Label className="fw-bold small">Type</Form.Label>
+                                <Form.Select
+                                    value={newItemForm.type}
+                                    onChange={(e) => setNewItemForm({ ...newItemForm, type: e.target.value })}
+                                >
+                                    <option value="Spare">Spare Part</option>
+                                    <option value="Service">Service / Labour</option>
+                                </Form.Select>
+                            </Col>
+                            <Col md={6}>
+                                <Form.Label className="fw-bold small">Part No. (Optional)</Form.Label>
+                                <Form.Control
+                                    type="text"
+                                    placeholder="e.g. PART-9921"
+                                    value={newItemForm.partNo}
+                                    onChange={(e) => setNewItemForm({ ...newItemForm, partNo: e.target.value })}
+                                />
+                            </Col>
+                            <Col md={6}>
+                                <Form.Label className="fw-bold small">Unit Price (₹)</Form.Label>
+                                <Form.Control
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={newItemForm.unitPrice}
+                                    onChange={(e) => setNewItemForm({ ...newItemForm, unitPrice: e.target.value })}
+                                />
+                            </Col>
+                            {newItemForm.type === 'Spare' && (
+                                <Col md={4}>
+                                    <Form.Label className="fw-bold small">Initial Stock Qty</Form.Label>
+                                    <Form.Control
+                                        type="number"
+                                        step="any"
+                                        placeholder="10"
+                                        value={newItemForm.stockQty}
+                                        onChange={(e) => setNewItemForm({ ...newItemForm, stockQty: e.target.value })}
+                                    />
+                                </Col>
+                            )}
+                            <Col md={4}>
+                                <Form.Label className="fw-bold small">Lube Charge (₹)</Form.Label>
+                                <Form.Control
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={newItemForm.lubeCharge}
+                                    onChange={(e) => setNewItemForm({ ...newItemForm, lubeCharge: e.target.value })}
+                                />
+                            </Col>
+                            <Col md={4}>
+                                <Form.Label className="fw-bold small">Labour Charge (₹)</Form.Label>
+                                <Form.Control
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={newItemForm.labourCharge}
+                                    onChange={(e) => setNewItemForm({ ...newItemForm, labourCharge: e.target.value })}
+                                />
+                            </Col>
+                        </Row>
+                    </Modal.Body>
+                    <Modal.Footer className="bg-light">
+                        <Button variant="secondary" onClick={() => setShowNewItemModal(false)}>Cancel</Button>
+                        <Button variant="primary" type="submit" disabled={savingNewItem}>
+                            {savingNewItem ? <Spinner size="sm" animation="border" /> : <><FaCheck className="me-1" /> Save & Select Item</>}
+                        </Button>
+                    </Modal.Footer>
+                </Form>
+            </Modal>
+
+            {/* Modal: Quick Restock Quantity */}
+            <Modal show={showRestockModal} onHide={() => setShowRestockModal(false)} centered>
+                <Form onSubmit={handleQuickRestock}>
+                    <Modal.Header closeButton className="bg-success text-white">
+                        <Modal.Title className="h6 fw-bold mb-0 d-flex align-items-center gap-2">
+                            <FaBolt /> Insufficient Stock — Quick Restock: {selectedMasterItem?.name}
+                        </Modal.Title>
+                    </Modal.Header>
+                    <Modal.Body className="py-3">
+                        <Alert variant="warning" className="small py-2 mb-3 shadow-sm">
+                            {selectedItemStockInfo.draftedQty > 0 ? (
+                                <>
+                                    Item <strong>{selectedMasterItem?.name}</strong> has <strong>{selectedItemStockInfo.totalStock}</strong> units in stock, but your job sheet requires <strong>{(selectedItemStockInfo.draftedQty + parseFloat(quantity || 0))}</strong> units total (<strong>{selectedItemStockInfo.draftedQty}</strong> already drafted + <strong>{quantity}</strong> new).
+                                </>
+                            ) : (
+                                <>
+                                    Item <strong>{selectedMasterItem?.name}</strong> has only <strong>{selectedItemStockInfo.totalStock}</strong> units in stock (you requested <strong>{quantity}</strong>).
+                                </>
+                            )}
+                        </Alert>
+                        <Form.Group controlId="restockInput">
+                            <Form.Label className="fw-bold small text-muted">Enter Units to Add to Stock</Form.Label>
+                            <Form.Control
+                                type="number"
+                                step="any"
+                                min="0.01"
+                                value={restockQty}
+                                onChange={(e) => setRestockQty(e.target.value)}
+                                required
+                                autoFocus
+                            />
+                        </Form.Group>
+                    </Modal.Body>
+                    <Modal.Footer className="bg-light">
+                        <Button variant="secondary" size="sm" onClick={() => setShowRestockModal(false)}>Cancel</Button>
+                        <Button variant="success" size="sm" type="submit" disabled={restocking} className="fw-bold">
+                            {restocking ? <Spinner size="sm" animation="border" /> : <><FaCheck className="me-1" /> Restock & Add to Job Sheet</>}
+                        </Button>
+                    </Modal.Footer>
+                </Form>
             </Modal>
 
         </Container>

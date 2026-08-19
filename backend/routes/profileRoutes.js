@@ -35,6 +35,8 @@ const upload = multer({
 router.get('/', authorizeGarage, profileController.getProfile);
 router.put('/user', authorizeGarage, profileController.updateUserProfile);
 router.post('/change-password', authorizeGarage, profileController.changePassword);
+router.put('/password', authorizeGarage, profileController.changePassword);
+router.post('/password', authorizeGarage, profileController.changePassword);
 router.put('/garage', authorizeGarage, profileController.updateGarageDetails);
 router.post('/logo', authorizeGarage, upload.single('logo'), profileController.uploadGarageLogo);
 router.post('/garage-logo', authorizeGarage, upload.single('logo'), profileController.uploadGarageLogo);

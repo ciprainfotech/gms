@@ -120,7 +120,14 @@ const InvoicesPage = () => {
       );
 
       const status = (inv.status || inv.payment_status || '').toLowerCase();
-      const matchesStatus = filterStatus === 'all' || status === filterStatus.toLowerCase();
+      let matchesStatus = filterStatus === 'all';
+      if (filterStatus === 'paid') {
+        matchesStatus = status === 'paid';
+      } else if (filterStatus === 'unpaid') {
+        matchesStatus = status === 'unpaid' || status === 'pending' || status === 'due';
+      } else if (filterStatus === 'partial') {
+        matchesStatus = status.includes('partial');
+      }
       return matchesSearch && matchesStatus;
     });
   }, [invoices, searchTerm, filterStatus]);

@@ -11,6 +11,11 @@ import LoadingOverlay from '../components/LoadingOverlay';
 import ConfirmModal from '../components/ConfirmModal';
 import { validatePhone, validateEmail, validateGSTIN, sanitizeString } from '../utils/validators.js';
 
+export const DEFAULT_GARAGE_TERMS = `1. Goods once sold will not be taken back or exchanged.
+2. Interest @18% p.a. will be charged if payment is not made within the stipulated time.
+3. All disputes are subject to local Jurisdiction only.
+4. E. & O. E. (Errors and Omissions Excepted).`;
+
 const ProfileSettingsPage = () => {
   const outletContext = useOutletContext();
   const onGarageUpdate = outletContext?.onGarageUpdate;
@@ -739,14 +744,43 @@ const ProfileSettingsPage = () => {
                     </Col>
                     <Col md={12}>
                       <Form.Group>
-                        <Form.Label className="fw-bold small text-muted">Invoice Terms & Conditions</Form.Label>
+                        <div className="d-flex justify-content-between align-items-center mb-1 flex-wrap gap-2">
+                          <Form.Label className="fw-bold small text-muted mb-0">Default Invoice Terms & Conditions</Form.Label>
+                          <div className="d-flex align-items-center gap-2">
+                            <Form.Check 
+                              type="checkbox"
+                              id="autoTermsCheck"
+                              label="Use Standard Terms"
+                              className="small fw-bold text-primary mb-0 me-2"
+                              checked={garageForm.terms_and_conditions === DEFAULT_GARAGE_TERMS}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setGarageForm({ ...garageForm, terms_and_conditions: DEFAULT_GARAGE_TERMS });
+                                }
+                              }}
+                            />
+                            <Button 
+                              type="button"
+                              variant="outline-primary" 
+                              size="sm" 
+                              className="py-0 px-2 fw-bold" 
+                              style={{ fontSize: '0.78rem' }}
+                              onClick={() => setGarageForm({ ...garageForm, terms_and_conditions: DEFAULT_GARAGE_TERMS })}
+                            >
+                              ✨ Auto-Fill Recommended Terms
+                            </Button>
+                          </div>
+                        </div>
                         <Form.Control 
                           as="textarea" 
-                          rows={3}
-                          placeholder="Custom terms and conditions printed on invoices..."
-                          value={garageForm.terms_and_conditions}
+                          rows={4}
+                          placeholder="Enter custom terms and conditions printed on invoices..."
+                          value={garageForm.terms_and_conditions || ''}
                           onChange={(e) => setGarageForm({ ...garageForm, terms_and_conditions: e.target.value })}
                         />
+                        <Form.Text className="text-muted small">
+                          These default terms will automatically populate on all new invoices and PDF receipts.
+                        </Form.Text>
                       </Form.Group>
                     </Col>
                   </Row>

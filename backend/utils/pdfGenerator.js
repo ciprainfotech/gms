@@ -115,16 +115,29 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
         amountInWords = `RUPEES ${words} ONLY`;
     }
 
-    // Embed logo as base64
+    // Helper to fetch/read logo and convert to base64 Data URI for Puppeteer PDF
     let logoHtml = '';
     if (garage?.logo_url) {
         try {
-            const logoPath = path.join(__dirname, '..', garage.logo_url);
-            if (fs.existsSync(logoPath)) {
-                const ext = path.extname(logoPath).substring(1) || 'png';
-                const logoBuffer = fs.readFileSync(logoPath);
-                const base64 = logoBuffer.toString('base64');
-                logoHtml = `<img src="data:image/${ext};base64,${base64}" alt="Logo" style="max-height: 55px; max-width: 180px; object-fit: contain; margin-bottom: 6px; display: block;" />`;
+            const logoUrl = garage.logo_url;
+            if (logoUrl.startsWith('http://') || logoUrl.startsWith('https://')) {
+                const response = await fetch(logoUrl);
+                if (response.ok) {
+                    const arrayBuffer = await response.arrayBuffer();
+                    const buffer = Buffer.from(arrayBuffer);
+                    const contentType = response.headers.get('content-type') || 'image/png';
+                    const base64 = buffer.toString('base64');
+                    logoHtml = `<img src="data:${contentType};base64,${base64}" alt="Logo" style="max-height: 55px; max-width: 180px; object-fit: contain; margin-bottom: 6px; display: block;" />`;
+                }
+            } else {
+                const cleanRelativePath = logoUrl.startsWith('/') ? logoUrl.substring(1) : logoUrl;
+                const logoPath = path.join(__dirname, '..', cleanRelativePath);
+                if (fs.existsSync(logoPath)) {
+                    const ext = path.extname(logoPath).substring(1) || 'png';
+                    const logoBuffer = fs.readFileSync(logoPath);
+                    const base64 = logoBuffer.toString('base64');
+                    logoHtml = `<img src="data:image/${ext};base64,${base64}" alt="Logo" style="max-height: 55px; max-width: 180px; object-fit: contain; margin-bottom: 6px; display: block;" />`;
+                }
             }
         } catch (e) {
             console.error('Failed to load logo for PDF:', e);
@@ -495,10 +508,10 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
                         ${garage?.terms_and_conditions ? `
                             <div style="white-space: pre-line; margin-top: 2px;">${garage.terms_and_conditions}</div>
                         ` : `
-                            <ol>
+                            <ol style="margin: 2px 0 0 12px; padding: 0;">
                                 <li>Goods once sold will not be taken back or exchanged.</li>
-                                <li>Interest @18% p.a. will be charged if payment is not made within due date.</li>
-                                <li>All disputes are subject to local jurisdiction only.</li>
+                                <li>Interest @18% p.a. will be charged if payment is not made within the stipulated time.</li>
+                                <li>All disputes are subject to local Jurisdiction only.</li>
                                 <li>E. & O. E. (Errors and Omissions Excepted).</li>
                             </ol>
                         `}

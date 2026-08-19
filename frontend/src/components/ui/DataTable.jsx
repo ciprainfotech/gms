@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { FaSort, FaSortUp, FaSortDown } from 'react-icons/fa';
 import EmptyState from './EmptyState';
 import SkeletonLoader from './SkeletonLoader';
@@ -44,8 +44,14 @@ const DataTable = ({
     });
   }, [data, sortConfig]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [data?.length]);
+
   const paginatedData = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
+    const totalPages = Math.ceil(sortedData.length / pageSize) || 1;
+    const activePage = currentPage > totalPages ? 1 : currentPage;
+    const start = (activePage - 1) * pageSize;
     return sortedData.slice(start, start + pageSize);
   }, [sortedData, currentPage, pageSize]);
 

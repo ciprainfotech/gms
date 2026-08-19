@@ -444,6 +444,61 @@ exports.updateJobSheetDetails = async (req, res) => {
 
         if (updateResult.rowCount === 0) throw new Error('Job Sheet not found or access denied.');
 
+        // --- STOCK DEDUCTION & DELTA CALCULATION ---
+        // 1. Fetch old items for this job sheet
+        const oldItemsQuery = await client.query(
+            'SELECT master_item_id, quantity FROM job_sheet_items WHERE job_sheet_id = $1',
+            [id]
+        );
+        const oldQtyMap = {};
+        oldItemsQuery.rows.forEach(row => {
+            const mId = parseInt(row.master_item_id, 10);
+            oldQtyMap[mId] = (oldQtyMap[mId] || 0) + parseFloat(row.quantity);
+        });
+
+        // 2. Build new qty map
+        const newQtyMap = {};
+        if (Array.isArray(items)) {
+            items.forEach(item => {
+                const mId = parseInt(item.masterItemId || item.master_item_id || item.id, 10);
+                const q = parseFloat(item.quantity) || 0;
+                if (mId && q > 0) {
+                    newQtyMap[mId] = (newQtyMap[mId] || 0) + q;
+                }
+            });
+        }
+
+        // 3. Process stock deltas for all involved master items
+        const allMasterItemIds = Array.from(new Set([...Object.keys(oldQtyMap), ...Object.keys(newQtyMap)])).map(Number);
+        
+        for (const mId of allMasterItemIds) {
+            const oldQty = oldQtyMap[mId] || 0;
+            const newQty = newQtyMap[mId] || 0;
+            const delta = newQty - oldQty; // positive = more used, negative = items returned
+
+            if (delta !== 0) {
+                const itemRes = await client.query(
+                    'SELECT id, name, type, stock_qty FROM master_items WHERE id = $1 AND garage_id = $2 FOR UPDATE',
+                    [mId, garageId]
+                );
+
+                if (itemRes.rows.length > 0) {
+                    const masterItem = itemRes.rows[0];
+                    if (masterItem.type === 'Spare') {
+                        const currentStock = parseFloat(masterItem.stock_qty || 0);
+                        if (delta > 0 && currentStock < delta) {
+                            throw new Error(`Insufficient stock for "${masterItem.name}". Available stock: ${currentStock}, requested additional: ${delta}.`);
+                        }
+                        const updatedStock = Math.max(0, currentStock - delta);
+                        await client.query(
+                            'UPDATE master_items SET stock_qty = $1, updated_at = NOW() WHERE id = $2',
+                            [updatedStock, mId]
+                        );
+                    }
+                }
+            }
+        }
+
         await client.query('DELETE FROM job_sheet_items WHERE job_sheet_id = $1', [id]);
 
         if (items.length > 0) {
@@ -483,7 +538,7 @@ exports.updateJobSheetDetails = async (req, res) => {
         if (error.message.includes('not found')) {
             res.status(404).json({ message: error.message });
         } else {
-            res.status(500).json({ message: 'Server error during job sheet update.' });
+            res.status(500).json({ message: error.message || 'Server error during job sheet update.' });
         }
     } finally {
         client.release();
@@ -499,6 +554,21 @@ exports.deleteJobSheet = async (req, res) => {
 
     try {
         await client.query('BEGIN');
+
+        // Restore stock for deleted spare items before removing
+        const itemsToRestore = await client.query(
+            `SELECT jsi.master_item_id, jsi.quantity, mi.type 
+             FROM job_sheet_items jsi
+             JOIN master_items mi ON jsi.master_item_id = mi.id
+             WHERE jsi.job_sheet_id = $1 AND mi.type = 'Spare'`,
+            [id]
+        );
+        for (const item of itemsToRestore.rows) {
+            await client.query(
+                'UPDATE master_items SET stock_qty = COALESCE(stock_qty, 0) + $1, updated_at = NOW() WHERE id = $2',
+                [parseFloat(item.quantity), item.master_item_id]
+            );
+        }
 
         // 1. Delete associated items first to prevent foreign key constraint errors
         await client.query('DELETE FROM job_sheet_items WHERE job_sheet_id = $1', [id]);

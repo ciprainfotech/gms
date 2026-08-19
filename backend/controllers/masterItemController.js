@@ -115,4 +115,34 @@ const deleteMasterItem = async (req, res) => {
     }
 };
 
-module.exports = { getMasterItems, createMasterItem, updateMasterItem, deleteMasterItem };
+// @desc    Quick Restock stock quantity for a master item
+// @route   PATCH /api/master-items/:id/restock
+const quickRestockItem = async (req, res) => {
+    const garageId = req.garageId;
+    const { id } = req.params;
+    const { addedQty } = req.body;
+
+    const qtyToAdd = parseFloat(addedQty);
+    if (isNaN(qtyToAdd) || qtyToAdd <= 0) {
+        return res.status(400).json({ message: 'Invalid quantity to add. Must be greater than 0.' });
+    }
+
+    try {
+        const query = `
+            UPDATE master_items 
+            SET stock_qty = COALESCE(stock_qty, 0) + $1, updated_at = NOW()
+            WHERE id = $2 AND garage_id = $3 AND is_deleted = FALSE
+            RETURNING id, name, type, part_no AS "partNo", unit_price AS "unitPrice", lube_charge AS "lubeCharge", labour_charge AS "labourCharge", stock_qty AS "stockQty";
+        `;
+        const { rows } = await db.query(query, [qtyToAdd, id, garageId]);
+
+        if (rows.length === 0) return res.status(404).json({ message: 'Item not found.' });
+
+        res.status(200).json({ success: true, message: `Successfully added ${qtyToAdd} units to stock!`, item: rows[0] });
+    } catch (error) {
+        console.error('Error restocking item:', error);
+        res.status(500).json({ message: 'Server error while restocking item.' });
+    }
+};
+
+module.exports = { getMasterItems, createMasterItem, updateMasterItem, deleteMasterItem, quickRestockItem };

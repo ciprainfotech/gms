@@ -93,6 +93,16 @@ app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
+// --- Render Production Auto-Awaker & Health Check Routes ---
+app.get(['/ping', '/api/health', '/healthz', '/api/keep-alive'], (req, res) => {
+  res.status(200).json({
+    status: 'awake',
+    message: 'Render Production Server is active and awake 24/7!',
+    serverTime: new Date().toISOString(),
+    uptime: `${Math.floor(process.uptime())}s`
+  });
+});
+
 
 
 // --- Basic Error Handling ---
@@ -268,6 +278,23 @@ app.set('bridgeSockets', bridgeSockets);
 const PORT = process.env.PORT || 5001;
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`Server & Socket.io Real-Time Bridge running on port ${PORT} (Strict isAgent Socket Filter Active)`);
+
+  // --- Render 24/7 Auto-Awaker Self-Pinger ---
+  const selfPingUrl = process.env.RENDER_EXTERNAL_URL
+    ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/$/, '')}/ping`
+    : 'https://cipra-gms.onrender.com/ping';
+
+  console.log(`[Auto-Awaker] Initialized 24/7 self-ping loop targeting: ${selfPingUrl}`);
+  setInterval(async () => {
+    try {
+      const pingRes = await fetch(selfPingUrl);
+      if (pingRes.ok) {
+        console.log(`⚡ [Auto-Awaker] Self-ping successful at ${new Date().toLocaleTimeString()}! Server awake.`);
+      }
+    } catch (pingErr) {
+      console.warn(`⚠️ [Auto-Awaker] Self-ping heartbeat failed:`, pingErr.message);
+    }
+  }, 14 * 60 * 1000); // 14 minutes
   
   // Auto-verify DB schema columns on boot
   try {

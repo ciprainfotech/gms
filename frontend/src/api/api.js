@@ -188,6 +188,28 @@ const api = {
         return res;
     },
 
+    async patch(endpoint, body) {
+        const url = `${API_BASE_URL}${endpoint}`;
+
+        if (endpoint.includes('/profile')) invalidateCache('/profile');
+        if (endpoint.includes('/customers')) invalidateCache('/customers');
+
+        const res = await fetch(url, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify(body),
+        });
+
+        if (res.status === 401) {
+            handleUnauthorized(endpoint);
+        }
+
+        return res;
+    },
+
     async delete(endpoint) {
         const url = `${API_BASE_URL}${endpoint}`;
 
