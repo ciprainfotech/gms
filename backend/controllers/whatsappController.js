@@ -662,9 +662,17 @@ exports.getWhatsAppQR = async (req, res) => {
         },
         async () => {
           console.log(`✅ Direct WhatsApp Client connected for Garage ${garageId}`);
+          try {
+            await db.query(`UPDATE garages SET whatsapp_status = 'connected', whatsapp_provider = 'whatsapp-web', updated_at = NOW() WHERE id = $1`, [garageId]);
+            req.app.get('io')?.to(`garage_${garageId}`).emit('saas_status_changed', { garageId, status: 'connected', isAgentConnected: false });
+          } catch (e) {}
         },
-        () => {
+        async () => {
           console.log(`⚠️ Direct WhatsApp Client disconnected for Garage ${garageId}`);
+          try {
+            await db.query(`UPDATE garages SET whatsapp_status = 'disconnected', whatsapp_phone_number = NULL, updated_at = NOW() WHERE id = $1`, [garageId]);
+            req.app.get('io')?.to(`garage_${garageId}`).emit('saas_status_changed', { garageId, status: 'disconnected', isAgentConnected: false });
+          } catch (e) {}
         }
       );
     }
@@ -741,11 +749,15 @@ exports.disconnectWhatsApp = async (req, res) => {
     
     await whatsappManager.logoutClient(garageId);
 
+    // Clear single-use QR cache
+    req.app.set(`qr_code_${garageId}`, null);
+
     // Send remote agent_disconnect command down socket tunnel if Local PC Agent is connected
-    const bridgeSockets = req.app.get('bridgeSockets');
-    if (bridgeSockets && bridgeSockets[garageId]) {
+    const bridgeSockets = global.bridgeSockets || (req && req.app ? req.app.get('bridgeSockets') : null);
+    const agentSocket = bridgeSockets ? (bridgeSockets[String(garageId)] || bridgeSockets[Number(garageId)]) : null;
+    if (agentSocket) {
       console.log(`📲 [Remote Control] Emitting agent_disconnect to Local Agent for Garage ${garageId}...`);
-      bridgeSockets[garageId].emit('agent_disconnect', { garageId });
+      agentSocket.emit('agent_disconnect', { garageId });
     }
 
     // Force clean local session folder on disk
@@ -773,6 +785,12 @@ exports.disconnectWhatsApp = async (req, res) => {
        WHERE id = $1`,
       [garageId]
     );
+
+    // Emit real-time status change to Web UI room
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`garage_${garageId}`).emit('saas_status_changed', { garageId, status: 'disconnected', isAgentConnected: !!agentSocket });
+    }
 
     res.json({ success: true, message: 'WhatsApp disconnected successfully.' });
   } catch (error) {
