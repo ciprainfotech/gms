@@ -44,6 +44,7 @@ const JobSheetDetailPage = () => {
     // --- UX REFS FOR KEYBOARD NAVIGATION ---
     const selectRef = useRef(null);
     const qtyRef = useRef(null);
+    const rateRef = useRef(null);
 
     // --- STATE MANAGEMENT ---
     const [jobSheetDetails, setJobSheetDetails] = useState(null);
@@ -51,6 +52,8 @@ const JobSheetDetailPage = () => {
     const [vehicleDetails, setVehicleDetails] = useState(null);
     const [addedItems, setAddedItems] = useState([]);
     const [masterItems, setMasterItems] = useState([]); 
+    const [enforceStockValidation, setEnforceStockValidation] = useState(true);
+    const [garageProfile, setGarageProfile] = useState(null);
 
     const [kmReading, setKmReading] = useState('');
     const [notes, setNotes] = useState('');
@@ -66,6 +69,7 @@ const JobSheetDetailPage = () => {
     // Forms
     const [selectedMasterItem, setSelectedMasterItem] = useState(null);
     const [quantity, setQuantity] = useState(1);
+    const [unitPrice, setUnitPrice] = useState('');
     const [editingItemId, setEditingItemId] = useState(null);
     const [editingQuantity, setEditingQuantity] = useState('');
 
@@ -97,9 +101,10 @@ const JobSheetDetailPage = () => {
             setLoading(true);
             setError(null);
             try {
-                const [detailsResponse, masterItemsResponse] = await Promise.all([
+                const [detailsResponse, masterItemsResponse, profileResponse] = await Promise.all([
                     api.get(`/jobsheets/${jobSheetId}/details`),
-                    api.get('/master-items')
+                    api.get('/master-items'),
+                    api.get('/profile')
                 ]);
 
                 if (!detailsResponse.ok) {
@@ -117,10 +122,21 @@ const JobSheetDetailPage = () => {
                 setJobSheetDetails(detailsData.jobSheetDetails);
                 setCustomerDetails(detailsData.customerDetails);
                 setVehicleDetails(detailsData.vehicleDetails);
-                setAddedItems((detailsData.addedItems || []).map(item => ({ ...item, ...calculateLineTotals(item, item.quantity) })));
+                setAddedItems((detailsData.addedItems || []).map(item => {
+                    const price = item.unitPrice ?? item.unit_price;
+                    return { ...item, ...calculateLineTotals(item, item.quantity, price) };
+                }));
                 setKmReading(detailsData.jobSheetDetails.kmReading || '');
                 setNotes(detailsData.jobSheetDetails.notes || '');
                 setMasterItems(masterItemsData);
+
+                if (profileResponse.ok) {
+                    const pData = await profileResponse.json();
+                    if (pData.garage) {
+                        setGarageProfile(pData.garage);
+                        setEnforceStockValidation(pData.garage.enforce_stock_validation !== false);
+                    }
+                }
 
             } catch (err) {
                 setError(err.message);
@@ -147,18 +163,21 @@ const JobSheetDetailPage = () => {
 
 
     // --- CALCULATIONS ---
-    const calculateLineTotals = (masterItemData, qty) => {
+    const calculateLineTotals = (masterItemData, qty, customRate) => {
         if (!masterItemData) return { lineParts: 0, lineLubes: 0, lineLabour: 0, lineTotal: 0 };
-        const price = parseFloat(masterItemData.unitPrice ?? masterItemData.unit_price ?? 0);
+        
+        const price = customRate !== undefined && !isNaN(parseFloat(customRate))
+            ? parseFloat(customRate)
+            : parseFloat(masterItemData.unitPrice ?? masterItemData.unit_price ?? 0);
+            
         const lube = parseFloat(masterItemData.lubeCharge ?? masterItemData.lube_charge ?? 0);
         const labour = parseFloat(masterItemData.labourCharge ?? masterItemData.labour_charge ?? 0);
         
-        // Changed to parseFloat to support decimal quantities
         const q = parseFloat(qty) || 0; 
         
         const lineParts = q * price;
-        const lineLubes = q > 0 ? lube : 0;
-        const lineLabour = q > 0 ? labour : 0;
+        const lineLubes = q > 0 ? (lube * q) : 0;
+        const lineLabour = q > 0 ? (labour * q) : 0;
         const lineTotal = lineParts + lineLubes + lineLabour;
         
         return { lineParts, lineLubes, lineLabour, lineTotal };
@@ -228,17 +247,22 @@ const JobSheetDetailPage = () => {
 
     // --- LOCAL ITEM MANIPULATION HANDLERS ---
     
-    // Auto-focus quantity field when an item is selected
+    // Auto-focus quantity field when an item is selected and pre-fill unit price
     const handleSelectChange = (selectedOption) => {
         setSelectedMasterItem(selectedOption);
         setSelectInputValue(''); // Clear typed search string so React-Select renders selected label cleanly
         if (selectedOption) {
+            const masterItemData = masterItems.find(item => item.id === selectedOption.value) || selectedOption;
+            const price = masterItemData.unit_price ?? masterItemData.unitPrice ?? 0;
+            setUnitPrice(price.toString());
             setTimeout(() => {
                 if (qtyRef.current) {
                     qtyRef.current.focus();
                     qtyRef.current.select(); // Highlights '1' so user can just type to overwrite
                 }
             }, 0);
+        } else {
+            setUnitPrice('');
         }
     };
 
@@ -256,8 +280,21 @@ const JobSheetDetailPage = () => {
         setShowNewItemModal(true);
     };
 
-    // Auto-trigger add when Enter is pressed in Quantity field
+    // Auto-trigger focus to Rate field when Enter is pressed in Quantity field
     const handleQuantityKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (rateRef.current) {
+                rateRef.current.focus();
+                rateRef.current.select();
+            } else {
+                handleAddItem();
+            }
+        }
+    };
+
+    // Auto-trigger add when Enter is pressed in Rate field
+    const handleRateKeyDown = (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             handleAddItem();
@@ -265,11 +302,15 @@ const JobSheetDetailPage = () => {
     };
 
     // Execute actual item insertion or reduction in addedItems array
-    const executeAddItem = (masterItemData, parsedQty) => {
+    const executeAddItem = (masterItemData, parsedQty, customRate) => {
         const currentItems = Array.isArray(addedItems) ? addedItems : [];
         const targetId = masterItemData.value || masterItemData.id;
         const existingItemIndex = currentItems.findIndex(item => item.masterItemId === targetId || item.master_item_id === targetId);
         let updatedItems;
+
+        const effectivePrice = customRate !== undefined && !isNaN(customRate)
+            ? customRate
+            : parseFloat(unitPrice !== '' ? unitPrice : (masterItemData.unitPrice ?? masterItemData.unit_price ?? 0));
 
         if (existingItemIndex > -1) { 
             const newQuantity = currentItems[existingItemIndex].quantity + parsedQty;
@@ -280,7 +321,14 @@ const JobSheetDetailPage = () => {
             } else {
                 updatedItems = currentItems.map((item, index) => {
                     if (index === existingItemIndex) {
-                        return { ...item, quantity: newQuantity, ...calculateLineTotals(masterItemData, newQuantity) };
+                        const lineTotals = calculateLineTotals(masterItemData, newQuantity, effectivePrice);
+                        return { 
+                            ...item, 
+                            quantity: newQuantity, 
+                            unitPrice: effectivePrice, 
+                            unit_price: effectivePrice,
+                            ...lineTotals
+                        };
                     }
                     return item;
                 });
@@ -293,22 +341,23 @@ const JobSheetDetailPage = () => {
                 if (toast?.error) toast.error(`Item "${masterItemData.name}" is not in job sheet yet to reduce quantity.`);
                 return;
             }
-            const unitPrice = parseFloat(masterItemData.unitPrice ?? masterItemData.unit_price ?? 0);
             const lubeCharge = parseFloat(masterItemData.lubeCharge ?? masterItemData.lube_charge ?? 0);
             const labourCharge = parseFloat(masterItemData.labourCharge ?? masterItemData.labour_charge ?? 0);
+            const lineTotals = calculateLineTotals(masterItemData, parsedQty, effectivePrice);
+
             const newItem = {
                 masterItemId: targetId,
                 master_item_id: targetId,
                 name: masterItemData.name,
                 partNo: masterItemData.partNo || masterItemData.part_no || '',
                 quantity: parsedQty,
-                unitPrice,
-                unit_price: unitPrice,
+                unitPrice: effectivePrice,
+                unit_price: effectivePrice,
                 lubeCharge,
                 lube_charge: lubeCharge,
                 labourCharge,
                 labour_charge: labourCharge,
-                ...calculateLineTotals(masterItemData, parsedQty)
+                ...lineTotals
             };
             updatedItems = [...currentItems, newItem];
         }
@@ -317,6 +366,7 @@ const JobSheetDetailPage = () => {
         setSelectedMasterItem(null);
         setSelectInputValue('');
         setQuantity(1);
+        setUnitPrice('');
 
         // Return focus to the search dropdown for the next item
         setTimeout(() => {
@@ -333,8 +383,8 @@ const JobSheetDetailPage = () => {
         const masterItemData = masterItems.find(item => item.id === selectedMasterItem.value) || selectedMasterItem;
         if (!masterItemData) return;
 
-        // Check stock requirement for Spare parts when adding POSITIVE quantity
-        if (masterItemData.type === 'Spare' && parsedQty > 0) {
+        // Check stock requirement for Spare parts when adding POSITIVE quantity ONLY IF Stock Validation is ENFORCED
+        if (enforceStockValidation && masterItemData.type === 'Spare' && parsedQty > 0) {
             const availableStock = selectedItemStockInfo.availableStock;
             if (parsedQty > availableStock) {
                 const deficit = parsedQty - availableStock;
@@ -345,6 +395,26 @@ const JobSheetDetailPage = () => {
         }
 
         executeAddItem(masterItemData, parsedQty);
+    };
+
+    const handleBypassStockValidationFromModal = async () => {
+        setShowRestockModal(false);
+        setEnforceStockValidation(false);
+        if (selectedMasterItem) {
+            const masterItemData = masterItems.find(item => item.id === selectedMasterItem.value) || selectedMasterItem;
+            executeAddItem(masterItemData, parseFloat(quantity));
+        }
+
+        if (garageProfile) {
+            try {
+                const updatedProfile = { ...garageProfile, enforce_stock_validation: false };
+                await api.put('/profile/garage', updatedProfile);
+                setGarageProfile(updatedProfile);
+                if (toast?.info) toast.info("Stock Validation Bypassed. Item added to job sheet.");
+            } catch (err) {
+                console.error("Error bypassing stock validation:", err);
+            }
+        }
     };
 
     // --- IN-PLACE STOCK CREATION & QUICK RESTOCK HANDLERS ---
@@ -768,93 +838,111 @@ const JobSheetDetailPage = () => {
                             </Card.Header>
                             <Card.Body className="pt-3 pb-4 bg-light-subtle">
                                 <Row className="g-2 align-items-end">
-                                    <Col lg={6} md={12} sm={12} className="mb-2 mb-lg-0">
-                                        <Form.Label htmlFor="itemSelect" className="visually-hidden">Select Item</Form.Label>
-                                        <Select 
-                                            ref={selectRef}
-                                            id="itemSelect" 
-                                            options={selectOptions} 
-                                            value={currentSelectValue} 
-                                            onChange={handleSelectChange} 
-                                            inputValue={selectInputValue}
-                                            onInputChange={(val, action) => {
-                                                if (action.action === 'input-change') {
-                                                    setSelectInputValue(val);
-                                                } else if (action.action === 'set-value' || action.action === 'menu-close') {
-                                                    setSelectInputValue('');
-                                                }
-                                            }}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter' && selectInputValue.trim() && !selectedMasterItem) {
-                                                    const query = selectInputValue.trim().toLowerCase();
-                                                    const hasMatchingOption = selectOptions.some(opt => {
-                                                        const labelStr = (opt.label || '').toLowerCase();
-                                                        const nameStr = (opt.name || '').toLowerCase();
-                                                        const partStr = (opt.partNo || opt.part_no || '').toLowerCase();
-                                                        return labelStr.includes(query) || nameStr.includes(query) || partStr.includes(query);
-                                                    });
-                                                    if (!hasMatchingOption) {
-                                                        e.preventDefault();
-                                                        openNewItemModalWithSearch(selectInputValue.trim());
-                                                    }
-                                                }
-                                            }}
-                                            noOptionsMessage={() => (
-                                                selectInputValue.trim() ? (
-                                                    <div 
-                                                        onClick={() => openNewItemModalWithSearch(selectInputValue.trim())}
-                                                        className="text-primary fw-bold p-2 text-center"
-                                                        style={{ cursor: 'pointer' }}
-                                                    >
-                                                        <FaPlus className="me-1" /> Add "{selectInputValue.trim()}" as new item to inventory
-                                                    </div>
-                                                ) : "Type to search items..."
-                                            )}
-                                            placeholder="Search or select an item (type new name & hit Enter)..." 
-                                            isClearable 
-                                            isDisabled={isSavingDraft || isFinalizing} 
-                                            classNamePrefix="react-select" 
-                                        />
-                                    </Col>
-                                    <Col lg={2} md={4} sm={5}>
-                                        <Form.Label htmlFor="quantityInput" className="visually-hidden">Quantity</Form.Label>
-                                        <Form.Control 
-                                            ref={qtyRef}
-                                            id="quantityInput" 
-                                            type="number" 
-                                            step="any"
-                                            value={quantity} 
-                                            onChange={(e) => setQuantity(e.target.value)} 
-                                            onKeyDown={handleQuantityKeyDown}
-                                            disabled={!selectedMasterItem || isSavingDraft || isFinalizing} 
-                                            placeholder="Qty" 
-                                        />
-                                    </Col>
-                                    <Col lg={4} md={8} sm={7}>
-                                        <Button 
-                                            variant="primary" 
-                                            className="w-100" 
-                                            onClick={handleAddItem} 
-                                            disabled={!selectedMasterItem || !quantity || parseFloat(quantity) === 0 || isSavingDraft || isFinalizing}
-                                        >
-                                            <FaPlus className="me-1" /> Add / Adjust Job Sheet
-                                        </Button>
-                                    </Col>
-                                </Row>
+                                     <Col lg={4} md={6} sm={12} className="mb-2 mb-lg-0">
+                                         <Form.Label htmlFor="itemSelect" className="visually-hidden">Select Item</Form.Label>
+                                         <Select 
+                                             ref={selectRef}
+                                             id="itemSelect" 
+                                             options={selectOptions} 
+                                             value={currentSelectValue} 
+                                             onChange={handleSelectChange} 
+                                             inputValue={selectInputValue}
+                                             onInputChange={(val, action) => {
+                                                 if (action.action === 'input-change') {
+                                                     setSelectInputValue(val);
+                                                 } else if (action.action === 'set-value' || action.action === 'menu-close') {
+                                                     setSelectInputValue('');
+                                                 }
+                                             }}
+                                             onKeyDown={(e) => {
+                                                 if (e.key === 'Enter' && selectInputValue.trim() && !selectedMasterItem) {
+                                                     const query = selectInputValue.trim().toLowerCase();
+                                                     const hasMatchingOption = selectOptions.some(opt => {
+                                                         const labelStr = (opt.label || '').toLowerCase();
+                                                         const nameStr = (opt.name || '').toLowerCase();
+                                                         const partStr = (opt.partNo || opt.part_no || '').toLowerCase();
+                                                         return labelStr.includes(query) || nameStr.includes(query) || partStr.includes(query);
+                                                     });
+                                                     if (!hasMatchingOption) {
+                                                         e.preventDefault();
+                                                         openNewItemModalWithSearch(selectInputValue.trim());
+                                                     }
+                                                 }
+                                             }}
+                                             noOptionsMessage={() => (
+                                                 selectInputValue.trim() ? (
+                                                     <div 
+                                                         onClick={() => openNewItemModalWithSearch(selectInputValue.trim())}
+                                                         className="text-primary fw-bold p-2 text-center"
+                                                         style={{ cursor: 'pointer' }}
+                                                     >
+                                                         <FaPlus className="me-1" /> Add "{selectInputValue.trim()}" as new item to inventory
+                                                     </div>
+                                                 ) : "Type to search items..."
+                                             )}
+                                             placeholder="Search or select an item (type new name & hit Enter)..." 
+                                             isClearable 
+                                             isDisabled={isSavingDraft || isFinalizing} 
+                                             classNamePrefix="react-select" 
+                                         />
+                                     </Col>
+                                     <Col lg={2} md={3} sm={4}>
+                                         <Form.Label htmlFor="quantityInput" className="visually-hidden">Quantity</Form.Label>
+                                         <Form.Control 
+                                             ref={qtyRef}
+                                             id="quantityInput" 
+                                             type="number" 
+                                             step="any"
+                                             value={quantity} 
+                                             onChange={(e) => setQuantity(e.target.value)} 
+                                             onKeyDown={handleQuantityKeyDown}
+                                             disabled={!selectedMasterItem || isSavingDraft || isFinalizing} 
+                                             placeholder="Qty" 
+                                         />
+                                     </Col>
+                                     <Col lg={3} md={3} sm={4}>
+                                         <Form.Label htmlFor="rateInput" className="visually-hidden">Rate (₹)</Form.Label>
+                                         <Form.Control 
+                                             ref={rateRef}
+                                             id="rateInput" 
+                                             type="number" 
+                                             step="any"
+                                             value={unitPrice} 
+                                             onChange={(e) => setUnitPrice(e.target.value)} 
+                                             onKeyDown={handleRateKeyDown}
+                                             disabled={!selectedMasterItem || isSavingDraft || isFinalizing} 
+                                             placeholder="Rate (₹)" 
+                                         />
+                                     </Col>
+                                     <Col lg={3} md={12} sm={4}>
+                                         <Button 
+                                             variant="primary" 
+                                             className="w-100" 
+                                             onClick={handleAddItem} 
+                                             disabled={!selectedMasterItem || !quantity || parseFloat(quantity) === 0 || isSavingDraft || isFinalizing}
+                                         >
+                                             <FaPlus className="me-1" /> Add / Adjust Item
+                                         </Button>
+                                     </Col>
+                                 </Row>
 
-                                {selectedMasterItem && selectedMasterItem.type === 'Spare' && (
-                                    <div className="mt-2 pt-2 border-top d-flex align-items-center gap-2">
-                                        {selectedItemStockInfo.availableStock > 0 ? (
-                                            <Badge bg="success" className="px-2 py-1">
-                                                Available Stock: {selectedItemStockInfo.availableStock} units remaining {selectedItemStockInfo.draftedQty > 0 ? `(${selectedItemStockInfo.draftedQty} already drafted)` : ''}
-                                            </Badge>
-                                        ) : (
-                                            <Badge bg="danger" className="px-2 py-1">
-                                                OUT OF STOCK ({selectedItemStockInfo.availableStock} units remaining) {selectedItemStockInfo.draftedQty > 0 ? `(${selectedItemStockInfo.draftedQty} already drafted)` : ''} — Entering qty auto-prompts restock
-                                            </Badge>
-                                        )}
-                                    </div>
-                                )}
+                                 {selectedMasterItem && selectedMasterItem.type === 'Spare' && (
+                                     <div className="mt-2 pt-2 border-top d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                         {selectedItemStockInfo.availableStock > 0 ? (
+                                             <Badge bg="success" className="px-2 py-1">
+                                                 Available Stock: {selectedItemStockInfo.availableStock} units remaining {selectedItemStockInfo.draftedQty > 0 ? `(${selectedItemStockInfo.draftedQty} already drafted)` : ''}
+                                             </Badge>
+                                         ) : (
+                                             <Badge bg={enforceStockValidation ? 'danger' : 'warning'} className="px-2 py-1">
+                                                 {enforceStockValidation ? (
+                                                     <>OUT OF STOCK ({selectedItemStockInfo.availableStock} remaining) — Insufficient stock prompts quick restock</>
+                                                 ) : (
+                                                     <>OUT OF STOCK ({selectedItemStockInfo.availableStock} remaining) — Validation Bypassed (Negative stock allowed)</>
+                                                 )}
+                                             </Badge>
+                                         )}
+                                     </div>
+                                 )}
                             </Card.Body>
                         </div>
                     )}
@@ -1161,11 +1249,21 @@ const JobSheetDetailPage = () => {
                             />
                         </Form.Group>
                     </Modal.Body>
-                    <Modal.Footer className="bg-light">
-                        <Button variant="secondary" size="sm" onClick={() => setShowRestockModal(false)}>Cancel</Button>
-                        <Button variant="success" size="sm" type="submit" disabled={restocking} className="fw-bold">
-                            {restocking ? <Spinner size="sm" animation="border" /> : <><FaCheck className="me-1" /> Restock & Add to Job Sheet</>}
+                    <Modal.Footer className="bg-light d-flex justify-content-between">
+                        <Button 
+                            variant="outline-warning" 
+                            size="sm" 
+                            className="fw-bold text-dark me-auto" 
+                            onClick={handleBypassStockValidationFromModal}
+                        >
+                            ⚡ Disable Validation & Add Item
                         </Button>
+                        <div>
+                            <Button variant="secondary" size="sm" onClick={() => setShowRestockModal(false)} className="me-2">Cancel</Button>
+                            <Button variant="success" size="sm" type="submit" disabled={restocking} className="fw-bold">
+                                {restocking ? <Spinner size="sm" animation="border" /> : <><FaCheck className="me-1" /> Restock & Add</>}
+                            </Button>
+                        </div>
                     </Modal.Footer>
                 </Form>
             </Modal>

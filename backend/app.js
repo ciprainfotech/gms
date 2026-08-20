@@ -328,10 +328,11 @@ server.listen(PORT, '0.0.0.0', async () => {
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_whatsapp_utility BOOLEAN DEFAULT TRUE;
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_whatsapp_marketing BOOLEAN DEFAULT TRUE;
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_whatsapp_costing BOOLEAN DEFAULT TRUE;
-      ALTER TABLE garages ADD COLUMN IF NOT EXISTS feature_payroll BOOLEAN DEFAULT TRUE;
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS enforce_stock_validation BOOLEAN DEFAULT TRUE;
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100);
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_account_no VARCHAR(50);
       ALTER TABLE garages ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(20);
+      ALTER TABLE garages ADD COLUMN IF NOT EXISTS tagline VARCHAR(255);
 
       -- Vehicles table schema integrity
       ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS color VARCHAR(50);

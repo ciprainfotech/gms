@@ -22,7 +22,7 @@ exports.getProfile = async (req, res) => {
     let garageData = null;
     if (garageId) {
       const garageRes = await db.query(
-        `SELECT g.id, g.name, g.phone, g.email, g.address, g.logo_url, g.gst_number, 
+        `SELECT g.id, g.name, g.phone, g.email, g.address, g.logo_url, g.gst_number, g.tagline,
                 g.bank_name, g.bank_account_no, g.bank_ifsc,
                 g.terms_and_conditions, g.invoice_prefix, g.invoice_next_num, 
                 g.jobsheet_prefix, g.jobsheet_next_num, g.plan_id, g.subscription_status, g.is_active,
@@ -32,7 +32,7 @@ exports.getProfile = async (req, res) => {
                 g.feature_stock, g.feature_purchase, g.feature_analytics,
                 g.feature_reminders, g.feature_tasks, g.feature_whatsapp,
                 g.feature_whatsapp_utility, g.feature_whatsapp_marketing, g.feature_payroll,
-                g.feature_whatsapp_costing, g.whatsapp_agent_download_enabled,
+                g.feature_whatsapp_costing, g.whatsapp_agent_download_enabled, g.enforce_stock_validation,
                 p.name as plan_name
          FROM garages g
          LEFT JOIN plans p ON g.plan_id = p.id
@@ -125,6 +125,7 @@ exports.updateGarageDetails = async (req, res) => {
       email,
       address,
       gst_number,
+      tagline,
       bank_name,
       bank_account_no,
       bank_ifsc,
@@ -136,7 +137,8 @@ exports.updateGarageDetails = async (req, res) => {
       whatsapp_provider,
       whatsapp_api_url,
       whatsapp_api_token,
-      whatsapp_phone_number_id
+      whatsapp_phone_number_id,
+      enforce_stock_validation
     } = req.body;
 
     if (!name || name.trim() === '') {
@@ -150,29 +152,32 @@ exports.updateGarageDetails = async (req, res) => {
         email = $3, 
         address = $4, 
         gst_number = $5, 
-        bank_name = $6,
-        bank_account_no = $7,
-        bank_ifsc = $8,
-        terms_and_conditions = $9, 
-        invoice_prefix = $10, 
-        invoice_next_num = $11, 
-        jobsheet_prefix = $12, 
-        jobsheet_next_num = $13, 
-        whatsapp_provider = $14,
-        whatsapp_api_url = $15,
-        whatsapp_api_token = $16,
-        whatsapp_phone_number_id = $17,
+        tagline = $6,
+        bank_name = $7,
+        bank_account_no = $8,
+        bank_ifsc = $9,
+        terms_and_conditions = $10, 
+        invoice_prefix = $11, 
+        invoice_next_num = $12, 
+        jobsheet_prefix = $13, 
+        jobsheet_next_num = $14, 
+        whatsapp_provider = $15,
+        whatsapp_api_url = $16,
+        whatsapp_api_token = $17,
+        whatsapp_phone_number_id = $18,
+        enforce_stock_validation = $19,
         updated_at = NOW()
-       WHERE id = $18`,
+       WHERE id = $20`,
       [
         name.trim(),
         phone ? phone.trim() : null,
         email ? email.trim() : null,
         address ? address.trim() : null,
         gst_number ? gst_number.trim() : null,
-        bank_name ? bank_name.trim() : 'HDFC Bank (BORSAD)',
-        bank_account_no ? bank_account_no.trim() : '07492000002739',
-        bank_ifsc ? bank_ifsc.trim() : 'HDFC0000749',
+        tagline ? tagline.trim() : null,
+        bank_name && bank_name.trim() ? bank_name.trim() : null,
+        bank_account_no && bank_account_no.trim() ? bank_account_no.trim() : null,
+        bank_ifsc && bank_ifsc.trim() ? bank_ifsc.trim() : null,
         terms_and_conditions ? terms_and_conditions.trim() : null,
         invoice_prefix ? invoice_prefix.trim() : 'INV-',
         invoice_next_num ? parseInt(invoice_next_num, 10) : 1,
@@ -182,6 +187,7 @@ exports.updateGarageDetails = async (req, res) => {
         whatsapp_api_url ? whatsapp_api_url.trim() : null,
         whatsapp_api_token ? whatsapp_api_token.trim() : null,
         whatsapp_phone_number_id ? whatsapp_phone_number_id.trim() : null,
+        enforce_stock_validation !== false,
         garageId
       ]
     );

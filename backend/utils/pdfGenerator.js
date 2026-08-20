@@ -344,7 +344,7 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
                     <td style="width: 65%;">
                         ${logoHtml}
                         <div class="company-name">${garage?.name || 'SAMAN MOTORS'}</div>
-                        <div class="company-sub">ALL CARS SPARES SALES & SERVICE STATION</div>
+                        ${garage?.tagline && garage.tagline.trim() ? `<div class="company-sub">${garage.tagline.trim()}</div>` : ''}
                         <div class="company-info">${garage?.address || 'Service Station Address'}</div>
                         <div class="company-info">
                             <strong>GSTIN:</strong> ${garage?.gst_number || invoice.gstinNo || '24BBDPK3507P1ZK'} &nbsp;|&nbsp; 
@@ -435,18 +435,20 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
                     <!-- Left Card: Amount in Words & Bank Details -->
                     <td style="width: 52%; vertical-align: top; padding-right: 6px; border: none;">
                         <div style="border: 1px solid #cbd5e1; border-radius: 4px; background-color: #f8fafc; padding: 8px 10px; height: 100%;">
-                            <div style="margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;">
+                            <div style="margin-bottom: 8px; ${(garage?.bank_name || garage?.bank_account_no || garage?.bank_ifsc || invoice.bankBranch || invoice.bankAccountNo || invoice.bankIfsc) ? 'padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;' : ''}">
                                 <strong style="font-size: 8.5px; text-transform: uppercase; color: #64748b; display: block;">Amount in Words:</strong>
                                 <span class="fw-bold" style="font-size: 10px; color: #0f172a; display: block; margin-top: 2px;">${amountInWords}</span>
                             </div>
+                            ${((garage?.bank_name || invoice.bankBranch || '').trim() || (garage?.bank_account_no || invoice.bankAccountNo || '').trim() || (garage?.bank_ifsc || invoice.bankIfsc || '').trim()) ? `
                             <div>
                                 <strong style="font-size: 8.5px; text-transform: uppercase; color: #64748b; display: block; margin-bottom: 3px;">Bank Payment Details:</strong>
                                 <div style="font-size: 9px; line-height: 1.4; color: #334155;">
-                                    <div><strong>Bank:</strong> ${garage?.bank_name || invoice.bankBranch || 'HDFC Bank (BORSAD)'}</div>
-                                    <div><strong>A/c No:</strong> ${garage?.bank_account_no || invoice.bankAccountNo || '07492000002739'}</div>
-                                    <div><strong>IFSC:</strong> ${garage?.bank_ifsc || invoice.bankIfsc || 'HDFC0000749'}</div>
+                                    ${(garage?.bank_name || invoice.bankBranch || '').trim() ? `<div><strong>Bank:</strong> ${(garage?.bank_name || invoice.bankBranch).trim()}</div>` : ''}
+                                    ${(garage?.bank_account_no || invoice.bankAccountNo || '').trim() ? `<div><strong>A/c No:</strong> ${(garage?.bank_account_no || invoice.bankAccountNo).trim()}</div>` : ''}
+                                    ${(garage?.bank_ifsc || invoice.bankIfsc || '').trim() ? `<div><strong>IFSC:</strong> ${(garage?.bank_ifsc || invoice.bankIfsc).trim()}</div>` : ''}
                                 </div>
                             </div>
+                            ` : ''}
                         </div>
                     </td>
 

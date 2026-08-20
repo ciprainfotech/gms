@@ -355,18 +355,28 @@ const CustomerStatementModal = ({ show, onHide, customer, garage, onSendWhatsApp
                 <span className="fw-semibold text-dark">{(customer.phone || customer.invoices?.[0]?.customerPhone || customer.invoices?.[0]?.customer_phone) || 'N/A'} {customer.email ? `| ${customer.email}` : ''}</span>
               </Col>
             </Row>
-            <hr className="my-1 text-muted" style={{ opacity: 0.3 }} />
-            <Row className="g-1">
-              <Col xs={4}>
-                <span className="text-muted" style={{ fontSize: '7.5pt' }}>Bank Name:</span> <strong className="text-dark">{garage?.bank_name || 'HDFC Bank (BORSAD)'}</strong>
-              </Col>
-              <Col xs={4}>
-                <span className="text-muted" style={{ fontSize: '7.5pt' }}>Account No:</span> <strong className="text-dark">{garage?.bank_account_no || '07492000002739'}</strong>
-              </Col>
-              <Col xs={4} className="text-end">
-                <span className="text-muted" style={{ fontSize: '7.5pt' }}>IFSC Code:</span> <strong className="text-dark">{garage?.bank_ifsc || 'HDFC0000749'}</strong>
-              </Col>
-            </Row>
+            {Boolean((garage?.bank_name || '').trim() || (garage?.bank_account_no || '').trim() || (garage?.bank_ifsc || '').trim()) && (
+              <>
+                <hr className="my-1 text-muted" style={{ opacity: 0.3 }} />
+                <Row className="g-1">
+                  {(garage?.bank_name || '').trim() && (
+                    <Col xs={4}>
+                      <span className="text-muted" style={{ fontSize: '7.5pt' }}>Bank Name:</span> <strong className="text-dark">{garage.bank_name.trim()}</strong>
+                    </Col>
+                  )}
+                  {(garage?.bank_account_no || '').trim() && (
+                    <Col xs={4}>
+                      <span className="text-muted" style={{ fontSize: '7.5pt' }}>Account No:</span> <strong className="text-dark">{garage.bank_account_no.trim()}</strong>
+                    </Col>
+                  )}
+                  {(garage?.bank_ifsc || '').trim() && (
+                    <Col xs={4} className="text-end">
+                      <span className="text-muted" style={{ fontSize: '7.5pt' }}>IFSC Code:</span> <strong className="text-dark">{garage.bank_ifsc.trim()}</strong>
+                    </Col>
+                  )}
+                </Row>
+              </>
+            )}
           </div>
 
           {/* TRANSACTION TABLE (75-80% of Page - Fits 25-35 rows per A4 page) */}

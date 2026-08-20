@@ -38,6 +38,7 @@ const ProfileSettingsPage = () => {
     email: '',
     address: '',
     gst_number: '',
+    tagline: '',
     bank_name: '',
     bank_account_no: '',
     bank_ifsc: '',
@@ -105,6 +106,7 @@ const ProfileSettingsPage = () => {
             email: data.garage.email || '',
             address: data.garage.address || '',
             gst_number: data.garage.gst_number || '',
+            tagline: data.garage.tagline || '',
             bank_name: data.garage.bank_name || '',
             bank_account_no: data.garage.bank_account_no || '',
             bank_ifsc: data.garage.bank_ifsc || '',
@@ -691,6 +693,17 @@ const ProfileSettingsPage = () => {
                           type="text" 
                           value={garageForm.gst_number}
                           onChange={(e) => setGarageForm({ ...garageForm, gst_number: e.target.value })}
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={12}>
+                      <Form.Group>
+                        <Form.Label className="fw-bold small text-muted">Workshop Tagline / Subtitle (Printed on Invoices & Bills)</Form.Label>
+                        <Form.Control 
+                          type="text" 
+                          placeholder="e.g. ALL CARS SPARES SALES & SERVICE STATION or Multibrand Auto Workshop"
+                          value={garageForm.tagline}
+                          onChange={(e) => setGarageForm({ ...garageForm, tagline: e.target.value })}
                         />
                       </Form.Group>
                     </Col>

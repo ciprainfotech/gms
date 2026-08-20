@@ -438,7 +438,7 @@ export let initialInvoices = [
             { id: 'pay-1', datePaid: getDateDaysAgo(18), amountPaid: 3127.00, paymentMethod: 'UPI', notes: 'Full payment via GPay.' }
         ],
         status: 'Paid',
-        bankBranch: 'BORSAD', bankAccountNo: '07492000002739', bankIfsc: 'HDFC0000749',
+        bankBranch: '', bankAccountNo: '', bankIfsc: '',
     },
     // Invoice based on JS102
     {
@@ -457,7 +457,7 @@ export let initialInvoices = [
         ], { type: 'Fixed', value: 50 }, 18),
         paymentRecords: [],
         status: 'Overdue',
-        bankBranch: 'BORSAD', bankAccountNo: '07492000002739', bankIfsc: 'HDFC0000749',
+        bankBranch: '', bankAccountNo: '', bankIfsc: '',
     },
     // Invoice based on JS103
     {
@@ -474,7 +474,7 @@ export let initialInvoices = [
             { id: 'pay-2', datePaid: getDateDaysAgo(4), amountPaid: 300.00, paymentMethod: 'Cash', notes: 'Advance payment.' }
         ],
         status: 'Partially Paid',
-        bankBranch: 'BORSAD', bankAccountNo: '07492000002739', bankIfsc: 'HDFC0000749',
+        bankBranch: '', bankAccountNo: '', bankIfsc: '',
     }
 ];
 

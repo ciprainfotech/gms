@@ -313,7 +313,9 @@ const InvoiceViewPage = () => {
                                 <td style={{ width: '65%', verticalAlign: 'top' }}>
                                     <img src={logoSrc} alt="Garage Logo" className="company-logo-view mb-1" style={{ maxHeight: '55px', maxWidth: '200px', objectFit: 'contain', display: 'block' }} />
                                     <h5 className="fw-bold mb-0 text-dark" style={{ fontSize: '12pt', letterSpacing: '-0.2px' }}>{garage?.name || 'SAMAN MOTORS'}</h5>
-                                    <p className="mb-0 text-dark small" style={{ fontSize: '8.5pt', fontWeight: 600 }}>ALL CARS SPARES SALES & SERVICE STATION</p>
+                                    {garage?.tagline && garage.tagline.trim() && (
+                                        <p className="mb-0 text-dark small" style={{ fontSize: '8.5pt', fontWeight: 600 }}>{garage.tagline.trim()}</p>
+                                    )}
                                     <p className="mb-0 text-muted small" style={{ fontSize: '8pt', lineHeight: 1.3 }}>{garage?.address || 'Opp. Geeta Hume Pipe, Vasad Road, Vaghwala, Borsad - 388540'}</p>
                                     <p className="mb-0 text-muted small" style={{ fontSize: '8pt' }}>GSTIN: <strong>{garage?.gst_number || invoice.gstinNo || '24BBDPK3507P1ZK'}</strong> | Phone: {garage?.phone || '9428434436'}</p>
                                 </td>
@@ -413,18 +415,26 @@ const InvoiceViewPage = () => {
                                 {/* Left Card: Customer Payment & Bank Details */}
                                 <td style={{ width: '52%', verticalAlign: 'top', paddingRight: '6px' }}>
                                     <div style={{ border: '1px solid #cbd5e1', borderRadius: '4px', backgroundColor: '#f8fafc', padding: '8px 10px', height: '100%' }}>
-                                        <div style={{ marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #e2e8f0' }}>
+                                        <div style={{ marginBottom: '8px', paddingBottom: (garage?.bank_name || garage?.bank_account_no || garage?.bank_ifsc || invoice.bankBranch || invoice.bankAccountNo || invoice.bankIfsc) ? '6px' : '0', borderBottom: (garage?.bank_name || garage?.bank_account_no || garage?.bank_ifsc || invoice.bankBranch || invoice.bankAccountNo || invoice.bankIfsc) ? '1px solid #e2e8f0' : 'none' }}>
                                             <strong className="d-block text-uppercase text-muted" style={{ fontSize: '7.5pt', letterSpacing: '0.5px' }}>Amount in Words:</strong>
                                             <span className="fw-bold text-dark" style={{ fontSize: '9pt', display: 'block', marginTop: '2px' }}>{amountInWords}</span>
                                         </div>
-                                        <div className="bank-details">
-                                            <strong className="d-block text-uppercase text-muted" style={{ fontSize: '7.5pt', letterSpacing: '0.5px', marginBottom: '2px' }}>Bank Payment Details:</strong>
-                                            <div style={{ fontSize: '8.5pt', lineHeight: 1.4, color: '#334155' }}>
-                                                <div><strong>Bank:</strong> {garage?.bank_name || invoice.bankBranch || 'HDFC Bank (BORSAD)'}</div>
-                                                <div><strong>A/c No:</strong> {garage?.bank_account_no || invoice.bankAccountNo || '07492000002739'}</div>
-                                                <div><strong>IFSC:</strong> {garage?.bank_ifsc || invoice.bankIfsc || 'HDFC0000749'}</div>
+                                        {Boolean((garage?.bank_name || invoice.bankBranch || '').trim() || (garage?.bank_account_no || invoice.bankAccountNo || '').trim() || (garage?.bank_ifsc || invoice.bankIfsc || '').trim()) && (
+                                            <div className="bank-details">
+                                                <strong className="d-block text-uppercase text-muted" style={{ fontSize: '7.5pt', letterSpacing: '0.5px', marginBottom: '2px' }}>Bank Payment Details:</strong>
+                                                <div style={{ fontSize: '8.5pt', lineHeight: 1.4, color: '#334155' }}>
+                                                    {(garage?.bank_name || invoice.bankBranch || '').trim() && (
+                                                        <div><strong>Bank:</strong> {(garage?.bank_name || invoice.bankBranch).trim()}</div>
+                                                    )}
+                                                    {(garage?.bank_account_no || invoice.bankAccountNo || '').trim() && (
+                                                        <div><strong>A/c No:</strong> {(garage?.bank_account_no || invoice.bankAccountNo).trim()}</div>
+                                                    )}
+                                                    {(garage?.bank_ifsc || invoice.bankIfsc || '').trim() && (
+                                                        <div><strong>IFSC:</strong> {(garage?.bank_ifsc || invoice.bankIfsc).trim()}</div>
+                                                    )}
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
                                     </div>
                                 </td>
 

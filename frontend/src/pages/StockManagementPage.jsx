@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, Button, InputGroup, Form, Modal, Alert, Badge, Dropdown, Tabs, Tab, Table, Spinner } from 'react-bootstrap';
 import {
-    FaBox, FaPlus, FaEdit, FaTrashAlt, FaClipboardList, FaEllipsisV, FaSearch, FaFilter, FaExclamationTriangle, FaCheckCircle, FaCube, FaTools, FaInfoCircle, FaQuestionCircle, FaTimesCircle
+    FaBox, FaBoxes, FaPlus, FaEdit, FaTrashAlt, FaClipboardList, FaEllipsisV, FaSearch, FaFilter, FaExclamationTriangle, FaCheckCircle, FaCube, FaTools, FaInfoCircle, FaQuestionCircle, FaTimesCircle
 } from 'react-icons/fa';
 
 import api from '../api/api'; 
@@ -51,25 +51,54 @@ const StockManagementPage = () => {
     };
 
     const [isModuleLocked, setIsModuleLocked] = useState(false);
+    const [enforceStockValidation, setEnforceStockValidation] = useState(true);
+    const [garageProfile, setGarageProfile] = useState(null);
 
     // --- Data Fetching ---
     const fetchMasterItems = async () => {
         setIsLoading(true);
         try {
-            const response = await api.get('/master-items');
-            if (response.ok) {
-                const data = await response.json();
+            const [itemsRes, profileRes] = await Promise.all([
+                api.get('/master-items'),
+                api.get('/profile')
+            ]);
+            
+            if (itemsRes.ok) {
+                const data = await itemsRes.json();
                 setMasterItems(data);
                 setIsModuleLocked(false);
-            } else if (response.status === 403) {
+            } else if (itemsRes.status === 403) {
                 setIsModuleLocked(true);
-            } else {
-                console.error("Failed to fetch master items");
+            }
+
+            if (profileRes.ok) {
+                const pData = await profileRes.json();
+                if (pData.garage) {
+                    setGarageProfile(pData.garage);
+                    setEnforceStockValidation(pData.garage.enforce_stock_validation !== false);
+                }
             }
         } catch (error) {
-            console.error("Error loading master items:", error);
+            console.error("Error loading master items / profile:", error);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleToggleStockValidation = async (e) => {
+        const newValue = e.target.checked;
+        setEnforceStockValidation(newValue);
+        if (!garageProfile) return;
+
+        try {
+            const updatedProfile = { ...garageProfile, enforce_stock_validation: newValue };
+            const res = await api.put('/profile/garage', updatedProfile);
+            if (res.ok) {
+                setGarageProfile(updatedProfile);
+                showAlert('success', newValue ? 'Stock Validation Enabled (Insufficient stock will prompt restock).' : 'Stock Validation Bypassed (Negative stock allowed in background).');
+            }
+        } catch (err) {
+            console.error("Failed to update stock validation setting:", err);
         }
     };
 
@@ -295,14 +324,31 @@ const StockManagementPage = () => {
     // --- Main Render ---
     return (
         <Container fluid className="py-4">
-            <div className="page-header-row mb-4 d-flex justify-content-between align-items-center">
+            <div className="page-header-row mb-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h2 className="page-title-active mb-0">
                     <FaBox className="me-2 text-primary"/> Stock Management
                 </h2>
                 {!isModuleLocked ? (
-                    <Button variant="primary" onClick={() => showModal('add')} className="shadow-sm d-flex align-items-center">
-                        <FaPlus className="me-2" /> Add New Item
-                    </Button>
+                    <div className="d-flex align-items-center gap-3">
+                        <Form.Check 
+                            type="switch"
+                            id="stock-validation-header-switch"
+                            label={
+                                <span className="fw-bold small text-dark d-inline-flex align-items-center">
+                                    <FaBoxes className="me-1 text-primary"/> Enforce Stock Validation
+                                    <Badge bg={enforceStockValidation ? 'success' : 'warning'} className="ms-2 px-2 py-1">
+                                        {enforceStockValidation ? 'Active' : 'Bypassed'}
+                                    </Badge>
+                                </span>
+                            }
+                            checked={enforceStockValidation}
+                            onChange={handleToggleStockValidation}
+                            className="mb-0 custom-switch-lg"
+                        />
+                        <Button variant="primary" onClick={() => showModal('add')} className="shadow-sm d-flex align-items-center">
+                            <FaPlus className="me-2" /> Add New Item
+                        </Button>
+                    </div>
                 ) : (
                     <span className="badge bg-warning text-dark px-3 py-2 rounded-pill fw-bold d-inline-flex align-items-center" style={{ fontSize: '13px' }}>
                         🔒 Read-Only Mode (Locked by Admin)
