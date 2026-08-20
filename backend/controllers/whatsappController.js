@@ -650,11 +650,18 @@ exports.getWhatsAppQR = async (req, res) => {
       });
     }
 
+    // Immediate check if QR code is already cached in Express memory
+    const existingQr = req.app.get(`qr_code_${garageId}`);
+    if (existingQr) {
+      req.app.set(`qr_code_${garageId}`, null);
+      return res.json({ success: true, isAgentConnected: true, qrCode: existingQr });
+    }
+
     console.log(`📲 [Remote Control] Triggering QR Generation on Local Agent for Garage ${garageId}...`);
     agentSocket.emit('request_agent_qr', { garageId });
     agentSocket.emit('agent_generate_qr', { garageId });
     
-    // Poll req.app for cached QR code from agent_qr_code event
+    // Poll req.app for cached QR code from agent_qr_code event (fast 500ms interval)
     let attempts = 0;
     const checkInterval = setInterval(() => {
       attempts++;
@@ -664,7 +671,7 @@ exports.getWhatsAppQR = async (req, res) => {
         req.app.set(`qr_code_${garageId}`, null); // Clear single-use cache
         return res.json({ success: true, isAgentConnected: true, qrCode: cachedQr });
       }
-      if (attempts >= 60) {
+      if (attempts >= 25) { // 25 attempts x 500ms = 12.5s fast timeout
         clearInterval(checkInterval);
         return res.json({
           success: false,
@@ -672,7 +679,7 @@ exports.getWhatsAppQR = async (req, res) => {
           message: 'Local agent is connected, but QR code response timed out. Click Generate Connection QR Code button again.'
         });
       }
-    }, 1000);
+    }, 500);
   } catch (err) {
     console.error('Error in getWhatsAppQR:', err);
     res.status(500).json({ success: false, message: 'Failed to generate QR code' });

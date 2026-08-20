@@ -88,11 +88,14 @@ const initWhatsAppClient = () => {
     }
   });
 
-  client.on('qr', async (qr) => {
+  let lastQrCode = null;
+
+client.on('qr', async (qr) => {
     console.log(`📲 [QR Generated] Transmitting QR code to SaaS Web Settings UI...`);
     try {
       const qrcode = require('qrcode');
       const dataUrl = await qrcode.toDataURL(qr);
+      lastQrCode = dataUrl;
       socket.emit('agent_qr_code', { garageId: GARAGE_ID, qrCode: dataUrl });
     } catch (err) {
       console.error(`[QR Error] Failed to encode QR image:`, err.message);
@@ -101,6 +104,7 @@ const initWhatsAppClient = () => {
 
   client.on('ready', async () => {
     isInitializing = false;
+    lastQrCode = null;
     const phone = client.info?.wid?.user || client.info?.me?.user || null;
     console.log(`✅ [WhatsApp Ready] Workshop WhatsApp ACTIVE for ${GARAGE_NAME} (${phone || 'Connected'})!`);
     socket.emit('agent_status_change', {
@@ -111,17 +115,21 @@ const initWhatsAppClient = () => {
   });
 
   client.on('authenticated', () => {
+    isInitializing = false;
+    lastQrCode = null;
     console.log(`🔑 [Authenticated] WhatsApp session validated.`);
   });
 
   client.on('auth_failure', (msg) => {
     isInitializing = false;
+    lastQrCode = null;
     console.error(`❌ [Auth Failure] Session expired:`, msg);
     socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected' });
   });
 
   client.on('disconnected', (reason) => {
     isInitializing = false;
+    lastQrCode = null;
     console.log(`⚠️ [Disconnected] WhatsApp session closed:`, reason);
     socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected' });
     if (client) {
@@ -132,6 +140,7 @@ const initWhatsAppClient = () => {
 
   client.initialize().catch((err) => {
     isInitializing = false;
+    lastQrCode = null;
     console.error(`❌ [Init Error] Chrome failed to launch:`, err.message);
     client = null;
   });
@@ -140,18 +149,28 @@ const initWhatsAppClient = () => {
 };
 
 // Remote QR generation command from SaaS Web UI
-socket.on('agent_generate_qr', () => {
+const handleQrRequest = () => {
   console.log(`📩 [Remote Command] SaaS Web Settings requested QR Code generation...`);
-  if (!client) {
-    initWhatsAppClient();
-  } else if (client.info) {
+  if (client && client.info) {
     socket.emit('agent_status_change', {
       garageId: GARAGE_ID,
       status: 'connected',
       phoneNumber: client.info.wid?.user || client.info.me?.user
     });
+  } else if (lastQrCode) {
+    console.log(`📲 [QR Re-emit] Transmitting cached QR code to SaaS Web UI...`);
+    socket.emit('agent_qr_code', { garageId: GARAGE_ID, qrCode: lastQrCode });
+  } else {
+    if (client) {
+      try { client.destroy().catch(() => {}); } catch (e) {}
+      client = null;
+    }
+    initWhatsAppClient();
   }
-});
+};
+
+socket.on('request_agent_qr', handleQrRequest);
+socket.on('agent_generate_qr', handleQrRequest);
 
 // Remote Disconnect command from SaaS Web UI
 socket.on('agent_disconnect', async () => {
