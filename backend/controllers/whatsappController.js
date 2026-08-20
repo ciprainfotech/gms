@@ -642,26 +642,34 @@ exports.getWhatsAppQR = async (req, res) => {
     const bridgeSockets = global.bridgeSockets || (req && req.app ? req.app.get('bridgeSockets') : null);
     const agentSocket = bridgeSockets ? (bridgeSockets[String(garageId)] || bridgeSockets[Number(garageId)]) : null;
 
-    if (!agentSocket) {
-      return res.status(400).json({
-        success: false,
-        isAgentConnected: false,
-        message: 'Workshop PC Agent is OFFLINE. Please run the 1-Click WhatsApp Agent setup script on your computer first.'
-      });
-    }
-
     // Immediate check if QR code is already cached in Express memory
     const existingQr = req.app.get(`qr_code_${garageId}`);
     if (existingQr) {
       req.app.set(`qr_code_${garageId}`, null);
-      return res.json({ success: true, isAgentConnected: true, qrCode: existingQr });
+      return res.json({ success: true, isAgentConnected: !!agentSocket, qrCode: existingQr });
     }
 
-    console.log(`📲 [Remote Control] Triggering QR Generation on Local Agent for Garage ${garageId}...`);
-    agentSocket.emit('request_agent_qr', { garageId });
-    agentSocket.emit('agent_generate_qr', { garageId });
+    if (agentSocket) {
+      console.log(`📲 [Remote Control] Triggering QR Generation on Local Agent for Garage ${garageId}...`);
+      agentSocket.emit('request_agent_qr', { garageId });
+      agentSocket.emit('agent_generate_qr', { garageId });
+    } else {
+      console.log(`📲 [Direct Server Mode] Initializing direct WhatsApp client for Garage ${garageId}...`);
+      whatsappManager.initializeClient(
+        garageId,
+        (qrCodeUrl) => {
+          req.app.set(`qr_code_${garageId}`, qrCodeUrl);
+        },
+        async () => {
+          console.log(`✅ Direct WhatsApp Client connected for Garage ${garageId}`);
+        },
+        () => {
+          console.log(`⚠️ Direct WhatsApp Client disconnected for Garage ${garageId}`);
+        }
+      );
+    }
     
-    // Poll req.app for cached QR code from agent_qr_code event (fast 500ms interval)
+    // Poll req.app for cached QR code from agent_qr_code or whatsappManager event (500ms interval, 70 attempts = 35s limit)
     let attempts = 0;
     const checkInterval = setInterval(() => {
       attempts++;
@@ -669,14 +677,16 @@ exports.getWhatsAppQR = async (req, res) => {
       if (cachedQr) {
         clearInterval(checkInterval);
         req.app.set(`qr_code_${garageId}`, null); // Clear single-use cache
-        return res.json({ success: true, isAgentConnected: true, qrCode: cachedQr });
+        return res.json({ success: true, isAgentConnected: !!agentSocket, qrCode: cachedQr });
       }
-      if (attempts >= 25) { // 25 attempts x 500ms = 12.5s fast timeout
+      if (attempts >= 70) { // 70 attempts x 500ms = 35s timeout
         clearInterval(checkInterval);
         return res.json({
           success: false,
-          isAgentConnected: true,
-          message: 'Local agent is connected, but QR code response timed out. Click Generate Connection QR Code button again.'
+          isAgentConnected: !!agentSocket,
+          message: agentSocket 
+            ? 'Local agent is connected, but QR code response timed out. Click Generate Connection QR Code button again.'
+            : 'QR code generation timed out. Please click Generate Connection QR Code button again.'
         });
       }
     }, 500);

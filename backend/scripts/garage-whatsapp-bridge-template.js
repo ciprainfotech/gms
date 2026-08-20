@@ -29,6 +29,7 @@ console.log('=================================================================')
 
 let client = null;
 let isInitializing = false;
+let lastQrCode = null;
 
 // 1. Establish real-time WebSocket tunnel to Render Cloud
 const socket = io(SOCKET_URL, {
@@ -98,9 +99,7 @@ const initWhatsAppClient = () => {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   });
 
-  let lastQrCode = null;
-
-client.on('qr', async (qr) => {
+  client.on('qr', async (qr) => {
     console.log(`📲 [QR Generated] Transmitting QR code to SaaS Web Settings UI...`);
     try {
       const qrcode = require('qrcode');

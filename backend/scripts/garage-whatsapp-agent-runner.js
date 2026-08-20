@@ -45,6 +45,7 @@ console.log('=================================================================')
 
 let client = null;
 let isInitializing = false;
+let lastQrCode = null;
 
 // Connect Socket.io tunnel to Render Cloud
 const socket = io(SOCKET_URL, {
@@ -88,9 +89,7 @@ const initWhatsAppClient = () => {
     }
   });
 
-  let lastQrCode = null;
-
-client.on('qr', async (qr) => {
+  client.on('qr', async (qr) => {
     console.log(`📲 [QR Generated] Transmitting QR code to SaaS Web Settings UI...`);
     try {
       const qrcode = require('qrcode');
