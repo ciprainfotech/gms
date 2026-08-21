@@ -16,17 +16,7 @@ import { useGarage } from '../contexts/GarageContext';
 import { useToast } from '../contexts/ToastContext';
 import PageShell from '../components/ui/PageShell';
 import SkeletonLoader from '../components/ui/SkeletonLoader';
-
-const formatDate = (dateString) => {
-  if (!dateString) return 'N/A';
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return dateString;
-  return date.toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric'
-  });
-};
+import { formatDate } from '../utils/dateUtils';
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -48,6 +38,16 @@ const Dashboard = () => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showRegisterConfirmModal, setShowRegisterConfirmModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  // Kanban Card Density Mode: 'compact' | 'expanded'
+  const [cardDensity, setCardDensity] = useState(() => {
+    return localStorage.getItem('kanbanCardDensity') || 'expanded';
+  });
+
+  const toggleCardDensity = (mode) => {
+    setCardDensity(mode);
+    localStorage.setItem('kanbanCardDensity', mode);
+  };
 
   // Form/Data States
   const [checkInCarNumber, setCheckInCarNumber] = useState('');
@@ -292,6 +292,29 @@ const Dashboard = () => {
           <div style={{ minWidth: '220px' }}>
             <MasterDateController />
           </div>
+
+          {/* Density Toggle: Compact vs Expanded */}
+          <div className="bg-light p-1 rounded-pill border border-light d-flex shadow-xs" style={{ height: '36px', alignItems: 'center' }}>
+            <button
+              type="button"
+              className={`btn btn-sm rounded-pill px-2.5 py-0.5 fw-bold border-0 ${cardDensity === 'compact' ? 'btn-primary text-white shadow-xs' : 'btn-light text-secondary'}`}
+              onClick={() => toggleCardDensity('compact')}
+              style={{ fontSize: '11.5px' }}
+              title="Compact View: Ultra-dense 2-line cards for viewing many cars with minimal scrolling"
+            >
+              Compact
+            </button>
+            <button
+              type="button"
+              className={`btn btn-sm rounded-pill px-2.5 py-0.5 fw-bold border-0 ${cardDensity === 'expanded' ? 'btn-primary text-white shadow-xs' : 'btn-light text-secondary'}`}
+              onClick={() => toggleCardDensity('expanded')}
+              style={{ fontSize: '11.5px' }}
+              title="Expanded View: Full detailed cards"
+            >
+              Detailed
+            </button>
+          </div>
+
           <Button variant="outline-secondary" className="rounded-pill fw-bold px-3 py-2 shadow-xs d-flex align-items-center gap-1.5" onClick={handleHistoryLookupClick}>
             <FaHistory /> History Lookup
           </Button>
@@ -399,6 +422,7 @@ const Dashboard = () => {
                   <CheckinCard
                     key={job.id}
                     job={job}
+                    density={cardDensity}
                     onStartRepair={() => triggerStatusChange(job, 'In Progress')}
                     onDelete={() => handleDeleteClick(job)}
                   />
@@ -426,7 +450,7 @@ const Dashboard = () => {
                 </div>
               ) : (
                 inProgressJobs.map(job => (
-                  <CheckinCard key={job.id} job={job} onDelete={() => handleDeleteClick(job)} />
+                  <CheckinCard key={job.id} job={job} density={cardDensity} onDelete={() => handleDeleteClick(job)} />
                 ))
               )}
             </div>
@@ -451,7 +475,7 @@ const Dashboard = () => {
                 </div>
               ) : (
                 completedJobs.map(job => (
-                  <CheckinCard key={job.id} job={job} />
+                  <CheckinCard key={job.id} job={job} density={cardDensity} />
                 ))
               )}
             </div>

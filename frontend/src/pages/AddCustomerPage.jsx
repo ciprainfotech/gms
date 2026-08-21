@@ -4,10 +4,13 @@ import { Container, Card, Form, Row, Col, Button, Alert, Spinner, InputGroup } f
 import { FaUserPlus, FaUser, FaCar, FaSave, FaTimes, FaPhone, FaEnvelope, FaMapMarkerAlt, FaCity, FaEdit } from 'react-icons/fa';
 import api from '../api/api.js';
 import { validatePhone, validateVehicleNumber, validateEmail, sanitizeString } from '../utils/validators.js';
+import { useGlobalDate } from '../contexts/GlobalDateContext';
+
 
 const AddCustomerPage = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { workingDate } = useGlobalDate(); // Master working date for backdated check-ins
 
     // --- Detect Modes from Navigation State ---
     const vehicleData = location.state?.vehicleData || null;
@@ -299,7 +302,8 @@ const AddCustomerPage = () => {
                 const jobSheetPayload = {
                     vehicle_id: finalVehicleId,
                     customer_id: finalCustomerId,
-                    notes: keyProblemsFromState || 'New vehicle check-in.'
+                    notes: keyProblemsFromState || 'New vehicle check-in.',
+                    dateCreated: workingDate  // Use master working date — fixes backdated check-in bug
                 };
                 
                 const jobRes = await api.post('/jobsheets/check-in', jobSheetPayload, {
@@ -307,6 +311,7 @@ const AddCustomerPage = () => {
                 });
                 if (!jobRes.ok) throw new Error('Error creating check-in ticket.');
             }
+
 
             // 5. Success Navigation
             if (carNumberFromState && !isEditMode) {

@@ -64,15 +64,64 @@ socket.on('disconnect', () => {
   console.log(`⚠️ [Tunnel Disconnected] Retrying connection to SaaS Cloud...`);
 });
 
-const initWhatsAppClient = () => {
+let agentChromePid = null;
+
+// Helper to kill ONLY the local agent's headless Chrome process (never touches user's Chrome browser)
+const killAgentChromePid = () => {
+  if (agentChromePid && process.platform === 'win32') {
+    try {
+      const cp = require('child_process');
+      cp.execSync(`taskkill /F /PID ${agentChromePid} /T 2>nul`, { stdio: 'ignore' });
+    } catch (e) {}
+    agentChromePid = null;
+  }
+};
+
+// Helper to safely clean stale auth session directory (retries for Windows file lock release)
+const cleanSessionDirectory = async () => {
+  const sessionPath = path.join(process.cwd(), `.wwebjs_auth/session-workshop_exe_garage_${GARAGE_ID}`);
+  killAgentChromePid();
+  if (fs.existsSync(sessionPath)) {
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        fs.rmSync(sessionPath, { recursive: true, force: true });
+        console.log(`[WhatsApp Agent] Stale session cache cleaned for fresh QR generation.`);
+        break;
+      } catch (e) {
+        await new Promise(res => setTimeout(res, 400));
+      }
+    }
+  }
+};
+
+let qrExpiryTimer = null;
+
+// Helper to initialize Local Chrome WhatsApp Web Client
+const initWhatsAppClient = async (forceNew = false) => {
+  if (forceNew) {
+    if (client) {
+      console.log(`[WhatsApp Agent] Destroying existing client for fresh start...`);
+      try {
+        await Promise.race([
+          client.destroy(),
+          new Promise(res => setTimeout(res, 2000))
+        ]).catch(() => {});
+      } catch (e) {}
+      client = null;
+    }
+    await cleanSessionDirectory();
+    isInitializing = false;
+    lastQrCode = null;
+  }
+
   if (client || isInitializing) return client;
   isInitializing = true;
-  console.log(`[WhatsApp Agent] Launching local headless Chrome...`);
+  lastQrCode = null;
+  console.log(`[WhatsApp Agent] Booting local ultra-fast headless Chrome...`);
 
   client = new Client({
     authStrategy: new LocalAuth({
-      clientId: `workshop_exe_garage_${GARAGE_ID}`,
-      dataPath: path.join(process.cwd(), '.wwebjs_auth')
+      clientId: `workshop_exe_garage_${GARAGE_ID}`
     }),
     puppeteer: {
       headless: true,
@@ -83,19 +132,46 @@ const initWhatsAppClient = () => {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
+        '--disable-gpu',
+        '--disable-extensions',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-default-apps',
+        '--mute-audio',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-component-update',
+        '--disable-domain-reliability',
+        '--disable-hang-monitor',
+        '--disable-ipc-flooding-protection',
+        '--disable-notifications',
+        '--disable-popup-blocking',
+        '--disable-renderer-backgrounding',
+        '--disable-sync',
+        '--metrics-recording-only',
+        '--no-pings',
+        '--password-store=basic'
       ]
     }
   });
 
   client.on('qr', async (qr) => {
-    console.log(`📲 [QR Generated] Transmitting QR code to SaaS Web Settings UI...`);
+    console.log(`📲 [QR Generated] Transmitting fresh QR code to SaaS Web Settings UI...`);
+    isInitializing = false;
     try {
+      if (client?.pupBrowser?.process()) {
+        agentChromePid = client.pupBrowser.process().pid;
+      }
       const qrcode = require('qrcode');
       const dataUrl = await qrcode.toDataURL(qr);
       lastQrCode = dataUrl;
       socket.emit('agent_qr_code', { garageId: GARAGE_ID, qrCode: dataUrl });
+
+      if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
+      qrExpiryTimer = setTimeout(() => {
+        lastQrCode = null;
+      }, 35000);
     } catch (err) {
       console.error(`[QR Error] Failed to encode QR image:`, err.message);
     }
@@ -104,6 +180,10 @@ const initWhatsAppClient = () => {
   client.on('ready', async () => {
     isInitializing = false;
     lastQrCode = null;
+    if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
+    if (client?.pupBrowser?.process()) {
+      agentChromePid = client.pupBrowser.process().pid;
+    }
     const phone = client.info?.wid?.user || client.info?.me?.user || null;
     console.log(`✅ [WhatsApp Ready] Workshop WhatsApp ACTIVE for ${GARAGE_NAME} (${phone || 'Connected'})!`);
     socket.emit('agent_status_change', {
@@ -116,30 +196,40 @@ const initWhatsAppClient = () => {
   client.on('authenticated', () => {
     isInitializing = false;
     lastQrCode = null;
+    if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
     console.log(`🔑 [Authenticated] WhatsApp session validated.`);
   });
 
-  client.on('auth_failure', (msg) => {
+  client.on('auth_failure', async (msg) => {
     isInitializing = false;
     lastQrCode = null;
+    if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
     console.error(`❌ [Auth Failure] Session expired:`, msg);
     socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected' });
+    if (client) {
+      try { await client.destroy().catch(() => {}); } catch (e) {}
+      client = null;
+    }
+    await cleanSessionDirectory();
   });
 
-  client.on('disconnected', (reason) => {
+  client.on('disconnected', async (reason) => {
     isInitializing = false;
     lastQrCode = null;
+    if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
     console.log(`⚠️ [Disconnected] WhatsApp session closed:`, reason);
     socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected' });
     if (client) {
-      client.destroy().catch(() => {});
+      try { await client.destroy().catch(() => {}); } catch (e) {}
       client = null;
     }
+    await cleanSessionDirectory();
   });
 
-  client.initialize().catch((err) => {
+  client.initialize().catch(async (err) => {
     isInitializing = false;
     lastQrCode = null;
+    if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
     console.error(`❌ [Init Error] Chrome failed to launch:`, err.message);
     client = null;
   });
@@ -147,8 +237,12 @@ const initWhatsAppClient = () => {
   return client;
 };
 
+// Pre-boot WhatsApp client in background on agent launch for instant QR readiness
+initWhatsAppClient(false).catch(() => {});
+
+
 // Remote QR generation command from SaaS Web UI
-const handleQrRequest = () => {
+const handleQrRequest = async () => {
   console.log(`📩 [Remote Command] SaaS Web Settings requested QR Code generation...`);
   if (client && client.info) {
     socket.emit('agent_status_change', {
@@ -157,16 +251,16 @@ const handleQrRequest = () => {
       phoneNumber: client.info.wid?.user || client.info.me?.user
     });
   } else if (lastQrCode) {
-    console.log(`📲 [QR Re-emit] Transmitting cached QR code to SaaS Web UI...`);
+    console.log(`📲 [QR Re-emit] Transmitting active QR code to SaaS Web UI...`);
     socket.emit('agent_qr_code', { garageId: GARAGE_ID, qrCode: lastQrCode });
+  } else if (isInitializing) {
+    console.log(`⏳ [Initialization In Progress] Chrome is already booting. Waiting for QR event...`);
   } else {
-    if (client) {
-      try { client.destroy().catch(() => {}); } catch (e) {}
-      client = null;
-    }
-    initWhatsAppClient();
+    console.log(`🔄 [Fresh QR Request] Booting Chrome & generating new QR...`);
+    await initWhatsAppClient(true);
   }
 };
+
 
 socket.on('request_agent_qr', handleQrRequest);
 socket.on('agent_generate_qr', handleQrRequest);
@@ -181,13 +275,7 @@ socket.on('agent_disconnect', async () => {
     client = null;
   }
   
-  const sessionPath = path.join(process.cwd(), `.wwebjs_auth/session-workshop_exe_garage_${GARAGE_ID}`);
-  if (fs.existsSync(sessionPath)) {
-    try {
-      fs.rmSync(sessionPath, { recursive: true, force: true });
-    } catch (err) {}
-  }
-
+  await cleanSessionDirectory();
   socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected' });
 });
 

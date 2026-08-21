@@ -59,9 +59,21 @@ const AccountsReceivablePage = () => {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
 
-    // --- Pagination State ---
+    // --- Pagination & Sorting State ---
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [sortField, setSortField] = useState('totalDue'); // 'totalDue' | 'customerName' | 'totalBilled' | 'totalPaid' | 'invoiceCount'
+    const [sortOrder, setSortOrder] = useState('desc'); // 'desc' | 'asc'
+
+    const handleSort = (field) => {
+        if (sortField === field) {
+            setSortOrder(prev => (prev === 'desc' ? 'asc' : 'desc'));
+        } else {
+            setSortField(field);
+            setSortOrder('desc');
+        }
+    };
+
 
     // --- Customer Statement Modal State ---
     const [showStatementModal, setShowStatementModal] = useState(false);
@@ -248,7 +260,7 @@ const AccountsReceivablePage = () => {
             settled: customerWiseDues.filter(c => c.totalDue <= 0).length
         };
 
-        let list = customerWiseDues;
+        let list = [...customerWiseDues];
         if (quickFilter === 'pending') {
             list = customerWiseDues.filter(c => c.totalDue > 0);
         } else if (quickFilter === 'overdue') {
@@ -257,8 +269,20 @@ const AccountsReceivablePage = () => {
             list = customerWiseDues.filter(c => c.totalDue <= 0);
         }
 
+        // Apply Sorting
+        list.sort((a, b) => {
+            let valA = a[sortField];
+            let valB = b[sortField];
+            if (typeof valA === 'string') valA = valA.toLowerCase();
+            if (typeof valB === 'string') valB = valB.toLowerCase();
+            if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+            if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+            return 0;
+        });
+
         return { quickCounts: counts, filteredPartyAccounts: list };
-    }, [customerWiseDues, quickFilter]);
+    }, [customerWiseDues, quickFilter, sortField, sortOrder]);
+
 
     // Auto-expand first party on initial load so user immediately sees how it works
     useEffect(() => {
@@ -569,11 +593,21 @@ const AccountsReceivablePage = () => {
                     <thead>
                         <tr>
                             <th style={{ width: '40px' }} className="text-center"></th>
-                            <th style={{ minWidth: '220px' }}>Customer / Party</th>
-                            <th className="text-center" style={{ minWidth: '110px' }}>Invoices</th>
-                            <th className="text-end" style={{ minWidth: '130px' }}>Total Billed</th>
-                            <th className="text-end" style={{ minWidth: '130px' }}>Total Paid</th>
-                            <th className="text-end" style={{ minWidth: '140px' }}>Outstanding Due</th>
+                            <th style={{ minWidth: '220px', cursor: 'pointer' }} onClick={() => handleSort('customerName')} className="user-select-none">
+                                Customer / Party {sortField === 'customerName' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                            </th>
+                            <th className="text-center user-select-none" style={{ minWidth: '110px', cursor: 'pointer' }} onClick={() => handleSort('invoiceCount')}>
+                                Invoices {sortField === 'invoiceCount' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                            </th>
+                            <th className="text-end user-select-none" style={{ minWidth: '130px', cursor: 'pointer' }} onClick={() => handleSort('totalBilled')}>
+                                Total Billed {sortField === 'totalBilled' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                            </th>
+                            <th className="text-end user-select-none" style={{ minWidth: '130px', cursor: 'pointer' }} onClick={() => handleSort('totalPaid')}>
+                                Total Paid {sortField === 'totalPaid' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                            </th>
+                            <th className="text-end user-select-none" style={{ minWidth: '140px', cursor: 'pointer' }} onClick={() => handleSort('totalDue')}>
+                                Outstanding Due {sortField === 'totalDue' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                            </th>
                             <th className="text-center" style={{ minWidth: '110px' }}>Status</th>
                             <th className="text-center" style={{ minWidth: '180px' }}>Actions</th>
                         </tr>
@@ -1021,16 +1055,40 @@ const AccountsReceivablePage = () => {
                 {/* Main Views */}
                 {viewMode === 'customer' ? <PartyWiseView /> : <InvoiceWiseView />}
 
-                {/* Pagination */}
-                {totalPages > 1 && (
-                    <div className="d-flex justify-content-center mt-4">
-                        <Pagination className="shadow-sm">
+                {/* Pagination & Rows Per Page Toolbar */}
+                <div className="d-flex flex-column flex-md-row align-items-center justify-content-between gap-3 mt-4 pt-2 border-top">
+                    {/* Rows Summary Info & Selector */}
+                    <div className="d-flex align-items-center gap-3 text-secondary small">
+                        <span>
+                            Showing <strong>{Math.min((currentPage - 1) * itemsPerPage + 1, viewMode === 'customer' ? filteredPartyAccounts.length : filteredInvoices.length)}</strong> to <strong>{Math.min(currentPage * itemsPerPage, viewMode === 'customer' ? filteredPartyAccounts.length : filteredInvoices.length)}</strong> of <strong>{viewMode === 'customer' ? filteredPartyAccounts.length : filteredInvoices.length}</strong> {viewMode === 'customer' ? 'accounts' : 'invoices'}
+                        </span>
+
+                        <div className="d-flex align-items-center gap-1.5">
+                            <span>Rows per page:</span>
+                            <Form.Select 
+                                size="sm" 
+                                value={itemsPerPage} 
+                                onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                                style={{ width: '75px', height: '32px', fontSize: '12.5px' }}
+                                className="form-select-saas"
+                            >
+                                <option value={5}>5</option>
+                                <option value={10}>10</option>
+                                <option value={25}>25</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                            </Form.Select>
+                        </div>
+                    </div>
+
+                    {/* Pagination Buttons */}
+                    {totalPages > 1 && (
+                        <Pagination className="shadow-xs mb-0">
                             <Pagination.First onClick={() => setCurrentPage(1)} disabled={currentPage === 1} />
                             <Pagination.Prev onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1} />
                             
                             {[...Array(totalPages)].map((_, idx) => {
                                 const page = idx + 1;
-                                // Show first, last, and pages around current
                                 if (page === 1 || page === totalPages || (page >= currentPage - 2 && page <= currentPage + 2)) {
                                     return (
                                         <Pagination.Item key={page} active={page === currentPage} onClick={() => setCurrentPage(page)}>
@@ -1046,8 +1104,9 @@ const AccountsReceivablePage = () => {
                             <Pagination.Next onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))} disabled={currentPage === totalPages} />
                             <Pagination.Last onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} />
                         </Pagination>
-                    </div>
-                )}
+                    )}
+                </div>
+
             </div>
 
             {/* --- Modals --- */}

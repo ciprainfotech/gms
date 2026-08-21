@@ -651,33 +651,21 @@ exports.getWhatsAppQR = async (req, res) => {
 
     if (agentSocket) {
       console.log(`📲 [Remote Control] Triggering QR Generation on Local Agent for Garage ${garageId}...`);
+      // Clear any leftover cached QR code before requesting fresh one
+      req.app.set(`qr_code_${garageId}`, null);
       agentSocket.emit('request_agent_qr', { garageId });
       agentSocket.emit('agent_generate_qr', { garageId });
     } else {
-      console.log(`📲 [Direct Server Mode] Initializing direct WhatsApp client for Garage ${garageId}...`);
-      whatsappManager.initializeClient(
-        garageId,
-        (qrCodeUrl) => {
-          req.app.set(`qr_code_${garageId}`, qrCodeUrl);
-        },
-        async () => {
-          console.log(`✅ Direct WhatsApp Client connected for Garage ${garageId}`);
-          try {
-            await db.query(`UPDATE garages SET whatsapp_status = 'connected', whatsapp_provider = 'whatsapp-web', updated_at = NOW() WHERE id = $1`, [garageId]);
-            req.app.get('io')?.to(`garage_${garageId}`).emit('saas_status_changed', { garageId, status: 'connected', isAgentConnected: false });
-          } catch (e) {}
-        },
-        async () => {
-          console.log(`⚠️ Direct WhatsApp Client disconnected for Garage ${garageId}`);
-          try {
-            await db.query(`UPDATE garages SET whatsapp_status = 'disconnected', whatsapp_phone_number = NULL, updated_at = NOW() WHERE id = $1`, [garageId]);
-            req.app.get('io')?.to(`garage_${garageId}`).emit('saas_status_changed', { garageId, status: 'disconnected', isAgentConnected: false });
-          } catch (e) {}
-        }
-      );
+      console.log(`⚠️ [Agent Not Connected] Garage ${garageId} agent is offline.`);
+      // Return clear, actionable message instead of booting headless Chrome on Cloud server (which exceeds Render 512MB RAM)
+      return res.json({
+        success: false,
+        isAgentConnected: false,
+        message: 'Local WhatsApp Agent is offline. Please launch the WhatsApp Agent application on your workshop PC or download the setup script below.'
+      });
     }
     
-    // Poll req.app for cached QR code from agent_qr_code or whatsappManager event (500ms interval, 70 attempts = 35s limit)
+    // Poll req.app for cached QR code from agent_qr_code event (300ms interval, 60 attempts = 18s limit)
     let attempts = 0;
     const checkInterval = setInterval(() => {
       attempts++;
@@ -685,24 +673,23 @@ exports.getWhatsAppQR = async (req, res) => {
       if (cachedQr) {
         clearInterval(checkInterval);
         req.app.set(`qr_code_${garageId}`, null); // Clear single-use cache
-        return res.json({ success: true, isAgentConnected: !!agentSocket, qrCode: cachedQr });
+        return res.json({ success: true, isAgentConnected: true, qrCode: cachedQr });
       }
-      if (attempts >= 70) { // 70 attempts x 500ms = 35s timeout
+      if (attempts >= 60) { // 60 attempts x 300ms = 18s limit
         clearInterval(checkInterval);
         return res.json({
           success: false,
-          isAgentConnected: !!agentSocket,
-          message: agentSocket 
-            ? 'Local agent is connected, but QR code response timed out. Click Generate Connection QR Code button again.'
-            : 'QR code generation timed out. Please click Generate Connection QR Code button again.'
+          isAgentConnected: true,
+          message: 'Local agent is launching Chrome. Please click Generate Connection QR Code again in a few seconds.'
         });
       }
-    }, 500);
+    }, 300);
   } catch (err) {
     console.error('Error in getWhatsAppQR:', err);
     res.status(500).json({ success: false, message: 'Failed to generate QR code' });
   }
 };
+
 
 exports.connectWhatsApp = async (req, res) => {
   try {
@@ -1093,7 +1080,7 @@ echo  Agent downloaded successfully.
 if not exist "%INSTALL_DIR%\\node_modules\\whatsapp-web.js" (
   echo.
   echo [2/3] First-time setup: Installing WhatsApp engine...
-  echo  This will take 1-3 minutes. Please wait and do NOT close this window.
+  echo  This will take 2-5 minutes. Please wait and do NOT close this window.
   echo.
   call npm install --prefix "%INSTALL_DIR%" whatsapp-web.js puppeteer socket.io-client qrcode --no-audit --no-fund --loglevel=error
   if errorlevel 1 (
@@ -1105,6 +1092,14 @@ if not exist "%INSTALL_DIR%\\node_modules\\whatsapp-web.js" (
     exit /b 1
   )
   echo  WhatsApp engine installed successfully!
+  echo.
+  echo  Checking for Puppeteer Chrome browser binary...
+  call npx --prefix "%INSTALL_DIR%" puppeteer browsers install chrome >nul 2>&1
+  if not errorlevel 1 (
+    echo  Puppeteer Chrome browser ready.
+  ) else (
+    echo  Note: Puppeteer Chrome download skipped ^(will use system Chrome or Edge if available^).
+  )
 ) else (
   echo [2/3] WhatsApp engine verified.
 )

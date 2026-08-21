@@ -12,12 +12,10 @@ const formatCurrency = (amount, minimumFractionDigits = 2) => {
     return Number(amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits, maximumFractionDigits: 2 });
 };
 
-const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-        return new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    } catch (e) { return 'Invalid Date'; }
-};
+import { formatDateShort } from '../utils/dateUtils';
+
+// Use shared timezone-safe date formatter (dd Mon yyyy — e.g. "15 Aug 2026")
+const formatDate = formatDateShort;
 
 const PurchaseHistoryPage = () => {
     const [purchaseBills, setPurchaseBills] = useState([]);

@@ -67,18 +67,97 @@ process.on('unhandledRejection', (reason) => {
   console.log('⚠️ [Agent Trap] Handled background promise:', reason?.message || reason);
 });
 
+
 socket.on('request_agent_qr', () => {
   console.log(`📲 [SaaS Request] SaaS Web UI requested QR code. Initializing WhatsApp Web Chrome...`);
-  initWhatsAppClient();
+  initWhatsAppClient(false);
 });
 
+// Helper: Auto-detect installed Google Chrome or Microsoft Edge on Windows
+const getChromePath = () => {
+  const fs = require('fs');
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const possiblePaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    localAppData + '\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+  ];
+  for (const p of possiblePaths) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return undefined; // Falls back to bundled Puppeteer Chrome
+};
+
+let agentChromePid = null;
+
+// Helper to kill ONLY the local agent's headless Chrome process (never touches user's Chrome browser)
+const killAgentChromePid = () => {
+  if (agentChromePid && process.platform === 'win32') {
+    try {
+      const cp = require('child_process');
+      cp.execSync(`taskkill /F /PID ${agentChromePid} /T 2>nul`, { stdio: 'ignore' });
+    } catch (e) {}
+    agentChromePid = null;
+  }
+};
+
+// Helper to safely clean stale auth session directory (retries for Windows file lock release)
+const cleanSessionDirectory = async () => {
+  const fsMod = require('fs');
+  const pathMod = require('path');
+  const sessionPath = pathMod.join(__dirname, `.wwebjs_auth/session-workshop_agent_garage_${GARAGE_ID}`);
+  
+  // Safely kill ONLY the agent's Chrome PID
+  killAgentChromePid();
+
+  if (fsMod.existsSync(sessionPath)) {
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        fsMod.rmSync(sessionPath, { recursive: true, force: true });
+        console.log(`[WhatsApp Agent] Stale session cache cleaned for fresh QR generation.`);
+        break;
+      } catch (e) {
+        await new Promise(res => setTimeout(res, 400));
+      }
+    }
+  }
+};
+
+let qrExpiryTimer = null;
+
 // Helper to initialize Local Chrome WhatsApp Web Client
-const initWhatsAppClient = () => {
+const initWhatsAppClient = async (forceNew = false) => {
+  if (forceNew) {
+    if (client) {
+      console.log(`[WhatsApp Agent] Destroying existing client for fresh start...`);
+      try {
+        await Promise.race([
+          client.destroy(),
+          new Promise(res => setTimeout(res, 2000))
+        ]).catch(() => {});
+      } catch (e) {}
+      client = null;
+    }
+    await cleanSessionDirectory();
+    isInitializing = false;
+    lastQrCode = null;
+  }
+
   if (client || isInitializing) return client;
   isInitializing = true;
-  console.log(`[WhatsApp Agent] Booting local headless Chrome...`);
+  lastQrCode = null;
+  console.log(`[WhatsApp Agent] Booting local ultra-fast headless Chrome...`);
 
-  client = new Client({
+  const detectedChromePath = getChromePath();
+  if (detectedChromePath) {
+    console.log(`[WhatsApp Agent] Using system Chrome at: ${detectedChromePath}`);
+  } else {
+    console.log(`[WhatsApp Agent] System Chrome not found. Using Puppeteer bundled browser.`);
+  }
+
+  const clientOptions = {
     authStrategy: new LocalAuth({
       clientId: `workshop_agent_garage_${GARAGE_ID}`
     }),
@@ -91,21 +170,55 @@ const initWhatsAppClient = () => {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--single-process',
         '--disable-gpu',
-        '--disable-blink-features=AutomationControlled'
+        '--disable-extensions',
+        '--disable-component-extensions-with-background-pages',
+        '--disable-default-apps',
+        '--mute-audio',
+        '--disable-background-networking',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-breakpad',
+        '--disable-component-update',
+        '--disable-domain-reliability',
+        '--disable-hang-monitor',
+        '--disable-ipc-flooding-protection',
+        '--disable-notifications',
+        '--disable-popup-blocking',
+        '--disable-renderer-backgrounding',
+        '--disable-sync',
+        '--metrics-recording-only',
+        '--no-pings',
+        '--password-store=basic'
       ]
     },
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  });
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+  };
+
+  if (detectedChromePath) {
+    clientOptions.puppeteer.executablePath = detectedChromePath;
+  }
+
+  client = new Client(clientOptions);
 
   client.on('qr', async (qr) => {
-    console.log(`📲 [QR Generated] Transmitting QR code to SaaS Web Settings UI...`);
+    console.log(`📲 [QR Generated] Transmitting fresh QR code to SaaS Web Settings UI...`);
+    isInitializing = false;
     try {
+      // Record PID of agent's Chrome instance for safe targeted cleanup
+      if (client?.pupBrowser?.process()) {
+        agentChromePid = client.pupBrowser.process().pid;
+      }
       const qrcode = require('qrcode');
       const dataUrl = await qrcode.toDataURL(qr);
       lastQrCode = dataUrl;
       socket.emit('agent_qr_code', { garageId: GARAGE_ID, qrCode: dataUrl });
+
+      // Auto-expire QR code in memory after 35 seconds
+      if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
+      qrExpiryTimer = setTimeout(() => {
+        lastQrCode = null;
+      }, 35000);
     } catch (err) {
       console.error(`[QR Error] Failed to encode QR image:`, err.message);
     }
@@ -114,6 +227,10 @@ const initWhatsAppClient = () => {
   client.on('ready', async () => {
     isInitializing = false;
     lastQrCode = null;
+    if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
+    if (client?.pupBrowser?.process()) {
+      agentChromePid = client.pupBrowser.process().pid;
+    }
     const phone = client.info?.wid?.user || client.info?.me?.user || null;
     console.log(`✅ [WhatsApp Ready] Workshop WhatsApp ACTIVE for ${GARAGE_NAME} (${phone || 'Connected'})!`);
     socket.emit('agent_status_change', {
@@ -126,6 +243,7 @@ const initWhatsAppClient = () => {
   client.on('authenticated', () => {
     isInitializing = false;
     lastQrCode = null;
+    if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
     console.log(`🔑 [Authenticated] WhatsApp session validated! Updating SaaS Web Status...`);
     socket.emit('agent_status_change', {
       garageId: GARAGE_ID,
@@ -133,31 +251,36 @@ const initWhatsAppClient = () => {
     });
   });
 
-  client.on('auth_failure', (msg) => {
+  client.on('auth_failure', async (msg) => {
     isInitializing = false;
     lastQrCode = null;
+    if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
     console.error(`❌ [Auth Failure] Session expired or unlinked:`, msg);
     socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
     if (client) {
-      try { client.destroy().catch(() => {}); } catch (e) {}
+      try { await client.destroy().catch(() => {}); } catch (e) {}
       client = null;
     }
+    await cleanSessionDirectory();
   });
 
-  client.on('disconnected', (reason) => {
+  client.on('disconnected', async (reason) => {
     isInitializing = false;
     lastQrCode = null;
+    if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
     console.log(`⚠️ [Disconnected] WhatsApp session unlinked from phone:`, reason);
     socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
     if (client) {
-      try { client.destroy().catch(() => {}); } catch (e) {}
+      try { await client.destroy().catch(() => {}); } catch (e) {}
       client = null;
     }
+    await cleanSessionDirectory();
   });
 
-  client.initialize().catch((err) => {
+  client.initialize().catch(async (err) => {
     isInitializing = false;
     lastQrCode = null;
+    if (qrExpiryTimer) clearTimeout(qrExpiryTimer);
     console.error(`❌ [Init Error] Chrome failed to launch:`, err.message);
     client = null;
     socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
@@ -166,28 +289,29 @@ const initWhatsAppClient = () => {
   return client;
 };
 
-// Active Health Check: Polls WhatsApp Web state every 3s to instantly detect when device is unlinked on phone
+// Pre-boot WhatsApp client in background on agent launch for instant QR readiness
+initWhatsAppClient(false).catch(() => {});
+
+// Active Health Check: ONLY checks session state if client is ALREADY FULLY CONNECTED
 setInterval(async () => {
-  if (client && !isInitializing) {
+  if (client && !isInitializing && client.info) {
     try {
       const state = await client.getState().catch(() => null);
-      if (!state || state !== 'CONNECTED') {
-        console.log(`⚠️ [Unlinked Detected] Session state is ${state || 'DISCONNECTED'}. Syncing yellow status to cloud...`);
+      if (state && state !== 'CONNECTED') {
+        console.log(`⚠️ [Unlinked Detected] Session state is ${state}. Syncing status to cloud...`);
         socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
         try { await client.destroy().catch(() => {}); } catch (e) {}
         client = null;
+        await cleanSessionDirectory();
       }
     } catch (e) {
-      console.log(`⚠️ [Unlinked Detected] Session error. Syncing yellow status to cloud...`);
-      socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
-      try { await client.destroy().catch(() => {}); } catch (e) {}
-      client = null;
+      // Ignore transient errors while connected
     }
   }
-}, 3000);
+}, 5000);
 
 // 2. REMOTE CONTROL: Remote QR Generation Request from SaaS Web UI
-const handleQrRequest = () => {
+const handleQrRequest = async () => {
   console.log(`📩 [Remote Command] SaaS Web Settings requested QR Code generation...`);
   if (client && client.info) {
     console.log(`ℹ️ Client already connected.`);
@@ -197,19 +321,19 @@ const handleQrRequest = () => {
       phoneNumber: client.info.wid?.user || client.info.me?.user
     });
   } else if (lastQrCode) {
-    console.log(`📲 [QR Re-emit] Transmitting cached QR code to SaaS Web UI...`);
+    console.log(`📲 [QR Re-emit] Transmitting active QR code to SaaS Web UI...`);
     socket.emit('agent_qr_code', { garageId: GARAGE_ID, qrCode: lastQrCode });
+  } else if (isInitializing) {
+    console.log(`⏳ [Initialization In Progress] Chrome is already booting. Waiting for QR event...`);
   } else {
-    if (client) {
-      try { client.destroy().catch(() => {}); } catch (e) {}
-      client = null;
-    }
-    initWhatsAppClient();
+    console.log(`🔄 [Fresh QR Request] Booting Chrome & generating new QR...`);
+    await initWhatsAppClient(true);
   }
 };
 
 socket.on('request_agent_qr', handleQrRequest);
 socket.on('agent_generate_qr', handleQrRequest);
+
 
 // 3. REMOTE CONTROL: Remote Disconnect Request from SaaS Web UI (Unlinks phone automatically)
 socket.on('agent_disconnect', async () => {
@@ -224,20 +348,10 @@ socket.on('agent_disconnect', async () => {
     }
     client = null;
   }
-  
-  // Clean session folder
-  const fs = require('fs');
-  const path = require('path');
-  const sessionPath = path.join(__dirname, `.wwebjs_auth/session-workshop_agent_garage_${GARAGE_ID}`);
-  if (fs.existsSync(sessionPath)) {
-    try {
-      fs.rmSync(sessionPath, { recursive: true, force: true });
-      console.log(`[WhatsApp Agent] Session directory cleaned.`);
-    } catch (err) {}
-  }
-
+  await cleanSessionDirectory();
   socket.emit('agent_status_change', { garageId: GARAGE_ID, status: 'disconnected', isAgentConnected: true });
 });
+
 
 // 4. MESSAGE DISPATCH: Process real-time dispatches from SaaS Web UI
 socket.on('send_whatsapp_message', async (job) => {

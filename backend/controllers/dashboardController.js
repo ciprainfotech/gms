@@ -14,10 +14,10 @@ exports.getKanbanData = async (req, res) => {
 
         const query = `
             SELECT 
-                js.id, js.job_sheet_number AS "jobSheetNumber", js.status, js.notes, 
-                js.date_created AS "dateCreated", js.date_completed AS "dateCompleted",
+                js.id, js.job_sheet_number AS "jobSheetNumber", js.status, js.notes, js.km_reading AS "kmReading",
+                js.date_created AS "dateCreated", js.date_completed AS "dateCompleted", js.created_at AS "createdAt",
                 v.car_number AS "vehicleNumber",
-                CONCAT(mk.name, ' ', m.name) AS "vehicleModel", c.name AS "customerName"
+                CONCAT(mk.name, ' ', m.name) AS "vehicleModel", c.name AS "customerName", c.phone AS "customerPhone"
             FROM job_sheets js
             JOIN vehicles v ON js.vehicle_id = v.id
             JOIN customers c ON v.customer_id = c.id

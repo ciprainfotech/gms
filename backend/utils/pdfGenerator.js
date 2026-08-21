@@ -23,16 +23,20 @@ const getExecutablePath = () => {
 
 const launchPuppeteerBrowser = async () => {
     const execPath = getExecutablePath();
+    const isLinux = process.platform === 'linux';
     const launchOptions = {
         headless: true,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
+            '--disable-dev-shm-usage', // Use /tmp instead of small 64MB /dev/shm — critical for Render
             '--disable-gpu',
             '--no-first-run',
             '--no-zygote',
-            '--single-process'
+            // --single-process is ONLY enabled on Linux (Render cloud) to save ~150MB RAM.
+            // On Windows it causes "Navigating frame was detached" crashes, so it is excluded there.
+            ...(isLinux ? ['--single-process'] : []),
+            '--disable-accelerated-2d-canvas'
         ]
     };
     if (execPath) {
@@ -121,13 +125,26 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
         try {
             const logoUrl = garage.logo_url;
             if (logoUrl.startsWith('http://') || logoUrl.startsWith('https://')) {
-                const response = await fetch(logoUrl);
-                if (response.ok) {
-                    const arrayBuffer = await response.arrayBuffer();
-                    const buffer = Buffer.from(arrayBuffer);
-                    const contentType = response.headers.get('content-type') || 'image/png';
-                    const base64 = buffer.toString('base64');
-                    logoHtml = `<img src="data:${contentType};base64,${base64}" alt="Logo" style="max-height: 55px; max-width: 180px; object-fit: contain; margin-bottom: 6px; display: block;" />`;
+                // 5-second timeout for logo fetch — prevents Render from hanging on slow/missing Cloudinary URLs
+                const controller = new AbortController();
+                const logoTimeout = setTimeout(() => controller.abort(), 5000);
+                try {
+                    const response = await fetch(logoUrl, { signal: controller.signal });
+                    clearTimeout(logoTimeout);
+                    if (response.ok) {
+                        const arrayBuffer = await response.arrayBuffer();
+                        const buffer = Buffer.from(arrayBuffer);
+                        const contentType = response.headers.get('content-type') || 'image/png';
+                        const base64 = buffer.toString('base64');
+                        logoHtml = `<img src="data:${contentType};base64,${base64}" alt="Logo" style="max-height: 55px; max-width: 180px; object-fit: contain; margin-bottom: 6px; display: block;" />`;
+                    }
+                } catch (fetchErr) {
+                    clearTimeout(logoTimeout);
+                    if (fetchErr.name === 'AbortError') {
+                        console.warn('Logo fetch timed out (>5s) — PDF generated without logo.');
+                    } else {
+                        throw fetchErr;
+                    }
                 }
             } else {
                 const cleanRelativePath = logoUrl.startsWith('/') ? logoUrl.substring(1) : logoUrl;
@@ -141,8 +158,10 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
             }
         } catch (e) {
             console.error('Failed to load logo for PDF:', e);
+            // Non-fatal: PDF generated without logo
         }
     }
+
 
     // Dynamic spacer rows to fill single page gracefully
     const minRows = items.length <= 2 ? 3 : (items.length === 3 ? 1 : 0);
@@ -534,7 +553,7 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
     try {
         const page = await browser.newPage();
         await page.emulateMediaType('screen');
-        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        await page.setContent(htmlContent, { waitUntil: 'domcontentloaded', timeout: 15000 });
         
         const pdfBuffer = await page.pdf({
             format: 'A4',
@@ -776,7 +795,7 @@ exports.generateLedgerPDF = async (customerName, transactions, totalBilled, tota
     try {
         const page = await browser.newPage();
         await page.emulateMediaType('screen');
-        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+        await page.setContent(htmlContent, { waitUntil: 'domcontentloaded', timeout: 15000 });
         
         const pdfBuffer = await page.pdf({
             format: 'A4',

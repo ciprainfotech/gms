@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import api from '../api/api';
 import CustomToast from '../components/CustomToast';
 import { validatePhone, validateNumber, sanitizeString } from '../utils/validators';
+import { formatDateShort, getTodayString } from '../utils/dateUtils';
 
 import '../App.css';
 import '../PurchaseEntryPage.css';
@@ -19,12 +20,8 @@ const formatCurrency = (amount, minimumFractionDigits = 2) => {
     return Number(amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits, maximumFractionDigits: 2 });
 };
 
-const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-        return new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-    } catch (e) { return 'Invalid Date'; }
-};
+// Use shared timezone-safe date formatter
+const formatDate = formatDateShort;
 
 const PurchaseEntryPage = () => {
     const navigate = useNavigate();
@@ -33,11 +30,15 @@ const PurchaseEntryPage = () => {
     const [masterItems, setMasterItems] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [billDetails, setBillDetails] = useState({ supplierId: '', billNumber: '', billDate: new Date().toISOString().split('T')[0], notes: '' });
+    // Use getTodayString() instead of new Date().toISOString().split('T')[0]
+    // toISOString() gives UTC date — in IST (UTC+5:30) after midnight but before 5:30 AM
+    // it would give yesterday's date. getTodayString() always returns the local calendar date.
+    const [billDetails, setBillDetails] = useState({ supplierId: '', billNumber: '', billDate: getTodayString(), notes: '' });
     const [billItems, setBillItems] = useState([]);
     const [selectedMasterItem, setSelectedMasterItem] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
     const [toast, setToast] = useState(null);
+
     
     // Modals
     const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
@@ -288,7 +289,8 @@ const PurchaseEntryPage = () => {
                 if (itemsRes.ok) setMasterItems(await itemsRes.json());
 
                 // Reset form
-                setBillDetails({ supplierId: '', billNumber: '', billDate: new Date().toISOString().split('T')[0], notes: '' });
+                setBillDetails({ supplierId: '', billNumber: '', billDate: getTodayString(), notes: '' });
+
                 setBillItems([]);
                 setSelectedMasterItem(null);
                 supplierSelectRef.current?.focus();
@@ -377,7 +379,8 @@ const PurchaseEntryPage = () => {
                                     <Col md={3} sm={6}>
                                         <Form.Group controlId="billDate">
                                             <Form.Label>Bill Date*</Form.Label>
-                                            <Form.Control size="sm" type="date" name="billDate" value={billDetails.billDate} onChange={handleBillDetailChange} required max={new Date().toISOString().split('T')[0]} />
+                                            <Form.Control size="sm" type="date" name="billDate" value={billDetails.billDate} onChange={handleBillDetailChange} required max={getTodayString()} />
+
                                         </Form.Group>
                                     </Col>
                                     {/* Notes */}

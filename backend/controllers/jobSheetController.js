@@ -143,7 +143,15 @@ exports.getActiveJobSheets = async (req, res) => {
 exports.createCheckIn = async (req, res) => {
     const { vehicle_id, customer_id, km_reading, notes, dateCreated} = req.body;
     const garageId = req.garageId;
-    const finalDate = dateCreated || new Date();
+
+    // Safely handle the date sent from the frontend (always a YYYY-MM-DD string).
+    // Do NOT use new Date(dateCreated) — JavaScript parses YYYY-MM-DD as UTC midnight
+    // which can shift to the previous calendar day in non-UTC timezones.
+    // Instead pass the raw string to PostgreSQL and cast it to ::date there.
+    // When not provided, fall back to CURRENT_DATE (not NOW()) to stay date-only.
+    const finalDate = (dateCreated && /^\d{4}-\d{2}-\d{2}$/.test(String(dateCreated).trim()))
+        ? String(dateCreated).trim()
+        : null; // null → PostgreSQL will use CURRENT_DATE in the query below
 
     if (!vehicle_id) {
         return res.status(400).json({ success: false, message: 'Vehicle ID is required.' });
@@ -172,9 +180,12 @@ exports.createCheckIn = async (req, res) => {
         const placeholderJobNumber = `CHECKIN-${vehicle_id}-${Date.now()}`;
 
         // Create the check-in record.
+        // COALESCE($6::date, CURRENT_DATE):
+        //   - If dateCreated is a YYYY-MM-DD string → PostgreSQL ::date cast keeps it timezone-safe
+        //   - If null → CURRENT_DATE uses server's date (not a UTC timestamp like NOW())
         const insertQuery = `
             INSERT INTO job_sheets (garage_id, job_sheet_number, customer_id, vehicle_id, km_reading, date_created, status, notes)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id;
+            VALUES ($1, $2, $3, $4, $5, COALESCE($6::date, CURRENT_DATE), $7, $8) RETURNING id;
         `;
         const insertResult = await db.query(insertQuery, [
             garageId,
@@ -182,10 +193,11 @@ exports.createCheckIn = async (req, res) => {
             customer_id,
             vehicle_id,
             km_reading,
-            finalDate,
+            finalDate,            // YYYY-MM-DD string or null
             'Waiting', 
             notes
         ]);
+
 
         const newRecordId = insertResult.rows[0].id;
 
@@ -408,6 +420,16 @@ exports.updateJobSheetDetails = async (req, res) => {
     try {
         await client.query('BEGIN');
 
+        // Fetch garage stock validation setting upfront
+        const garageSettingRes = await client.query(
+            'SELECT enforce_stock_validation FROM garages WHERE id = $1',
+            [garageId]
+        );
+        // Default: enforce if setting is missing/null (safe default for existing garages)
+        const enforceStock = garageSettingRes.rows.length > 0
+            ? garageSettingRes.rows[0].enforce_stock_validation !== false
+            : true;
+
         // FIX 1: Sanitize kmReading. Convert empty strings to null so they don't break integer DB columns
         const cleanKmReading = kmReading === '' || kmReading === undefined || kmReading === null 
             ? null 
@@ -486,10 +508,23 @@ exports.updateJobSheetDetails = async (req, res) => {
                     const masterItem = itemRes.rows[0];
                     if (masterItem.type === 'Spare') {
                         const currentStock = parseFloat(masterItem.stock_qty || 0);
+
                         if (delta > 0 && currentStock < delta) {
-                            throw new Error(`Insufficient stock for "${masterItem.name}". Available stock: ${currentStock}, requested additional: ${delta}.`);
+                            if (enforceStock) {
+                                // Stock validation is ON — block the operation
+                                throw new Error(`Insufficient stock for "${masterItem.name}". Available: ${currentStock}, Requested additional: ${delta}. To override, disable Stock Constraint Validation in Settings.`);
+                            } else {
+                                // Stock validation is OFF — allow negative stock (deduct freely)
+                                console.log(`[Stock] enforce_stock_validation=OFF. Allowing stock to go negative for "${masterItem.name}" (current: ${currentStock}, delta: ${delta}).`);
+                            }
                         }
-                        const updatedStock = Math.max(0, currentStock - delta);
+
+                        // Always update stock regardless of validation setting
+                        // When validation is OFF, stock can go negative (tracks real usage)
+                        const updatedStock = enforceStock
+                            ? Math.max(0, currentStock - delta)   // Validation ON: floor at 0
+                            : currentStock - delta;               // Validation OFF: allow negative
+
                         await client.query(
                             'UPDATE master_items SET stock_qty = $1, updated_at = NOW() WHERE id = $2',
                             [updatedStock, mId]
@@ -498,6 +533,7 @@ exports.updateJobSheetDetails = async (req, res) => {
                 }
             }
         }
+
 
         await client.query('DELETE FROM job_sheet_items WHERE job_sheet_id = $1', [id]);
 
