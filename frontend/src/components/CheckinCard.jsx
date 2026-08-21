@@ -160,8 +160,11 @@ const CheckinCard = ({ job, onStartRepair, onDelete, density = 'expanded' }) => 
 
                         {/* Job Sheet Number Pill if available */}
                         {job.jobSheetNumber && !job.jobSheetNumber.startsWith('CHECKIN-') && (
-                            <span className="badge bg-slate-100 text-slate-700 border border-slate-200 fw-semibold px-2 py-1" style={{ fontSize: '10.5px' }}>
-                                <FaHashtag className="me-0.5 text-muted" style={{ fontSize: '9px' }} />
+                            <span 
+                                className="badge fw-semibold px-2 py-1" 
+                                style={{ backgroundColor: '#F1F5F9', color: '#1E293B', border: '1px solid #CBD5E1', fontSize: '10.5px' }}
+                            >
+                                <FaHashtag className="me-0.5 text-secondary" style={{ fontSize: '9px' }} />
                                 {job.jobSheetNumber}
                             </span>
                         )}

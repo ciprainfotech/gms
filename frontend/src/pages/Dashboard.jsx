@@ -386,7 +386,7 @@ const Dashboard = () => {
             <Card className="border-0 shadow-sm rounded-4 p-3 d-flex flex-row align-items-center justify-content-between" style={{ backgroundColor: '#FFFFFF', borderLeft: '4px solid #06B6D4' }}>
               <div>
                 <small className="text-muted fw-bold text-uppercase" style={{ fontSize: '10px', letterSpacing: '0.5px' }}>Total Active Queue</small>
-                <h3 className="fw-bold text-dark mb-0 mt-0.5">{jobs.length}</h3>
+                <h3 className="fw-bold text-dark mb-0 mt-0.5">{waitingJobs.length + inProgressJobs.length}</h3>
               </div>
               <div className="rounded-circle p-2.5 d-flex align-items-center justify-content-center" style={{ backgroundColor: '#E0F2FE', color: '#0284C7', width: '42px', height: '42px' }}>
                 <FaCar className="fs-5" />
