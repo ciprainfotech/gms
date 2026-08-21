@@ -228,17 +228,21 @@ function AppContent() {
   );
 }
 
+import ErrorBoundary from './components/ErrorBoundary';
+
 function App() {
   return (
-    <AuthProvider>
-      <GarageProvider>
-        <ToastProvider>
-          <GlobalDateProvider>
-            <AppContent />
-          </GlobalDateProvider>
-        </ToastProvider>
-      </GarageProvider>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <GarageProvider>
+          <ToastProvider>
+            <GlobalDateProvider>
+              <AppContent />
+            </GlobalDateProvider>
+          </ToastProvider>
+        </GarageProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 

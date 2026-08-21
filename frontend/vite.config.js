@@ -8,31 +8,60 @@ export default defineConfig({
     react(),
     basicSsl(),
     VitePWA({
-      registerType: 'autoUpdate', // Automatically updates the app when you push new code
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png'], // Add these to your public folder if you have them
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.png', 'favicon-32x32.png', 'favicon-16x16.png', 'apple-touch-icon.png', 'maskable-icon.png'],
       manifest: {
-        name: 'CIPRA GMS',
-        short_name: 'GMS',
-        description: 'My Garage Management System',
-        theme_color: '#ffffff', // The color of the top browser bar
-        background_color: '#ffffff', // The color shown while the app is loading
-        display: 'standalone', // This makes it look like a native app without browser tabs
+        name: 'Cipra GMS',
+        short_name: 'Cipra GMS',
+        description: 'Cipra GMS - Next-Gen SaaS Garage & Workshop Management System',
+        theme_color: '#4F46E5',
+        background_color: '#F8FAFC',
+        display: 'standalone',
+        orientation: 'any',
+        scope: '/',
+        start_url: '/',
         icons: [
           {
             src: 'pwa-192x192.png',
             sizes: '192x192',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any'
           },
           {
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'any'
+          },
+          {
+            src: 'maskable-icon.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
+          },
+          {
+            src: 'apple-touch-icon.png',
+            sizes: '180x180',
+            type: 'image/png',
+            purpose: 'any'
           }
         ]
       }
     })
   ],
+  build: {
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'bootstrap-vendor': ['bootstrap', 'react-bootstrap'],
+          'chart-vendor': ['chart.js', 'react-chartjs-2'],
+          'icons-vendor': ['react-icons', '@fortawesome/react-fontawesome', '@fortawesome/free-solid-svg-icons']
+        }
+      }
+    }
+  },
   server: {
     hmr: {
       protocol: 'wss',
