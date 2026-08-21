@@ -68,8 +68,16 @@ const JobSheetDetailPage = () => {
 
     // Forms
     const [selectedMasterItem, setSelectedMasterItem] = useState(null);
+    const [selectInputValue, setSelectInputValue] = useState('');
     const [quantity, setQuantity] = useState(1);
     const [unitPrice, setUnitPrice] = useState('');
+    const [lubeCharge, setLubeCharge] = useState('');
+    const [labourCharge, setLabourCharge] = useState('');
+    const kmReadingRef = useRef(null);
+    const notesRef = useRef(null);
+    const lubeRef = useRef(null);
+    const labourRef = useRef(null);
+    const tableEndRef = useRef(null);
     const [editingItemId, setEditingItemId] = useState(null);
     const [editingQuantity, setEditingQuantity] = useState('');
 
@@ -123,8 +131,16 @@ const JobSheetDetailPage = () => {
                 setCustomerDetails(detailsData.customerDetails);
                 setVehicleDetails(detailsData.vehicleDetails);
                 setAddedItems((detailsData.addedItems || []).map(item => {
-                    const price = item.unitPrice ?? item.unit_price;
-                    return { ...item, ...calculateLineTotals(item, item.quantity, price) };
+                    const price = item.unitPrice ?? item.unit_price ?? 0;
+                    const lube = item.lubeCharge ?? item.lube_charge ?? 0;
+                    const labour = item.labourCharge ?? item.labour_charge ?? 0;
+                    return { 
+                        ...item, 
+                        unitPrice: price,
+                        lubeCharge: lube,
+                        labourCharge: labour,
+                        ...calculateLineTotals(item, item.quantity, price, lube, labour) 
+                    };
                 }));
                 setKmReading(detailsData.jobSheetDetails.kmReading || '');
                 setNotes(detailsData.jobSheetDetails.notes || '');
@@ -163,15 +179,20 @@ const JobSheetDetailPage = () => {
 
 
     // --- CALCULATIONS ---
-    const calculateLineTotals = (masterItemData, qty, customRate) => {
+    const calculateLineTotals = (masterItemData, qty, customPrice, customLube, customLabour) => {
         if (!masterItemData) return { lineParts: 0, lineLubes: 0, lineLabour: 0, lineTotal: 0 };
         
-        const price = customRate !== undefined && !isNaN(parseFloat(customRate))
-            ? parseFloat(customRate)
-            : parseFloat(masterItemData.unitPrice ?? masterItemData.unit_price ?? 0);
+        const price = customPrice !== undefined && !isNaN(parseFloat(customPrice))
+            ? parseFloat(customPrice)
+            : parseFloat(unitPrice !== '' ? unitPrice : (masterItemData.unitPrice ?? masterItemData.unit_price ?? 0));
             
-        const lube = parseFloat(masterItemData.lubeCharge ?? masterItemData.lube_charge ?? 0);
-        const labour = parseFloat(masterItemData.labourCharge ?? masterItemData.labour_charge ?? 0);
+        const lube = customLube !== undefined && !isNaN(parseFloat(customLube))
+            ? parseFloat(customLube)
+            : parseFloat(lubeCharge !== '' ? lubeCharge : (masterItemData.lubeCharge ?? masterItemData.lube_charge ?? 0));
+
+        const labour = customLabour !== undefined && !isNaN(parseFloat(customLabour))
+            ? parseFloat(customLabour)
+            : parseFloat(labourCharge !== '' ? labourCharge : (masterItemData.labourCharge ?? masterItemData.labour_charge ?? 0));
         
         const q = parseFloat(qty) || 0; 
         
@@ -182,7 +203,7 @@ const JobSheetDetailPage = () => {
         
         return { lineParts, lineLubes, lineLabour, lineTotal };
     };
-    
+
     const totals = useMemo(() => {
         const list = Array.isArray(addedItems) ? addedItems : [];
         return list.reduce((acc, item) => {
@@ -217,10 +238,6 @@ const JobSheetDetailPage = () => {
         return errors;
     };
 
-
-    // Search input value for in-flow item creation
-    const [selectInputValue, setSelectInputValue] = useState('');
-
     // Dynamically compute uncommitted draft quantity and remaining available stock for the selected item
     const selectedItemStockInfo = useMemo(() => {
         if (!selectedMasterItem) return { totalStock: 0, draftedQty: 0, availableStock: 0 };
@@ -245,26 +262,52 @@ const JobSheetDetailPage = () => {
         return selectOptions.find(opt => opt.value === targetId) || selectedMasterItem;
     }, [selectedMasterItem, selectOptions]);
 
-    // --- LOCAL ITEM MANIPULATION HANDLERS ---
-    
-    // Auto-focus quantity field when an item is selected and pre-fill unit price
+    // Auto-focus quantity field when an item is selected and pre-fill all 3 prices
     const handleSelectChange = (selectedOption) => {
         setSelectedMasterItem(selectedOption);
-        setSelectInputValue(''); // Clear typed search string so React-Select renders selected label cleanly
+        setSelectInputValue('');
         if (selectedOption) {
             const masterItemData = masterItems.find(item => item.id === selectedOption.value) || selectedOption;
             const price = masterItemData.unit_price ?? masterItemData.unitPrice ?? 0;
+            const lube = masterItemData.lube_charge ?? masterItemData.lubeCharge ?? 0;
+            const labour = masterItemData.labour_charge ?? masterItemData.labourCharge ?? 0;
+
             setUnitPrice(price.toString());
+            setLubeCharge(lube.toString());
+            setLabourCharge(labour.toString());
+
             setTimeout(() => {
                 if (qtyRef.current) {
                     qtyRef.current.focus();
-                    qtyRef.current.select(); // Highlights '1' so user can just type to overwrite
+                    qtyRef.current.select();
                 }
             }, 0);
         } else {
             setUnitPrice('');
+            setLubeCharge('');
+            setLabourCharge('');
         }
     };
+
+    // Auto-focus KM Reading field on page load
+    useEffect(() => {
+        if (!loading && !isReadOnly && kmReadingRef.current) {
+            setTimeout(() => {
+                kmReadingRef.current?.focus();
+            }, 150);
+        }
+    }, [loading, isReadOnly]);
+
+    // Auto-scroll to newly added item in table
+    const prevItemsLength = useRef(addedItems.length);
+    useEffect(() => {
+        if (addedItems.length > prevItemsLength.current) {
+            setTimeout(() => {
+                tableEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
+        }
+        prevItemsLength.current = addedItems.length;
+    }, [addedItems.length]);
 
     // Helper to open the new item modal pre-filled with search text
     const openNewItemModalWithSearch = (searchName) => {
@@ -280,21 +323,63 @@ const JobSheetDetailPage = () => {
         setShowNewItemModal(true);
     };
 
-    // Auto-trigger focus to Rate field when Enter is pressed in Quantity field
+    // --- ENTER KEY MASTER NAVIGATION SEQUENCE ---
+    // 1. KM Reading Enter -> Notes
+    const handleKmKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (notesRef.current) {
+                notesRef.current.focus();
+                notesRef.current.select?.();
+            }
+        }
+    };
+
+    // 2. Notes Enter -> Search Item Dropdown
+    const handleNotesKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            if (selectRef.current) {
+                selectRef.current.focus();
+            }
+        }
+    };
+
+    // 3. Qty Enter -> Parts Rate (unitPrice)
     const handleQuantityKeyDown = (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             if (rateRef.current) {
                 rateRef.current.focus();
                 rateRef.current.select();
-            } else {
-                handleAddItem();
             }
         }
     };
 
-    // Auto-trigger add when Enter is pressed in Rate field
+    // 4. Parts Rate Enter -> Lubes Charge
     const handleRateKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (lubeRef.current) {
+                lubeRef.current.focus();
+                lubeRef.current.select();
+            }
+        }
+    };
+
+    // 5. Lubes Charge Enter -> Labour Charge
+    const handleLubeKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (labourRef.current) {
+                labourRef.current.focus();
+                labourRef.current.select();
+            }
+        }
+    };
+
+    // 6. Labour Charge Enter -> Add Item & Return Focus to Item Search
+    const handleLabourKeyDown = (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
             handleAddItem();
@@ -302,31 +387,34 @@ const JobSheetDetailPage = () => {
     };
 
     // Execute actual item insertion or reduction in addedItems array
-    const executeAddItem = (masterItemData, parsedQty, customRate) => {
+    const executeAddItem = (masterItemData, parsedQty) => {
         const currentItems = Array.isArray(addedItems) ? addedItems : [];
         const targetId = masterItemData.value || masterItemData.id;
         const existingItemIndex = currentItems.findIndex(item => item.masterItemId === targetId || item.master_item_id === targetId);
         let updatedItems;
 
-        const effectivePrice = customRate !== undefined && !isNaN(customRate)
-            ? customRate
-            : parseFloat(unitPrice !== '' ? unitPrice : (masterItemData.unitPrice ?? masterItemData.unit_price ?? 0));
+        const effectivePrice = parseFloat(unitPrice !== '' ? unitPrice : (masterItemData.unitPrice ?? masterItemData.unit_price ?? 0));
+        const effectiveLube = parseFloat(lubeCharge !== '' ? lubeCharge : (masterItemData.lubeCharge ?? masterItemData.lube_charge ?? 0));
+        const effectiveLabour = parseFloat(labourCharge !== '' ? labourCharge : (masterItemData.labourCharge ?? masterItemData.labour_charge ?? 0));
 
         if (existingItemIndex > -1) { 
             const newQuantity = currentItems[existingItemIndex].quantity + parsedQty;
             if (newQuantity <= 0) {
-                // If negative adjustment brings quantity to zero or less, remove item from table
                 updatedItems = currentItems.filter((_, index) => index !== existingItemIndex);
                 if (toast?.info) toast.info(`Removed "${masterItemData.name}" from job sheet.`);
             } else {
                 updatedItems = currentItems.map((item, index) => {
                     if (index === existingItemIndex) {
-                        const lineTotals = calculateLineTotals(masterItemData, newQuantity, effectivePrice);
+                        const lineTotals = calculateLineTotals(masterItemData, newQuantity, effectivePrice, effectiveLube, effectiveLabour);
                         return { 
                             ...item, 
                             quantity: newQuantity, 
                             unitPrice: effectivePrice, 
                             unit_price: effectivePrice,
+                            lubeCharge: effectiveLube,
+                            lube_charge: effectiveLube,
+                            labourCharge: effectiveLabour,
+                            labour_charge: effectiveLabour,
                             ...lineTotals
                         };
                     }
@@ -341,9 +429,7 @@ const JobSheetDetailPage = () => {
                 if (toast?.error) toast.error(`Item "${masterItemData.name}" is not in job sheet yet to reduce quantity.`);
                 return;
             }
-            const lubeCharge = parseFloat(masterItemData.lubeCharge ?? masterItemData.lube_charge ?? 0);
-            const labourCharge = parseFloat(masterItemData.labourCharge ?? masterItemData.labour_charge ?? 0);
-            const lineTotals = calculateLineTotals(masterItemData, parsedQty, effectivePrice);
+            const lineTotals = calculateLineTotals(masterItemData, parsedQty, effectivePrice, effectiveLube, effectiveLabour);
 
             const newItem = {
                 masterItemId: targetId,
@@ -353,10 +439,10 @@ const JobSheetDetailPage = () => {
                 quantity: parsedQty,
                 unitPrice: effectivePrice,
                 unit_price: effectivePrice,
-                lubeCharge,
-                lube_charge: lubeCharge,
-                labourCharge,
-                labour_charge: labourCharge,
+                lubeCharge: effectiveLube,
+                lube_charge: effectiveLube,
+                labourCharge: effectiveLabour,
+                labour_charge: effectiveLabour,
                 ...lineTotals
             };
             updatedItems = [...currentItems, newItem];
@@ -367,6 +453,8 @@ const JobSheetDetailPage = () => {
         setSelectInputValue('');
         setQuantity(1);
         setUnitPrice('');
+        setLubeCharge('');
+        setLabourCharge('');
 
         // Return focus to the search dropdown for the next item
         setTimeout(() => {
@@ -569,8 +657,13 @@ const JobSheetDetailPage = () => {
             kmReading: kmReading,
             notes: notes,
             status: newStatus,
-            dateCompleted: isFinalizingAction ? (workingDate || new Date().toISOString().split('T')[0]) : null,
-            items: addedItems.map(({ name, partNo, lineParts, lineLubes, lineLabour, lineTotal, ...rest }) => rest)
+            items: addedItems.map(item => ({
+                masterItemId: item.masterItemId || item.master_item_id,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice ?? item.unit_price ?? 0,
+                lubeCharge: item.lubeCharge ?? item.lube_charge ?? 0,
+                labourCharge: item.labourCharge ?? item.labour_charge ?? 0
+            }))
         };
 
         try {
@@ -790,9 +883,11 @@ const JobSheetDetailPage = () => {
                                     <InputGroup className="d-print-none">
                                         <InputGroup.Text><FaTachometerAlt /></InputGroup.Text>
                                         <Form.Control 
+                                            ref={kmReadingRef}
                                             type="text" 
                                             value={kmReading} 
                                             onChange={(e) => setKmReading(e.target.value)} 
+                                            onKeyDown={handleKmKeyDown}
                                             readOnly={isReadOnly} 
                                             placeholder="e.g., 45120" 
                                             disabled={isSavingDraft || isFinalizing} 
@@ -811,12 +906,14 @@ const JobSheetDetailPage = () => {
                                     <InputGroup className="d-print-none">
                                         <InputGroup.Text><FaStickyNote /></InputGroup.Text>
                                         <Form.Control 
+                                            ref={notesRef}
                                             as="textarea" 
                                             rows={1} 
                                             value={notes} 
                                             onChange={(e) => setNotes(e.target.value)} 
+                                            onKeyDown={handleNotesKeyDown}
                                             readOnly={isReadOnly} 
-                                            placeholder="Technician notes or customer instructions..." 
+                                            placeholder="Technician notes or customer instructions... (Press Enter for items)" 
                                             disabled={isSavingDraft || isFinalizing} 
                                             style={{ minHeight: '38px' }} 
                                         />
@@ -833,13 +930,28 @@ const JobSheetDetailPage = () => {
                 <Card className="shadow-sm border-print-0">
                     {!isReadOnly && (
                         <div className="d-print-none">
-                            <Card.Header className="bg-light-subtle border-bottom-0">
-                                <h5 className="h6 mb-0 text-muted"><FaPlus className="me-2" />Add Service / Spare Part</h5>
+                            <Card.Header className="bg-light-subtle border-bottom-0 py-2 px-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                <span className="fw-bold small text-muted text-uppercase">
+                                    <FaPlus className="me-1 text-primary" /> Add Service / Spare Part
+                                </span>
+                                {selectedMasterItem && selectedMasterItem.type === 'Spare' && (
+                                    <span>
+                                        {selectedItemStockInfo.availableStock > 0 ? (
+                                            <Badge bg="success" className="px-2 py-1">
+                                                Available Stock: {selectedItemStockInfo.availableStock} units
+                                            </Badge>
+                                        ) : (
+                                            <Badge bg={enforceStockValidation ? 'danger' : 'warning'} className="px-2 py-1">
+                                                OUT OF STOCK ({selectedItemStockInfo.availableStock})
+                                            </Badge>
+                                        )}
+                                    </span>
+                                )}
                             </Card.Header>
-                            <Card.Body className="pt-3 pb-4 bg-light-subtle">
+                            <Card.Body className="p-3 bg-light-subtle border-top border-bottom">
                                 <Row className="g-2 align-items-end">
-                                     <Col lg={4} md={6} sm={12} className="mb-2 mb-lg-0">
-                                         <Form.Label htmlFor="itemSelect" className="visually-hidden">Select Item</Form.Label>
+                                     <Col lg={4} md={12} className="mb-2 mb-lg-0">
+                                         <Form.Label htmlFor="itemSelect" className="fw-bold text-muted small text-uppercase mb-1" style={{ fontSize: '0.7rem' }}>Search Item / Service</Form.Label>
                                          <Select 
                                              ref={selectRef}
                                              id="itemSelect" 
@@ -876,18 +988,18 @@ const JobSheetDetailPage = () => {
                                                          className="text-primary fw-bold p-2 text-center"
                                                          style={{ cursor: 'pointer' }}
                                                      >
-                                                         <FaPlus className="me-1" /> Add "{selectInputValue.trim()}" as new item to inventory
+                                                         <FaPlus className="me-1" /> Add "{selectInputValue.trim()}" as new item
                                                      </div>
                                                  ) : "Type to search items..."
                                              )}
-                                             placeholder="Search or select an item (type new name & hit Enter)..." 
+                                             placeholder="Type item or service name..." 
                                              isClearable 
                                              isDisabled={isSavingDraft || isFinalizing} 
                                              classNamePrefix="react-select" 
                                          />
                                      </Col>
-                                     <Col lg={2} md={3} sm={4}>
-                                         <Form.Label htmlFor="quantityInput" className="visually-hidden">Quantity</Form.Label>
+                                     <Col lg={1.5} md={2} sm={3} xs={6}>
+                                         <Form.Label htmlFor="quantityInput" className="fw-bold text-muted small text-uppercase mb-1" style={{ fontSize: '0.7rem' }}>Qty</Form.Label>
                                          <Form.Control 
                                              ref={qtyRef}
                                              id="quantityInput" 
@@ -898,10 +1010,11 @@ const JobSheetDetailPage = () => {
                                              onKeyDown={handleQuantityKeyDown}
                                              disabled={!selectedMasterItem || isSavingDraft || isFinalizing} 
                                              placeholder="Qty" 
+                                             style={{ height: '38px' }}
                                          />
                                      </Col>
-                                     <Col lg={3} md={3} sm={4}>
-                                         <Form.Label htmlFor="rateInput" className="visually-hidden">Rate (₹)</Form.Label>
+                                     <Col lg={1.75} md={2} sm={3} xs={6}>
+                                         <Form.Label htmlFor="rateInput" className="fw-bold text-muted small text-uppercase mb-1" style={{ fontSize: '0.7rem' }}>Parts (₹)</Form.Label>
                                          <Form.Control 
                                              ref={rateRef}
                                              id="rateInput" 
@@ -911,45 +1024,59 @@ const JobSheetDetailPage = () => {
                                              onChange={(e) => setUnitPrice(e.target.value)} 
                                              onKeyDown={handleRateKeyDown}
                                              disabled={!selectedMasterItem || isSavingDraft || isFinalizing} 
-                                             placeholder="Rate (₹)" 
+                                             placeholder="Parts Rate" 
+                                             style={{ height: '38px' }}
                                          />
                                      </Col>
-                                     <Col lg={3} md={12} sm={4}>
+                                     <Col lg={1.75} md={2} sm={3} xs={6}>
+                                         <Form.Label htmlFor="lubeInput" className="fw-bold text-muted small text-uppercase mb-1" style={{ fontSize: '0.7rem' }}>Lubes (₹)</Form.Label>
+                                         <Form.Control 
+                                             ref={lubeRef}
+                                             id="lubeInput" 
+                                             type="number" 
+                                             step="any"
+                                             value={lubeCharge} 
+                                             onChange={(e) => setLubeCharge(e.target.value)} 
+                                             onKeyDown={handleLubeKeyDown}
+                                             disabled={!selectedMasterItem || isSavingDraft || isFinalizing} 
+                                             placeholder="Lubes Rate" 
+                                             style={{ height: '38px' }}
+                                         />
+                                     </Col>
+                                     <Col lg={1.75} md={2} sm={3} xs={6}>
+                                         <Form.Label htmlFor="labourInput" className="fw-bold text-muted small text-uppercase mb-1" style={{ fontSize: '0.7rem' }}>Labour (₹)</Form.Label>
+                                         <Form.Control 
+                                             ref={labourRef}
+                                             id="labourInput" 
+                                             type="number" 
+                                             step="any"
+                                             value={labourCharge} 
+                                             onChange={(e) => setLabourCharge(e.target.value)} 
+                                             onKeyDown={handleLabourKeyDown}
+                                             disabled={!selectedMasterItem || isSavingDraft || isFinalizing} 
+                                             placeholder="Labour Rate" 
+                                             style={{ height: '38px' }}
+                                         />
+                                     </Col>
+                                     <Col lg={1.25} md={12} sm={12} xs={12}>
                                          <Button 
                                              variant="primary" 
-                                             className="w-100" 
+                                             className="w-100 fw-bold shadow-xs d-flex align-items-center justify-content-center" 
                                              onClick={handleAddItem} 
                                              disabled={!selectedMasterItem || !quantity || parseFloat(quantity) === 0 || isSavingDraft || isFinalizing}
+                                             style={{ background: 'linear-gradient(135deg, #6366F1, #4F46E5)', border: 'none', height: '38px' }}
                                          >
-                                             <FaPlus className="me-1" /> Add / Adjust Item
+                                             <FaPlus className="me-1" /> Add
                                          </Button>
                                      </Col>
                                  </Row>
-
-                                 {selectedMasterItem && selectedMasterItem.type === 'Spare' && (
-                                     <div className="mt-2 pt-2 border-top d-flex align-items-center justify-content-between flex-wrap gap-2">
-                                         {selectedItemStockInfo.availableStock > 0 ? (
-                                             <Badge bg="success" className="px-2 py-1">
-                                                 Available Stock: {selectedItemStockInfo.availableStock} units remaining {selectedItemStockInfo.draftedQty > 0 ? `(${selectedItemStockInfo.draftedQty} already drafted)` : ''}
-                                             </Badge>
-                                         ) : (
-                                             <Badge bg={enforceStockValidation ? 'danger' : 'warning'} className="px-2 py-1">
-                                                 {enforceStockValidation ? (
-                                                     <>OUT OF STOCK ({selectedItemStockInfo.availableStock} remaining) — Insufficient stock prompts quick restock</>
-                                                 ) : (
-                                                     <>OUT OF STOCK ({selectedItemStockInfo.availableStock} remaining) — Validation Bypassed (Negative stock allowed)</>
-                                                 )}
-                                             </Badge>
-                                         )}
-                                     </div>
-                                 )}
                             </Card.Body>
                         </div>
                     )}
                     <Card.Header className={`bg-light fw-bold text-uppercase ${!isReadOnly ? "border-top d-print-none" : ""}`}>
                         <h5 className="h6 mb-0 text-muted">Tasks & Required Parts</h5>
                     </Card.Header>
-                    <Card.Body className="p-0">
+                    <Card.Body className="p-0" ref={tableEndRef}>
                         <div className="table-responsive">
                            <Table hover className="mb-0 align-middle jobsheet-items-table border-print-dark">
                                 <thead className="table-light small text-uppercase text-secondary">
@@ -1021,6 +1148,7 @@ const JobSheetDetailPage = () => {
                                 )}
                             </Table>
                         </div>
+                        <div ref={tableEndRef} />
                     </Card.Body>
                 </Card>
 

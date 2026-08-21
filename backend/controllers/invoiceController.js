@@ -108,7 +108,7 @@ exports.getReadyJobSheets = async (req, res) => {
                 v.car_number,
                 v.vin,
                 (
-                    SELECT COALESCE(SUM((jsi.unit_price * jsi.quantity) + jsi.lube_charge + jsi.labour_charge), 0)
+                    SELECT COALESCE(SUM((jsi.unit_price * jsi.quantity) + (jsi.lube_charge * jsi.quantity) + (jsi.labour_charge * jsi.quantity)), 0)
                     FROM job_sheet_items jsi WHERE jsi.job_sheet_id = js.id
                 ) AS grand_total,
                 (
@@ -116,11 +116,11 @@ exports.getReadyJobSheets = async (req, res) => {
                     FROM job_sheet_items jsi WHERE jsi.job_sheet_id = js.id
                 ) AS total_parts,
                 (
-                    SELECT COALESCE(SUM(jsi.lube_charge), 0)
+                    SELECT COALESCE(SUM(jsi.lube_charge * jsi.quantity), 0)
                     FROM job_sheet_items jsi WHERE jsi.job_sheet_id = js.id
                 ) AS total_lubes,
                 (
-                    SELECT COALESCE(SUM(jsi.labour_charge), 0)
+                    SELECT COALESCE(SUM(jsi.labour_charge * jsi.quantity), 0)
                     FROM job_sheet_items jsi WHERE jsi.job_sheet_id = js.id
                 ) AS total_labour,
                 (
@@ -130,13 +130,12 @@ exports.getReadyJobSheets = async (req, res) => {
                         'part_no', mi.part_no,
                         'quantity', jsi.quantity,
                         'unit_price', jsi.unit_price,
-                        'lube_charge', jsi.lube_charge,
-                        'labour_charge', jsi.labour_charge,
-                        -- CRITICAL FIX: Expose the line totals directly for the React mapper
+                        'lube_charge', (jsi.lube_charge * jsi.quantity),
+                        'labour_charge', (jsi.labour_charge * jsi.quantity),
                         'line_parts', (jsi.unit_price * jsi.quantity),
-                        'line_lubes', jsi.lube_charge,
-                        'line_labour', jsi.labour_charge,
-                        'line_total', (jsi.unit_price * jsi.quantity) + jsi.lube_charge + jsi.labour_charge
+                        'line_lubes', (jsi.lube_charge * jsi.quantity),
+                        'line_labour', (jsi.labour_charge * jsi.quantity),
+                        'line_total', (jsi.unit_price * jsi.quantity) + (jsi.lube_charge * jsi.quantity) + (jsi.labour_charge * jsi.quantity)
                     ))
                     FROM job_sheet_items jsi
                     JOIN master_items mi ON jsi.master_item_id = mi.id
@@ -213,7 +212,7 @@ exports.createInvoice = async (req, res) => {
         // STEP 2: CALCULATE FINAL INVOICE AMOUNTS
         // ======================================================
         const itemsTotalRes = await client.query(
-            `SELECT COALESCE(SUM((unit_price * quantity) + lube_charge + labour_charge), 0) AS sub_total
+            `SELECT COALESCE(SUM((unit_price * quantity) + (lube_charge * quantity) + (labour_charge * quantity)), 0) AS sub_total
              FROM job_sheet_items WHERE job_sheet_id = $1`,
             [jobSheetId]
         );

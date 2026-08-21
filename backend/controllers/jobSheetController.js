@@ -247,9 +247,10 @@ exports.updateJobSheetStatus = async (req, res) => {
         const currentJobSheet = currentStateQuery.rows[0];
         let newJobSheetNumber = currentJobSheet.job_sheet_number; // Default to the existing number
 
-        // --- NEW LOGIC: Check if we are promoting a "Waiting" job ---
-        // If so, generate the official job sheet number from garages table.
-        if (currentJobSheet.status === 'Waiting' && status === 'In Progress') {
+        const isTemporaryNumber = !currentJobSheet.job_sheet_number || currentJobSheet.job_sheet_number.startsWith('CHECKIN-');
+
+        // --- ANTI-COLLISION LOGIC: Generate official job sheet number if temporary ---
+        if (isTemporaryNumber && (status === 'In Progress' || status === 'Completed' || status === 'Invoiced')) {
             
             // 1. Fetch settings from garages table and lock row to prevent duplicate numbers
             const settingsRes = await client.query(
@@ -263,18 +264,34 @@ exports.updateJobSheetStatus = async (req, res) => {
 
             const settings = settingsRes.rows[0];
 
-            // 2. Format the Dynamic Number
+            // 2. Format the Dynamic Prefix
             const currentYear = new Date().getFullYear();
             const rawPrefix = settings.jobsheet_prefix || 'JS-';
             const dynamicPrefix = rawPrefix.replace('{YYYY}', currentYear);
-            const nextNum = settings.jobsheet_next_num || 1;
-            const paddedNumber = String(nextNum).padStart(4, '0');
-            newJobSheetNumber = `${dynamicPrefix}${paddedNumber}`; // e.g., JS-0001 or JS-2026-0001
+            let candidateNum = parseInt(settings.jobsheet_next_num, 10) || 1;
 
-            // 3. Increment the counter for the next vehicle
+            // 3. Collision-Proof Loop: Ensure the assigned number is 100% unique in DB
+            while (true) {
+                const candidatePadded = String(candidateNum).padStart(4, '0');
+                const candidateJobSheetNumber = `${dynamicPrefix}${candidatePadded}`;
+
+                const existingCheck = await client.query(
+                    `SELECT id FROM job_sheets WHERE garage_id = $1 AND job_sheet_number = $2 AND id != $3`,
+                    [garageId, candidateJobSheetNumber, id]
+                );
+
+                if (existingCheck.rowCount === 0) {
+                    newJobSheetNumber = candidateJobSheetNumber;
+                    candidateNum++;
+                    break;
+                }
+                candidateNum++;
+            }
+
+            // 4. Increment the counter in garages table to the next unused number
             await client.query(
-                `UPDATE garages SET jobsheet_next_num = COALESCE(jobsheet_next_num, 1) + 1 WHERE id = $1`,
-                [garageId]
+                `UPDATE garages SET jobsheet_next_num = $1 WHERE id = $2`,
+                [candidateNum, garageId]
             );
         }
         
