@@ -475,12 +475,22 @@ server.listen(PORT, '0.0.0.0', async () => {
     `);
     console.log('[DB Schema] All tables, columns, and indexes verified.');
 
-    // Auto-seed Indian Vehicle Makes and Models if empty, incomplete, or missing Ford
+    // Auto-seed Indian Vehicle Makes and Models if empty, incomplete, or if legacy lumped models exist
+    const seedScript = require('./scripts/seedIndianVehiclesHelper');
     const makeCheck = await db.query('SELECT COUNT(*) FROM makes');
     const fordCheck = await db.query("SELECT id FROM makes WHERE LOWER(name) = 'ford'");
-    if (parseInt(makeCheck.rows[0].count, 10) < 20 || fordCheck.rows.length === 0) {
-      console.log('[DB Seed] Seeding complete Indian vehicle makes and models (including Ford)...');
-      const seedScript = require('./scripts/seedIndianVehiclesHelper');
+    const lumpedCheck = await db.query(
+      'SELECT id FROM models WHERE name = ANY($1) LIMIT 1',
+      [seedScript.legacyLumpedNames]
+    );
+    const individualFordCheck = await db.query(`
+      SELECT m.id FROM models m 
+      JOIN makes mk ON m.make_id = mk.id 
+      WHERE LOWER(mk.name) = 'ford' AND LOWER(m.name) = 'ecosport'
+    `);
+
+    if (parseInt(makeCheck.rows[0].count, 10) < 25 || fordCheck.rows.length === 0 || lumpedCheck.rows.length > 0 || individualFordCheck.rows.length === 0) {
+      console.log('[DB Seed] Cleaning up legacy lumped models & syncing individual models (Ford, MG, Chevy, Renault, Nissan, etc.)...');
       await seedScript.runAutoSeed();
     }
   } catch (err) {
