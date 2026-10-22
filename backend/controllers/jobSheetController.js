@@ -471,11 +471,17 @@ exports.updateJobSheetDetails = async (req, res) => {
             WHERE id = $6 AND garage_id = $7 RETURNING id;
         `;
 
+        const jsDateCheck = await client.query('SELECT date_created, date_completed FROM job_sheets WHERE id = $1 AND garage_id = $2', [id, garageId]);
+        const jsRow = jsDateCheck.rows[0];
+        const effectiveCompletedDate = (status === 'Completed' || status === 'Invoiced')
+            ? (dateCompleted || jsRow?.date_completed || jsRow?.date_created || new Date())
+            : null;
+
         const updateResult = await client.query(updateJobSheetQuery, [
-            cleanKmReading, // Using sanitized value/null instead of raw string
+            cleanKmReading,
             notes, 
             status,
-            status === 'Completed' ? (dateCompleted || new Date()) : null,
+            effectiveCompletedDate,
             nextServiceKm,
             id, 
             garageId

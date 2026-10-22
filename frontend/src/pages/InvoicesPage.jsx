@@ -185,7 +185,9 @@ const InvoicesPage = () => {
       key: 'invoice_number',
       label: 'Invoice #',
       sortable: true,
-      render: (val, row) => <strong className="text-primary">#{val || row.id}</strong>
+      render: (val, row) => (
+        <strong className="text-primary">#{val || row.id}</strong>
+      )
     },
     {
       key: 'customer_name',

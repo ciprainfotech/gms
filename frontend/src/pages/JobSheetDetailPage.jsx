@@ -657,6 +657,7 @@ const JobSheetDetailPage = () => {
             kmReading: kmReading,
             notes: notes,
             status: newStatus,
+            dateCompleted: workingDate,
             items: addedItems.map(item => ({
                 masterItemId: item.masterItemId || item.master_item_id,
                 quantity: item.quantity,

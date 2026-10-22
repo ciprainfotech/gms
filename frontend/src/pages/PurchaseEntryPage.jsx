@@ -1,522 +1,448 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Container, Row, Col, Card, Form, Button, InputGroup, Table, Alert, Spinner, Badge, Modal } from 'react-bootstrap';
-import { FaFileInvoiceDollar, FaBox, FaPlus, FaTrashAlt, FaTimes, FaSave, FaKeyboard, FaHistory, FaUserTie } from 'react-icons/fa';
+import React, { useState, useEffect, useRef } from 'react';
+import { Row, Col, Modal, Form } from 'react-bootstrap';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Select, { createFilter } from 'react-select';
-import { motion, AnimatePresence } from 'framer-motion';
-
-// Completely replaced staticData with your custom API wrapper
+import { 
+  FaTrash, FaPlus, FaSave, FaReceipt, FaUserTie, 
+  FaCalendarAlt, FaFileInvoiceDollar, FaBuilding
+} from 'react-icons/fa';
 import api from '../api/api';
-import CustomToast from '../components/CustomToast';
-import { validatePhone, validateNumber, sanitizeString } from '../utils/validators';
-import { formatDateShort, getTodayString } from '../utils/dateUtils';
+import CustomToast, { ToastContainer } from '../components/CustomToast';
+import LoadingOverlay from '../components/LoadingOverlay';
+import { getTodayString } from '../utils/dateUtils';
+import '../assets/SaaSPremium.css'; 
 
-import '../App.css';
-import '../PurchaseEntryPage.css';
-
-// Helpers
-const formatCurrency = (amount, minimumFractionDigits = 2) => {
-    if (amount == null || isNaN(Number(amount))) return 'N/A';
-    return Number(amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits, maximumFractionDigits: 2 });
-};
-
-// Use shared timezone-safe date formatter
-const formatDate = formatDateShort;
+const formatCurrency = (amount) => Number(amount || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 const PurchaseEntryPage = () => {
-    const navigate = useNavigate();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const editBill = location.state?.bill;
+  const isEditMode = !!editBill;
 
-    // --- State ---
-    const [masterItems, setMasterItems] = useState([]);
-    const [suppliers, setSuppliers] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
-    // Use getTodayString() instead of new Date().toISOString().split('T')[0]
-    // toISOString() gives UTC date — in IST (UTC+5:30) after midnight but before 5:30 AM
-    // it would give yesterday's date. getTodayString() always returns the local calendar date.
-    const [billDetails, setBillDetails] = useState({ supplierId: '', billNumber: '', billDate: getTodayString(), notes: '' });
-    const [billItems, setBillItems] = useState([]);
-    const [selectedMasterItem, setSelectedMasterItem] = useState(null);
-    const [isSaving, setIsSaving] = useState(false);
-    const [toast, setToast] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [suppliers, setSuppliers] = useState([]);
+  const [masterItems, setMasterItems] = useState([]);
 
-    
-    // Modals
-    const [showAddSupplierModal, setShowAddSupplierModal] = useState(false);
-    const [newSupplierData, setNewSupplierData] = useState({ name: '', phone: '', contactPerson: '', city: '' });
-    const [supplierFormError, setSupplierFormError] = useState('');
+  const qtyInputRef = useRef(null);
+  const rateInputRef = useRef(null);
+  const itemSelectRef = useRef(null);
 
-    // --- Refs ---
-    const itemSelectRef = useRef(null);
-    const quantityInputRefs = useRef({});
-    const costInputRefs = useRef({});
-    const supplierSelectRef = useRef(null);
-    const billNumberRef = useRef(null);
+  const [billDetails, setBillDetails] = useState({
+    supplierId: '',
+    supplierName: '',
+    billNumber: '',
+    billDate: getTodayString(),
+    dueDate: getTodayString(),
+    discountAmount: 0,
+    taxAmount: 0,
+    notes: ''
+  });
 
-    // --- Load Initial Data from Database ---
-    const [isModuleLocked, setIsModuleLocked] = useState(false);
+  const [billItems, setBillItems] = useState([]);
+  const [currentItem, setCurrentItem] = useState({
+    masterItemId: null,
+    itemName: '',
+    qty: '',
+    rate: '',
+    discount: 0,
+    taxPercentage: 0
+  });
 
-    useEffect(() => {
-        const loadInitialData = async () => {
-            setIsLoading(true);
-            try {
-                const [itemsRes, suppliersRes] = await Promise.all([
-                    api.get('/master-items'),
-                    api.get('/suppliers')
-                ]);
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [supplierForm, setSupplierForm] = useState({ name: '', phone: '', email: '', address: '', gstNumber: '', creditDays: 0, openingBalance: 0, notes: '' });
 
-                if (itemsRes.status === 403 || suppliersRes.status === 403) {
-                    setIsModuleLocked(true);
-                } else if (itemsRes.ok && suppliersRes.ok) {
-                    setMasterItems(await itemsRes.json());
-                    setSuppliers(await suppliersRes.json());
-                    setIsModuleLocked(false);
-                } else {
-                    setToast({ type: 'error', title: 'Error', message: "Failed to fetch data from the server." });
-                }
-            } catch (err) {
-                console.error("Error loading initial data:", err);
-                setToast({ type: 'error', title: 'Error', message: "Failed to connect to the database. Please check your connection." });
-            } finally {
-                setIsLoading(false);
-            }
-        };
+  const showToast = (type, title, msg) => setToast({ type, title, msg });
 
-        loadInitialData();
-    }, []);
+  useEffect(() => {
+    fetchSuppliers();
+    fetchMasterItems();
+    if (isEditMode) {
+      loadBillForEditing(editBill);
+    }
+  }, [isEditMode, editBill]);
 
-    // --- Memoized Options & Calculations ---
-    const masterItemOptions = useMemo(() => {
-        return masterItems.map(item => ({
-            value: item.id,
-            label: `${item.name} ${item.partNo ? `(${item.partNo})` : ''} ${item.type === 'Service' ? '[Svc]' : '[Sp]'}`,
-            itemData: item
-        }));
-    }, [masterItems]);
+  const fetchSuppliers = async () => {
+    try {
+      const res = await api.get('/suppliers');
+      if (res.data.success) setSuppliers(res.data.data);
+    } catch (err) {
+      console.error('Failed to fetch suppliers:', err);
+    }
+  };
 
-    const supplierOptions = useMemo(() => {
-        return suppliers.map(s => ({ value: s.id, label: s.name }));
-    }, [suppliers]);
+  const fetchMasterItems = async () => {
+    try {
+      const res = await api.get('/master-items');
+      if (res.data.success) setMasterItems(res.data.data);
+    } catch (err) {
+      console.error('Failed to fetch master items:', err);
+    }
+  };
 
-    const calculateGrandTotal = useMemo(() => {
-        return billItems.reduce((total, item) => total + (Number(item.lineTotal) || 0), 0);
-    }, [billItems]);
+  const loadBillForEditing = async (bill) => {
+    setBillDetails({
+      supplierId: bill.supplierId || '',
+      supplierName: bill.supplierName || '',
+      billNumber: bill.billNumber || '',
+      billDate: bill.billDate ? bill.billDate.split('T')[0] : getTodayString(),
+      dueDate: bill.dueDate ? bill.dueDate.split('T')[0] : getTodayString(),
+      discountAmount: bill.discountAmount || 0,
+      taxAmount: bill.taxAmount || 0,
+      notes: bill.notes || ''
+    });
 
-    // --- Handlers ---
-    const handleBillDetailChange = (e) => setBillDetails({ ...billDetails, [e.target.name]: e.target.value });
-    const handleSupplierSelect = (selectedOption) => setBillDetails({ ...billDetails, supplierId: selectedOption ? selectedOption.value : '' });
-    const handleMasterItemSelectChange = (selectedOption) => setSelectedMasterItem(selectedOption);
+    try {
+      setLoading(true);
+      const res = await api.get(`/purchase-bills/${bill.id}`);
+      if (res.data.success) {
+        setBillItems(res.data.data.items.map(i => ({
+          masterItemId: i.masterItemId,
+          itemName: i.itemName,
+          qty: Number(i.qty),
+          rate: Number(i.rate),
+          discount: Number(i.discountAmount || 0),
+          taxPercentage: Number(i.taxPercentage || 0),
+          totalAmount: Number(i.totalAmount)
+        })));
+      }
+    } catch (err) {
+      showToast('error', 'Error', 'Failed to load bill items.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const addItemToBill = useCallback((itemToAdd) => {
-        if (!itemToAdd || !itemToAdd.value || !itemToAdd.itemData) {
-            setToast({ type: 'warning', title: 'Invalid Selection', message: "Please select a valid item first." });
-            return;
-        }
-        if (billItems.some(item => item.masterItem.id === itemToAdd.value)) {
-            setToast({ type: 'warning', title: 'Item Exists', message: `"${itemToAdd.itemData.name}" is already added. Adjust quantity below.` });
-            const existingIndex = billItems.findIndex(i => i.masterItem.id === itemToAdd.value);
-            if (existingIndex !== -1 && quantityInputRefs.current[itemToAdd.value]) {
-                quantityInputRefs.current[itemToAdd.value]?.focus();
-                quantityInputRefs.current[itemToAdd.value]?.select();
-            }
-            return;
-        }
-        const defaultPurchasePrice = itemToAdd.itemData.type === 'Spare' ? (itemToAdd.itemData.costPrice ?? '') : '';
-        const defaultQuantity = itemToAdd.itemData.type === 'Service' ? 1 : 1;
-        const newItem = {
-            masterItem: itemToAdd.itemData,
-            quantity: defaultQuantity,
-            purchasePrice: defaultPurchasePrice,
-            lineTotal: (itemToAdd.itemData.type === 'Spare' && defaultPurchasePrice !== '') ? (Number(defaultPurchasePrice) * defaultQuantity) : 0,
-            sellingPrice: itemToAdd.itemData.unitPrice
-        };
-        setBillItems(prevItems => [...prevItems, newItem]);
-        setSelectedMasterItem(null);
-        if (itemToAdd.itemData.type === 'Spare') {
-            setTimeout(() => {
-                if (quantityInputRefs.current[newItem.masterItem.id]) {
-                    quantityInputRefs.current[newItem.masterItem.id]?.focus();
-                    quantityInputRefs.current[newItem.masterItem.id]?.select();
-                }
-            }, 50);
-        } else {
-            setTimeout(() => itemSelectRef.current?.focus(), 50);
-        }
-    }, [billItems]);
+  const calculateSubtotal = () => billItems.reduce((acc, i) => acc + (Number(i.qty) * Number(i.rate)), 0);
+  const calculateTotalItemDiscount = () => billItems.reduce((acc, i) => acc + Number(i.discount || 0), 0);
+  const calculateTotalItemTax = () => billItems.reduce((acc, i) => {
+    const preTax = (Number(i.qty) * Number(i.rate)) - Number(i.discount || 0);
+    return acc + (preTax * (Number(i.taxPercentage || 0) / 100));
+  }, 0);
 
-    const handleItemInputChange = (index, field, value) => {
-        const updatedItems = [...billItems];
-        const item = updatedItems[index];
-        if (!item) return;
-        if (item.masterItem.type === 'Service' && (field === 'quantity' || field === 'purchasePrice')) return;
-        let numericValue;
-        if (value === '') {
-            numericValue = '';
-        } else {
-            numericValue = field === 'quantity' ? parseInt(value, 10) : parseFloat(value);
-            if (isNaN(numericValue) || numericValue < 0) {
-                numericValue = item[field];
-            }
-        }
-        item[field] = numericValue;
-        const qty = Number(item.quantity) || 0;
-        const price = Number(item.purchasePrice) || 0;
-        item.lineTotal = (qty > 0 && price >= 0) ? parseFloat((qty * price).toFixed(2)) : 0;
-        setBillItems(updatedItems);
-    };
+  const calculateFinalTotal = () => {
+    const base = calculateSubtotal() - calculateTotalItemDiscount() + calculateTotalItemTax();
+    const finalVal = base - Number(billDetails.discountAmount || 0) + Number(billDetails.taxAmount || 0);
+    return finalVal > 0 ? finalVal : 0;
+  };
 
-    const handleItemInputKeyDown = (e, index, currentField) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            const currentItem = billItems[index];
-            if (!currentItem) return;
-            if (currentItem.masterItem.type === 'Service') {
-                itemSelectRef.current?.focus();
-                return;
-            }
-            if (currentField === 'quantity') {
-                if (costInputRefs.current[currentItem.masterItem.id]) {
-                    costInputRefs.current[currentItem.masterItem.id]?.focus();
-                    costInputRefs.current[currentItem.masterItem.id]?.select();
-                }
-            } else if (currentField === 'purchasePrice') {
-                if (itemSelectRef.current) {
-                    itemSelectRef.current.focus();
-                }
-            }
-        }
-    };
-
-    const handleRemoveItem = (index) => {
-        setBillItems(prevItems => prevItems.filter((_, i) => i !== index));
-        itemSelectRef.current?.focus();
-    };
-
-    const openAddSupplierModal = () => { setShowAddSupplierModal(true); };
-    const closeAddSupplierModal = () => setShowAddSupplierModal(false);
-    const handleNewSupplierChange = (e) => setNewSupplierData({ ...newSupplierData, [e.target.name]: e.target.value });
-
-    // --- Database Add Supplier ---
-    const handleAddSupplierSubmit = async (e) => {
-        e.preventDefault();
-        setSupplierFormError('');
-        
-        if (!newSupplierData.name || !newSupplierData.name.trim()) {
-            setSupplierFormError("Supplier name is required."); return;
-        }
-        
-        const phoneValidation = validatePhone(newSupplierData.phone, true);
-        if (!phoneValidation.isValid) {
-            setSupplierFormError(phoneValidation.error); return;
-        }
-
-        try {
-            const response = await api.post('/suppliers', {
-                ...newSupplierData,
-                name: sanitizeString(newSupplierData.name),
-                phone: phoneValidation.cleanPhone,
-                contactPerson: sanitizeString(newSupplierData.contactPerson),
-                city: sanitizeString(newSupplierData.city)
-            });
-            const addedSupplier = await response.json();
-
-            if (response.ok) {
-                // Refresh suppliers list
-                const suppliersRes = await api.get('/suppliers');
-                if (suppliersRes.ok) setSuppliers(await suppliersRes.json());
-                
-                setBillDetails(prev => ({ ...prev, supplierId: addedSupplier.id }));
-                closeAddSupplierModal();
-                setNewSupplierData({ name: '', phone: '', contactPerson: '', city: '' });
-                
-                setTimeout(() => billNumberRef.current?.focus(), 100);
-                setToast({ type: 'success', title: 'Success', message: `Supplier "${addedSupplier.name}" added successfully.` });
-            } else {
-                setSupplierFormError(addedSupplier.message || "Error adding supplier.");
-            }
-        } catch (error) {
-            setSupplierFormError("Server error while connecting to the database.");
-        }
-    };
-
-    // --- Database Save Purchase Bill ---
-    const handleSavePurchase = async () => {
-        if (isSaving) return;
-        if (!billDetails.supplierId) { setToast({ type: 'error', title: 'Validation', message: "Please select a Supplier." }); supplierSelectRef.current?.focus(); return; }
-        if (!billDetails.billNumber.trim()) { setToast({ type: 'error', title: 'Validation', message: "Please enter the Bill/Invoice No." }); billNumberRef.current?.focus(); return; }
-        if (!billDetails.billDate) { setToast({ type: 'error', title: 'Validation', message: "Please select the Bill Date." }); return; }
-        if (billItems.length === 0) { setToast({ type: 'error', title: 'Validation', message: "Please add at least one item to the bill." }); itemSelectRef.current?.focus(); return; }
-        
-        let invalidItemFound = false;
-        for (let i = 0; i < billItems.length; i++) {
-            const item = billItems[i];
-            if (item.masterItem.type === 'Spare') {
-                const qty = Number(item.quantity); const price = Number(item.purchasePrice);
-                if (isNaN(qty) || qty <= 0) {
-                    setToast({ type: 'error', title: 'Invalid Quantity', message: `Invalid Quantity (> 0 required) for "${item.masterItem.name}".` });
-                    quantityInputRefs.current[item.masterItem.id]?.focus(); invalidItemFound = true; break;
-                }
-                if (isNaN(price) || price < 0) {
-                    setToast({ type: 'error', title: 'Invalid Cost', message: `Invalid Cost/Unit (>= 0 required) for "${item.masterItem.name}".` });
-                    costInputRefs.current[item.masterItem.id]?.focus(); invalidItemFound = true; break;
-                }
-            }
-        }
-        
-        if (invalidItemFound) return;
-        setIsSaving(true);
-        
-        const billDataToSave = { 
-             supplierId: billDetails.supplierId,
-            billNumber: billDetails.billNumber.trim(),
-            billDate: billDetails.billDate,
-            notes: billDetails.notes.trim(),
-            items: billItems.map(item => ({
-                masterItemId: item.masterItem.id,
-                quantity: Number(item.quantity) || 0,
-                purchasePrice: Number(item.purchasePrice) || 0
-            }))
-        };
-
-        try {
-            const response = await api.post('/purchase-bills', billDataToSave);
-            const result = await response.json();
-
-            if (response.ok) {
-                setToast({ type: 'success', title: 'Saved!', message: `Bill saved successfully! Stock & cost prices updated.` });
-                
-                // Refresh master items so the component has the newest stock quantities
-                const itemsRes = await api.get('/master-items');
-                if (itemsRes.ok) setMasterItems(await itemsRes.json());
-
-                // Reset form
-                setBillDetails({ supplierId: '', billNumber: '', billDate: getTodayString(), notes: '' });
-
-                setBillItems([]);
-                setSelectedMasterItem(null);
-                supplierSelectRef.current?.focus();
-            } else {
-                setToast({ type: 'error', title: 'Save Failed', message: `Save failed: ${result.message || 'An unknown error occurred.'}` });
-            }
-        } catch (error) {
-            setToast({ type: 'error', title: 'Server Error', message: "Server error while saving the purchase bill." });
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    // --- Render ---
-    if (isModuleLocked) {
-        return (
-            <Container fluid className="p-5 text-center">
-                <Card className="border-0 shadow-lg p-5 rounded-4 mx-auto mt-4" style={{ maxWidth: '650px', backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
-                    <div className="mx-auto mb-4 p-3 rounded-circle text-danger d-flex align-items-center justify-content-center" style={{ backgroundColor: '#fef2f2', width: '80px', height: '80px' }}>
-                        <FaTimes size={44} />
-                    </div>
-                    <h3 className="fw-bold text-dark mb-2">Module Access Locked</h3>
-                    <p className="text-muted mb-4 fs-6">
-                        The <strong>Purchase Entry & Supplier Bills</strong> module has been disabled for your garage account by Cipra Infotech Super Admin.
-                    </p>
-                    <Alert variant="warning" className="border-0 rounded-3 text-start mb-4">
-                        <FaFileInvoiceDollar className="me-2 text-warning" />
-                        To activate this module or upgrade your subscription plan, please contact <strong>admin@ciprainfotech.com</strong>.
-                    </Alert>
-                </Card>
-            </Container>
-        );
+  const handleAddItem = (e) => {
+    e.preventDefault();
+    if (!currentItem.masterItemId && !currentItem.itemName.trim()) {
+      showToast('error', 'Error', 'Please select or enter an item.');
+      return;
+    }
+    if (!currentItem.qty || Number(currentItem.qty) <= 0) {
+      showToast('error', 'Error', 'Quantity must be > 0.');
+      return;
+    }
+    if (Number(currentItem.rate) < 0) {
+      showToast('error', 'Error', 'Rate cannot be negative.');
+      return;
     }
 
-    return (
-        <Container fluid className="py-4 px-md-4 purchase-entry-page">
-            {/* Page Header */}
-            <Row className="mb-4 align-items-center page-header-row">
-                <Col>
-                    <h2 className="page-title mb-0"><FaFileInvoiceDollar className="me-2" />Record Purchase Bill</h2>
-                </Col>
-                <Col xs="auto" className="d-flex gap-2">
-                    <Link to="/purchase-history">
-                        <Button variant="outline-secondary" size="sm">
-                            <FaHistory className="me-1" /> View History
-                        </Button>
-                    </Link>
-                    <Link to="/stock">
-                        <Button variant="outline-info" size="sm">
-                            <FaBox className="me-1" /> View Stock
-                        </Button>
-                    </Link>
-                </Col>
-            </Row>
+    const preTax = (Number(currentItem.qty) * Number(currentItem.rate)) - Number(currentItem.discount || 0);
+    const taxAmt = preTax * (Number(currentItem.taxPercentage || 0) / 100);
+    const totalAmount = preTax + taxAmt;
 
-            {/* Alerts */}
-            {toast && <CustomToast type={toast.type} title={toast.title} message={toast.message} onClose={() => setToast(null)} />}
+    const newItem = {
+      ...currentItem,
+      qty: Number(currentItem.qty),
+      rate: Number(currentItem.rate),
+      discount: Number(currentItem.discount || 0),
+      taxPercentage: Number(currentItem.taxPercentage || 0),
+      totalAmount
+    };
 
-            {/* Single Column Layout */}
+    setBillItems([...billItems, newItem]);
+    setCurrentItem({ masterItemId: null, itemName: '', qty: '', rate: '', discount: 0, taxPercentage: 0 });
+    if (itemSelectRef.current) itemSelectRef.current.focus();
+  };
+
+  const handleRemoveItem = (index) => {
+    setBillItems(billItems.filter((_, i) => i !== index));
+  };
+
+  const handleSaveBill = async () => {
+    if (!billDetails.supplierId) return showToast('error', 'Validation Error', 'Supplier is required.');
+    if (!billDetails.billNumber.trim()) return showToast('error', 'Validation Error', 'Bill Number is required.');
+    if (billItems.length === 0) return showToast('error', 'Validation Error', 'Add at least one item.');
+
+    try {
+      setLoading(true);
+      const payload = { ...billDetails, items: billItems, totalAmount: calculateFinalTotal(), netAmount: calculateFinalTotal() };
+
+      if (isEditMode) {
+        const res = await api.put(`/purchase-bills/${editBill.id}`, payload);
+        if (res.data.success) {
+          showToast('success', 'Updated', 'Purchase Bill updated.');
+          setTimeout(() => navigate('/inventory/purchases/history'), 1000);
+        }
+      } else {
+        const res = await api.post('/purchase-bills', payload);
+        if (res.data.success) {
+          showToast('success', 'Created', 'Purchase Bill created.');
+          setTimeout(() => navigate('/inventory/purchases/history'), 1000);
+        }
+      }
+    } catch (err) {
+      showToast('error', 'Error', err.response?.data?.message || 'Failed to save bill.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveSupplier = async (e) => {
+    e.preventDefault();
+    try {
+      setLoading(true);
+      const res = await api.post('/suppliers', supplierForm);
+      if (res.data.success) {
+        showToast('success', 'Success', 'Vendor created successfully');
+        setShowSupplierModal(false);
+        fetchSuppliers();
+        setBillDetails({ ...billDetails, supplierId: res.data.supplier.id, supplierName: res.data.supplier.name });
+        setSupplierForm({ name: '', phone: '', email: '', address: '', gstNumber: '', creditDays: 0, openingBalance: 0, notes: '' });
+      }
+    } catch (err) {
+      showToast('error', 'Error', 'Failed to create vendor');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const supplierOptions = suppliers.map(s => ({ value: s.id, label: s.name }));
+  const itemOptions = masterItems.map(i => ({ value: i.id, label: i.name, rate: i.unitPrice || i.unit_price || i.costPrice || i.cost_price || 0 }));
+
+  return (
+    <div className="p-4" style={{ backgroundColor: '#F8FAFC', minHeight: '100vh' }}>
+      <LoadingOverlay show={loading} />
+      {toast && <ToastContainer toast={toast} onClose={() => setToast(null)} />}
+
+      <div className="premium-page-header">
+        <div>
+          <h1 className="premium-page-title">{isEditMode ? 'Edit Purchase Bill' : 'Record New Purchase'}</h1>
+          <p className="premium-page-subtitle">Track incoming inventory and vendor invoices securely.</p>
+        </div>
+        <div>
+          <button className="premium-btn premium-btn-secondary" onClick={() => navigate('/inventory/purchases/history')}>
+            Cancel & Back
+          </button>
+        </div>
+      </div>
+
+      <Row className="g-4">
+        {/* Left Column: Vendor & Bill Details */}
+        <Col lg={4}>
+          <div className="premium-card">
+            <h5 className="fw-bold mb-4 d-flex align-items-center gap-2"><FaUserTie /> Vendor & Invoice Details</h5>
+            
+            <div className="premium-form-group">
+              <label className="premium-label d-flex justify-content-between">
+                <span>Vendor / Supplier *</span>
+                <span className="text-primary" style={{ cursor: 'pointer', fontSize: '0.75rem' }} onClick={() => setShowSupplierModal(true)}>
+                  + Add New
+                </span>
+              </label>
+              <Select
+                options={supplierOptions}
+                value={supplierOptions.find(o => o.value === billDetails.supplierId) || null}
+                onChange={(opt) => setBillDetails({ ...billDetails, supplierId: opt.value, supplierName: opt.label })}
+                placeholder="Select Vendor..."
+                classNamePrefix="premium-select-react"
+                styles={{
+                  control: (base) => ({ ...base, borderRadius: '8px', borderColor: '#E2E8F0', padding: '2px' })
+                }}
+              />
+            </div>
+
+            <div className="premium-form-group">
+              <label className="premium-label">Invoice Number *</label>
+              <div className="position-relative">
+                <FaReceipt className="position-absolute" style={{ left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+                <input 
+                  type="text" 
+                  className="premium-input" 
+                  style={{ paddingLeft: '40px' }} 
+                  placeholder="e.g. INV-2023-001" 
+                  value={billDetails.billNumber}
+                  onChange={(e) => setBillDetails({ ...billDetails, billNumber: e.target.value })}
+                />
+              </div>
+            </div>
+
             <Row>
-                <Col xs={12}>
-                    {/* Bill Details Card */}
-                    <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
-                        <Card className="shadow-sm mb-4 entry-card">
-                             <Card.Header>1. Bill Information</Card.Header>
-                            <Card.Body>
-                                <Row className="g-3">
-                                    {/* Supplier Select */}
-                                    <Col md={6}>
-                                        <Form.Group controlId="supplierSelect">
-                                            <Form.Label>Supplier*</Form.Label>
-                                            <InputGroup size="sm">
-                                                <Select ref={supplierSelectRef} inputId="supplierSelect" options={supplierOptions} value={supplierOptions.find(opt => opt.value === billDetails.supplierId)} onChange={handleSupplierSelect} placeholder="Select or search supplier..." isClearable isLoading={isLoading} isDisabled={isLoading} className="react-select-container flex-grow-1" classNamePrefix="react-select" styles={{ menu: base => ({ ...base, zIndex: 1057 }) }} />
-                                                <Button variant="outline-secondary" onClick={openAddSupplierModal} title="Add New Supplier"><FaPlus /></Button>
-                                            </InputGroup>
-                                        </Form.Group>
-                                    </Col>
-                                    {/* Bill Number */}
-                                    <Col md={3} sm={6}>
-                                        <Form.Group controlId="billNumber">
-                                            <Form.Label>Bill/Invoice No.*</Form.Label>
-                                            <Form.Control ref={billNumberRef} size="sm" type="text" name="billNumber" value={billDetails.billNumber} onChange={handleBillDetailChange} required placeholder="Supplier's bill #" />
-                                        </Form.Group>
-                                    </Col>
-                                    {/* Bill Date */}
-                                    <Col md={3} sm={6}>
-                                        <Form.Group controlId="billDate">
-                                            <Form.Label>Bill Date*</Form.Label>
-                                            <Form.Control size="sm" type="date" name="billDate" value={billDetails.billDate} onChange={handleBillDetailChange} required max={getTodayString()} />
-
-                                        </Form.Group>
-                                    </Col>
-                                    {/* Notes */}
-                                    <Col md={12}>
-                                        <Form.Group controlId="billNotes">
-                                            <Form.Label>Notes</Form.Label>
-                                            <Form.Control size="sm" as="textarea" rows={1} name="notes" value={billDetails.notes} onChange={handleBillDetailChange} placeholder="Optional notes (e.g., Payment terms, PO number)" />
-                                        </Form.Group>
-                                    </Col>
-                                </Row>
-                            </Card.Body>
-                        </Card>
-                    </motion.div>
-
-                    {/* Add Items Card */}
-                    <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
-                        <Card className="shadow-sm mb-4 entry-card">
-                            <Card.Header>2. Add Items to Bill</Card.Header>
-                            <Card.Body>
-                                <Row className="g-2 align-items-end">
-                                    <Col>
-                                        <Form.Group controlId="itemSelect">
-                                            <Form.Label>Search & Select Item (Press Enter to Add)</Form.Label>
-                                            <Select
-                                                ref={itemSelectRef}
-                                                inputId="itemSelect"
-                                                options={masterItemOptions}
-                                                value={selectedMasterItem}
-                                                onChange={handleMasterItemSelectChange}
-                                                placeholder="Search by name or part no... then press Enter"
-                                                isClearable
-                                                isLoading={isLoading}
-                                                isDisabled={isLoading || isSaving}
-                                                className="react-select-container item-select-purchase"
-                                                classNamePrefix="react-select"
-                                                filterOption={createFilter({ ignoreAccents: false })}
-                                                menuPortalTarget={document.body}
-                                                styles={{
-                                                    menuPortal: base => ({ ...base, zIndex: 9999 }), 
-                                                    menu: base => ({ ...base, zIndex: 9999 })
-                                                }}
-                                                onKeyDown={(e) => { if (e.key === 'Enter' && selectedMasterItem) { e.preventDefault(); addItemToBill(selectedMasterItem); } }}
-                                            />
-                                        </Form.Group>
-                                    </Col>
-                                </Row>
-                                <small className="text-muted d-block mt-2">
-                                    <FaKeyboard className="me-1" /> Select item and press <kbd>Enter</kbd>. Use <kbd>Tab</kbd> or <kbd>Enter</kbd> to navigate fields below.
-                                </small>
-                            </Card.Body>
-                        </Card>
-                    </motion.div>
-
-                    {/* Bill Items Table Section */}
-                    <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-                         <Card className="shadow-sm entry-card">
-                            <Card.Header className="d-flex justify-content-between align-items-center">
-                                <span>3. Purchased Items List</span>
-                                <span className="total-amount-display">Bill Total: {formatCurrency(calculateGrandTotal)}</span>
-                            </Card.Header>
-                            <div className="purchase-items-table-wrapper elegant-scrollbar">
-                                <Table hover className="purchase-items-table">
-                                    <thead> 
-                                        <tr>
-                                            <th className='col-item'>Item</th>
-                                            <th className="col-qty">Qty* <span className="text-muted d-none d-md-inline">(Spares)</span></th>
-                                            <th className="col-cost">Cost/Unit* <span className="text-muted d-none d-md-inline">(Spares)</span></th>
-                                            <th className="col-sell d-none d-lg-table-cell">Sell Price</th>
-                                            <th className="col-total">Line Total</th>
-                                            <th className="col-actions">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {isLoading ? (
-                                            <tr><td colSpan="6" className="text-center p-5"><Spinner animation="border" size="sm" /><span className="ms-2">Loading...</span></td></tr>
-                                        ) : billItems.length === 0 ? (
-                                            <tr><td colSpan="6" className="text-center text-muted p-4 fst-italic">No items added yet. Use the search above.</td></tr>
-                                        ) : (
-                                            billItems.map((item, index) => (
-                                                <tr key={item.masterItem.id} className={item.masterItem.type === 'Service' ? 'table-row-service' : ''}>
-                                                     <td className='col-item'>
-                                                        <div className="item-name-purchase" title={item.masterItem.name}>{item.masterItem.name}</div>
-                                                        <div className="item-partno-purchase">{item.masterItem.partNo || '-'} <Badge bg="secondary" text="light" pill size="sm" className="ms-1 fw-normal">{item.masterItem.type}</Badge></div>
-                                                    </td>
-                                                    <td className="col-qty">
-                                                        <Form.Control ref={el => quantityInputRefs.current[item.masterItem.id] = el} type="number" size="sm" value={item.quantity} onChange={(e) => handleItemInputChange(index, 'quantity', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'quantity')} min="1" step="1" required className="text-center input-narrow" disabled={item.masterItem.type === 'Service' || isSaving} title={item.masterItem.type === 'Service' ? 'N/A for services' : 'Quantity purchased'} />
-                                                    </td>
-                                                    <td className="col-cost">
-                                                        <InputGroup size="sm" className="input-group-narrow">
-                                                            <InputGroup.Text>₹</InputGroup.Text>
-                                                            <Form.Control ref={el => costInputRefs.current[item.masterItem.id] = el} type="number" value={item.purchasePrice} onChange={(e) => handleItemInputChange(index, 'purchasePrice', e.target.value)} onKeyDown={(e) => handleItemInputKeyDown(e, index, 'purchasePrice')} min="0" step="0.01" required className="text-end no-spinners" disabled={item.masterItem.type === 'Service' || isSaving} title={item.masterItem.type === 'Service' ? 'N/A for services' : 'Cost per unit'} />
-                                                        </InputGroup>
-                                                    </td>
-                                                    <td className="col-sell d-none d-lg-table-cell align-middle">
-                                                        <span className={`${Number(item.purchasePrice) > Number(item.sellingPrice) ? 'text-danger fw-bold' : ''} ${item.masterItem.type === 'Service' ? 'text-muted' : ''}`} title={`Current Selling Price: ${formatCurrency(item.sellingPrice, 0)}. ${Number(item.purchasePrice) > Number(item.sellingPrice) ? 'Cost > Sell Price!' : ''}`}>
-                                                            {formatCurrency(item.sellingPrice, 0)}
-                                                        </span>
-                                                    </td>
-                                                    <td className="col-total text-end fw-semibold align-middle">{formatCurrency(item.lineTotal)}</td>
-                                                    <td className="col-actions">
-                                                        <Button variant="link" size="sm" className="text-danger p-0 action-delete" onClick={() => handleRemoveItem(index)} title="Remove Item" disabled={isSaving}> <FaTimes /> </Button>
-                                                    </td>
-                                                </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </Table>
-                            </div>
-                            <Card.Footer className="text-center">
-                                <Button variant="success" onClick={handleSavePurchase} disabled={isSaving || billItems.length === 0 || isLoading} size="lg" className="px-5 save-button shadow-sm">
-                                    {isSaving ? (<><Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />Saving...</>) : (<><FaSave className="me-2" />Save Purchase & Update Stock</>)}
-                                </Button>
-                            </Card.Footer>
-                        </Card>
-                    </motion.div>
-                </Col>
+              <Col xs={6}>
+                <div className="premium-form-group">
+                  <label className="premium-label">Bill Date</label>
+                  <input type="date" className="premium-input" value={billDetails.billDate} onChange={e => setBillDetails({...billDetails, billDate: e.target.value})} />
+                </div>
+              </Col>
+              <Col xs={6}>
+                <div className="premium-form-group">
+                  <label className="premium-label">Due Date</label>
+                  <input type="date" className="premium-input" value={billDetails.dueDate} onChange={e => setBillDetails({...billDetails, dueDate: e.target.value})} />
+                </div>
+              </Col>
             </Row>
 
-            {/* --- Modals --- */}
-            <Modal show={showAddSupplierModal} onHide={closeAddSupplierModal} centered backdrop="static" keyboard={false}>
-                 <Modal.Header closeButton> <Modal.Title><FaUserTie className="me-2" />Add New Supplier</Modal.Title> </Modal.Header>
-                 <Form onSubmit={handleAddSupplierSubmit}>
-                     <Modal.Body>
-                         {supplierFormError && <Alert variant="danger" size="sm">{supplierFormError}</Alert>}
-                         <Form.Group className="mb-3" controlId="newSupplierName"> <Form.Label>Supplier Name*</Form.Label> <Form.Control size="sm" type="text" name="name" value={newSupplierData.name} onChange={handleNewSupplierChange} required autoFocus /> </Form.Group>
-                         <Form.Group className="mb-3" controlId="newSupplierPhone"> <Form.Label>Contact Phone*</Form.Label> <Form.Control size="sm" type="tel" name="phone" value={newSupplierData.phone} onChange={handleNewSupplierChange} required placeholder="10 digits" maxLength={10}/> </Form.Group>
-                         <Form.Group className="mb-3" controlId="newSupplierContactPerson"> <Form.Label>Contact Person</Form.Label> <Form.Control size="sm" type="text" name="contactPerson" value={newSupplierData.contactPerson} onChange={handleNewSupplierChange} /> </Form.Group>
-                         <Form.Group className="mb-3" controlId="newSupplierCity"> <Form.Label>City</Form.Label> <Form.Control size="sm" type="text" name="city" value={newSupplierData.city} onChange={handleNewSupplierChange} /> </Form.Group>
-                         <small className="text-muted">* Required fields</small>
-                     </Modal.Body>
-                     <Modal.Footer> <Button variant="outline-secondary" onClick={closeAddSupplierModal}>Cancel</Button> <Button variant="primary" type="submit"><FaSave className="me-1" /> Save Supplier</Button> </Modal.Footer>
-                 </Form>
-            </Modal>
+            <div className="premium-form-group">
+              <label className="premium-label">Global Bill Discount (₹)</label>
+              <input type="number" step="0.01" className="premium-input" placeholder="0.00" value={billDetails.discountAmount} onChange={e => setBillDetails({...billDetails, discountAmount: e.target.value})} />
+            </div>
 
-        </Container>
-    );
+            <div className="premium-form-group">
+              <label className="premium-label">Global Bill Tax (₹)</label>
+              <input type="number" step="0.01" className="premium-input" placeholder="0.00" value={billDetails.taxAmount} onChange={e => setBillDetails({...billDetails, taxAmount: e.target.value})} />
+            </div>
+
+            <div className="premium-form-group">
+              <label className="premium-label">Internal Notes</label>
+              <textarea className="premium-input" rows="2" placeholder="Optional notes about this shipment" value={billDetails.notes} onChange={e => setBillDetails({...billDetails, notes: e.target.value})}></textarea>
+            </div>
+          </div>
+        </Col>
+
+        {/* Right Column: Line Items & Totals */}
+        <Col lg={8}>
+          <div className="premium-card">
+            <h5 className="fw-bold mb-4 d-flex align-items-center gap-2"><FaPlus /> Add Line Items</h5>
+            
+            <Form onSubmit={handleAddItem} className="mb-4">
+              <Row className="g-2 align-items-end">
+                <Col md={5}>
+                  <label className="premium-label" style={{ fontSize: '0.75rem' }}>Select Item or Type Name *</label>
+                  <Select
+                    ref={itemSelectRef}
+                    options={itemOptions}
+                    value={currentItem.masterItemId ? itemOptions.find(o => o.value === currentItem.masterItemId) : null}
+                    onChange={(opt) => {
+                      setCurrentItem({ ...currentItem, masterItemId: opt.value, itemName: opt.label, rate: opt.rate || '' });
+                      if (qtyInputRef.current) qtyInputRef.current.focus();
+                    }}
+                    placeholder="Search master catalog..."
+                  />
+                </Col>
+                <Col md={2}>
+                  <label className="premium-label" style={{ fontSize: '0.75rem' }}>Qty *</label>
+                  <input ref={qtyInputRef} type="number" step="0.01" className="premium-input" placeholder="Qty" value={currentItem.qty} onChange={e => setCurrentItem({...currentItem, qty: e.target.value})} onKeyDown={e => e.key === 'Enter' && rateInputRef.current?.focus()} />
+                </Col>
+                <Col md={2}>
+                  <label className="premium-label" style={{ fontSize: '0.75rem' }}>Purchase Rate *</label>
+                  <input ref={rateInputRef} type="number" step="0.01" className="premium-input" placeholder="Rate (₹)" value={currentItem.rate} onChange={e => setCurrentItem({...currentItem, rate: e.target.value})} />
+                </Col>
+                <Col md={1}>
+                  <label className="premium-label" style={{ fontSize: '0.75rem' }}>Tax %</label>
+                  <input type="number" step="0.1" className="premium-input" placeholder="0%" value={currentItem.taxPercentage} onChange={e => setCurrentItem({...currentItem, taxPercentage: e.target.value})} />
+                </Col>
+                <Col md={2}>
+                  <button type="submit" className="premium-btn premium-btn-primary w-100 h-100" style={{ padding: '12px 10px' }}>Add Item</button>
+                </Col>
+              </Row>
+            </Form>
+
+            <div className="premium-table-wrapper mb-4">
+              <table className="premium-table">
+                <thead>
+                  <tr>
+                    <th>Item Description</th>
+                    <th className="text-center">Qty</th>
+                    <th className="text-end">Rate</th>
+                    <th className="text-end">Tax</th>
+                    <th className="text-end">Total</th>
+                    <th className="text-center">Del</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {billItems.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="text-center py-5 text-muted">
+                        No items added to this bill yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    billItems.map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="fw-bold">{item.itemName}</td>
+                        <td className="text-center">{item.qty}</td>
+                        <td className="text-end">{formatCurrency(item.rate)}</td>
+                        <td className="text-end">{item.taxPercentage > 0 ? `${item.taxPercentage}%` : '-'}</td>
+                        <td className="text-end fw-semibold text-primary">{formatCurrency(item.totalAmount)}</td>
+                        <td className="text-center">
+                          <button className="premium-action-btn delete p-1" onClick={() => handleRemoveItem(idx)}><FaTrash /></button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Financial Summary */}
+            <div className="p-4 rounded-4" style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+              <Row className="mb-2">
+                <Col xs={8} className="text-end text-muted fw-semibold">Subtotal:</Col>
+                <Col xs={4} className="text-end fw-bold">{formatCurrency(calculateSubtotal())}</Col>
+              </Row>
+              {(calculateTotalItemDiscount() > 0 || Number(billDetails.discountAmount) > 0) && (
+                <Row className="mb-2 text-danger">
+                  <Col xs={8} className="text-end fw-semibold">Total Discount:</Col>
+                  <Col xs={4} className="text-end fw-bold">-{formatCurrency(calculateTotalItemDiscount() + Number(billDetails.discountAmount || 0))}</Col>
+                </Row>
+              )}
+              {(calculateTotalItemTax() > 0 || Number(billDetails.taxAmount) > 0) && (
+                <Row className="mb-3 text-muted">
+                  <Col xs={8} className="text-end fw-semibold">Total Tax (+):</Col>
+                  <Col xs={4} className="text-end fw-bold">+{formatCurrency(calculateTotalItemTax() + Number(billDetails.taxAmount || 0))}</Col>
+                </Row>
+              )}
+              <div className="border-top pt-3">
+                <Row className="align-items-center">
+                  <Col xs={7} className="text-end text-uppercase" style={{ fontSize: '0.875rem', fontWeight: '700', letterSpacing: '0.05em' }}>Net Payable Amount:</Col>
+                  <Col xs={5} className="text-end text-primary" style={{ fontSize: '1.75rem', fontWeight: '800' }}>{formatCurrency(calculateFinalTotal())}</Col>
+                </Row>
+              </div>
+            </div>
+
+            <div className="text-end mt-4">
+              <button className="premium-btn premium-btn-primary" onClick={handleSaveBill} style={{ padding: '12px 32px', fontSize: '1rem' }}>
+                <FaSave /> {isEditMode ? 'Update Purchase Bill' : 'Save Purchase Bill'}
+              </button>
+            </div>
+          </div>
+        </Col>
+      </Row>
+
+      {/* Quick Add Vendor Modal */}
+      <Modal show={showSupplierModal} onHide={() => setShowSupplierModal(false)} centered dialogClassName="premium-modal">
+        <Modal.Header closeButton>
+          <Modal.Title>Add New Vendor</Modal.Title>
+        </Modal.Header>
+        <Form onSubmit={handleSaveSupplier}>
+          <Modal.Body>
+            <div className="premium-form-group">
+              <label className="premium-label">Vendor Name *</label>
+              <input type="text" required className="premium-input" placeholder="e.g. ACME Auto Parts" value={supplierForm.name} onChange={e => setSupplierForm({...supplierForm, name: e.target.value})} />
+            </div>
+            <div className="premium-form-group">
+              <label className="premium-label">Phone</label>
+              <input type="text" className="premium-input" placeholder="Contact number" value={supplierForm.phone} onChange={e => setSupplierForm({...supplierForm, phone: e.target.value})} />
+            </div>
+            <div className="premium-form-group">
+              <label className="premium-label">GST Number</label>
+              <input type="text" className="premium-input" placeholder="GSTIN" value={supplierForm.gstNumber} onChange={e => setSupplierForm({...supplierForm, gstNumber: e.target.value})} />
+            </div>
+          </Modal.Body>
+          <Modal.Footer>
+            <button type="button" className="premium-btn premium-btn-secondary" onClick={() => setShowSupplierModal(false)}>Cancel</button>
+            <button type="submit" className="premium-btn premium-btn-primary">Create Vendor</button>
+          </Modal.Footer>
+        </Form>
+      </Modal>
+
+    </div>
+  );
 };
 
 export default PurchaseEntryPage;

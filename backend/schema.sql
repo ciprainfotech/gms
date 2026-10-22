@@ -176,7 +176,13 @@ CREATE TABLE suppliers (
     name VARCHAR(100) NOT NULL,
     contact_person VARCHAR(100),
     phone VARCHAR(20),
+    email VARCHAR(100),
+    address TEXT,
+    gst_number VARCHAR(50),
     city VARCHAR(100),
+    credit_days INTEGER DEFAULT 0,
+    opening_balance DECIMAL(10,2) DEFAULT 0,
+    notes TEXT,
     is_deleted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -224,6 +230,7 @@ CREATE TABLE invoices (
     discount_type VARCHAR(10) CHECK (discount_type IN ('Fixed', 'Percent')),
     discount_value DECIMAL(10,2) DEFAULT 0,
     tax_rate DECIMAL(5,2) DEFAULT 0,
+    is_gst_invoice BOOLEAN DEFAULT TRUE,
     grand_total DECIMAL(10,2),
     status VARCHAR(20) NOT NULL,
     notes TEXT,
@@ -260,7 +267,12 @@ CREATE TABLE purchase_bills (
     supplier_id INTEGER REFERENCES suppliers(id),
     bill_number VARCHAR(100) NOT NULL,
     bill_date DATE NOT NULL,
+    due_date DATE,
     total_amount DECIMAL(10,2),
+    discount_amount DECIMAL(10,2) DEFAULT 0,
+    tax_amount DECIMAL(10,2) DEFAULT 0,
+    net_amount DECIMAL(10,2) DEFAULT 0,
+    payment_status VARCHAR(20) DEFAULT 'Unpaid',
     notes TEXT,
     is_deleted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -271,8 +283,36 @@ CREATE TABLE purchase_bill_items (
     id BIGSERIAL PRIMARY KEY,
     purchase_bill_id BIGINT NOT NULL REFERENCES purchase_bills(id) ON DELETE CASCADE,
     master_item_id INTEGER NOT NULL REFERENCES master_items(id),
+    item_name VARCHAR(150),
+    item_part_no VARCHAR(50),
     quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
-    purchase_price DECIMAL(10,2) NOT NULL
+    purchase_price DECIMAL(10,2) NOT NULL,
+    line_total DECIMAL(10,2)
+);
+
+CREATE TABLE supplier_payments (
+    id BIGSERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    purchase_bill_id BIGINT REFERENCES purchase_bills(id) ON DELETE SET NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    payment_date DATE NOT NULL,
+    payment_method VARCHAR(50),
+    reference_no VARCHAR(100),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE stock_adjustments (
+    id BIGSERIAL PRIMARY KEY,
+    garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+    master_item_id INTEGER NOT NULL REFERENCES master_items(id) ON DELETE CASCADE,
+    adjustment_type VARCHAR(20) NOT NULL,
+    qty_before DECIMAL(10,2) NOT NULL,
+    qty_change DECIMAL(10,2) NOT NULL,
+    qty_after DECIMAL(10,2) NOT NULL,
+    reason TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE tasks (

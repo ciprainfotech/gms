@@ -55,6 +55,7 @@ async function getFullInvoiceWithPaymentsAndVehicleDetails(clientId, invoiceId =
             i.discount_type,
             i.discount_value,
             i.tax_rate,
+            i.is_gst_invoice,
             i.notes,
             i.is_deleted,
             i.created_at,
@@ -169,14 +170,12 @@ exports.getReadyJobSheets = async (req, res) => {
  */
 exports.createInvoice = async (req, res) => {
     const garageId = req.garageId;
-    const { jobSheetId, dateIssued, discountType, discountValue, taxRate, notes } = req.body;
-
-    // --- FIX: Removed incorrect console.log that caused ReferenceError ---
-    // console.log(`[paymentController] recordPayment called for invoiceId: ${invoiceId}, garageId: ${garageId}`);
+    const { jobSheetId, dateIssued, discountType, discountValue, taxRate, isGstInvoice, is_gst_invoice, notes } = req.body;
+    const finalIsGstInvoice = isGstInvoice !== false && is_gst_invoice !== false;
 
     // --- DEBUGGING LOGS FOR CREATE INVOICE ---
     console.log(`[createInvoice] Request received for jobSheetId: ${jobSheetId}, garageId: ${garageId}`);
-    console.log(`[createInvoice] dateIssued: ${dateIssued}, discountType: ${discountType}, discountValue: ${discountValue}, taxRate: ${taxRate}`);
+    console.log(`[createInvoice] dateIssued: ${dateIssued}, discountType: ${discountType}, discountValue: ${discountValue}, taxRate: ${taxRate}, isGstInvoice: ${finalIsGstInvoice}`);
     // --- END DEBUGGING LOGS ---
 
 
@@ -220,8 +219,8 @@ exports.createInvoice = async (req, res) => {
         console.log('[createInvoice] Calculated Sub Total from Job Sheet Items:', subTotal); // DEBUG
 
         const finalDiscountValue = parseFloat(discountValue) || 0;
-        const finalTaxRate = parseFloat(taxRate) || 0;
-        console.log(`[createInvoice] Parsed Discount Value: ${finalDiscountValue}, Tax Rate: ${finalTaxRate}`); // DEBUG
+        const finalTaxRate = finalIsGstInvoice ? (parseFloat(taxRate) || 0) : 0;
+        console.log(`[createInvoice] Parsed Discount Value: ${finalDiscountValue}, Tax Rate: ${finalTaxRate}, isGstInvoice: ${finalIsGstInvoice}`); // DEBUG
 
         let discountAmount = 0;
         if (discountType === 'Percent') {
@@ -234,7 +233,7 @@ exports.createInvoice = async (req, res) => {
         const amountAfterDiscount = subTotal - discountAmount;
         console.log('[createInvoice] Amount After Discount:', amountAfterDiscount); // DEBUG
 
-        const taxAmount = amountAfterDiscount * (finalTaxRate / 100);
+        const taxAmount = finalIsGstInvoice ? (amountAfterDiscount * (finalTaxRate / 100)) : 0;
         console.log('[createInvoice] Calculated Tax Amount:', taxAmount); // DEBUG
 
         const grandTotal = amountAfterDiscount + taxAmount;
@@ -264,9 +263,9 @@ exports.createInvoice = async (req, res) => {
         dueDate.setDate(dueDate.getDate() + 15);
 
         const invoiceInsertQuery = `
-            INSERT INTO invoices (garage_id, invoice_number, job_sheet_id, customer_id, vehicle_id, date_issued, due_date, km_reading, discount_type, discount_value, tax_rate, grand_total, status, notes)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            RETURNING id, invoice_number;
+            INSERT INTO invoices (garage_id, invoice_number, job_sheet_id, customer_id, vehicle_id, date_issued, due_date, km_reading, discount_type, discount_value, tax_rate, is_gst_invoice, grand_total, status, notes)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            RETURNING id, invoice_number, is_gst_invoice;
         `;
         
         const invoiceRes = await client.query(invoiceInsertQuery, [
@@ -281,13 +280,14 @@ exports.createInvoice = async (req, res) => {
             discountType,
             finalDiscountValue,
             finalTaxRate,
+            finalIsGstInvoice,
             grandTotal, // This is the value being inserted!
             'Pending',
             notes || ''
         ]);
         const newInvoice = invoiceRes.rows[0];
         // --- FIX: Corrected this log to use newInvoice data ---
-        console.log(`[createInvoice] Successfully inserted new invoice with ID: ${newInvoice.id}, Number: ${newInvoice.invoice_number}`); // CORRECTED LOG
+        console.log(`[createInvoice] Successfully inserted new invoice with ID: ${newInvoice.id}, Number: ${newInvoice.invoice_number}, isGstInvoice: ${newInvoice.is_gst_invoice}`); // CORRECTED LOG
 
         // ======================================================
         // STEP 4: COPY ITEMS FROM JOB SHEET TO INVOICE
@@ -348,6 +348,8 @@ exports.getAllInvoices = async (req, res) => {
                 i.invoice_number,
                 i.job_sheet_id,
                 i.grand_total,
+                i.tax_rate,
+                i.is_gst_invoice,
                 i.status,
                 i.date_issued,
                 i.due_date,

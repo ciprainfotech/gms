@@ -362,14 +362,6 @@ const ProfileSettingsPage = () => {
       }
     }
 
-    if (garageForm.gst_number && garageForm.gst_number.trim()) {
-      const gstValidation = validateGSTIN(garageForm.gst_number, false);
-      if (!gstValidation.isValid) {
-        setToast({ type: 'error', title: 'Validation Error', message: gstValidation.error });
-        return;
-      }
-    }
-
     setSaving(true);
     try {
       const res = await api.put('/profile/garage', {

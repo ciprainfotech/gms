@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-// Import BOTH the get and create functions now
-const { getPurchaseBills, createPurchaseBill } = require('../controllers/purchaseBillController');
+const { getPurchaseBills, getPurchaseBillById, getPurchaseSummary, createPurchaseBill, updatePurchaseBill, deletePurchaseBill } = require('../controllers/purchaseBillController');
 const { authorizeGarage } = require('../middleware/authMiddleware');
 
-// Add the missing GET route!
+router.get('/summary', authorizeGarage, getPurchaseSummary);
 router.get('/', authorizeGarage, getPurchaseBills);
-
-// Keep the POST route we had before
+router.get('/:id', authorizeGarage, getPurchaseBillById);
 router.post('/', authorizeGarage, createPurchaseBill);
+router.put('/:id', authorizeGarage, updatePurchaseBill);
+router.delete('/:id', authorizeGarage, deletePurchaseBill);
 
 module.exports = router;

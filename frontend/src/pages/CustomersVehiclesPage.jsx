@@ -24,6 +24,7 @@ const getVehicleLogo = (make) => {
     if (makeLower.includes('hyundai')) return 'https://cdn.simpleicons.org/hyundai/002C5F';
     if (makeLower.includes('tata')) return 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/41/Tata_Motors_Logo.svg/64px-Tata_Motors_Logo.svg.png';
     if (makeLower.includes('mahindra')) return 'https://cdn.simpleicons.org/mahindra/EC1C24';
+    if (makeLower.includes('ford')) return 'https://cdn.simpleicons.org/ford/002C6C';
     // Add more brands...
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(make || 'Car')}&background=e5e7eb&color=4b5563&bold=true&size=64`;
 };
@@ -36,6 +37,7 @@ const getVehicleBrandColor = (make) => {
     if (makeLower.includes('hyundai')) return '#002C5F';
     if (makeLower.includes('tata')) return '#0079C1';
     if (makeLower.includes('mahindra')) return '#EC1C24';
+    if (makeLower.includes('ford')) return '#002C6C';
     // Add more brands...
     return '#6c757d';
 };

@@ -1077,12 +1077,18 @@ if not exist "${agentFileName}" (
 echo  Agent downloaded successfully.
 
 :: ---------- STEP 2: Install Node.js dependencies ----------
+set "PUPPETEER_SKIP_DOWNLOAD=true"
+set "PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true"
+
 if not exist "%INSTALL_DIR%\\node_modules\\whatsapp-web.js" (
   echo.
   echo [2/3] First-time setup: Installing WhatsApp engine...
-  echo  This will take 2-5 minutes. Please wait and do NOT close this window.
+  echo  This will take less than 1 minute. Please wait and do NOT close this window.
   echo.
-  call npm install --prefix "%INSTALL_DIR%" whatsapp-web.js puppeteer socket.io-client qrcode --no-audit --no-fund --loglevel=error
+  call npm install --prefix "%INSTALL_DIR%" whatsapp-web.js socket.io-client qrcode --no-audit --no-fund --ignore-scripts --loglevel=error
+  if errorlevel 1 (
+    call npm install --prefix "%INSTALL_DIR%" whatsapp-web.js socket.io-client qrcode --no-audit --no-fund --loglevel=error
+  )
   if errorlevel 1 (
     echo.
     echo  ERROR: Failed to install WhatsApp engine modules.
@@ -1092,14 +1098,6 @@ if not exist "%INSTALL_DIR%\\node_modules\\whatsapp-web.js" (
     exit /b 1
   )
   echo  WhatsApp engine installed successfully!
-  echo.
-  echo  Checking for Puppeteer Chrome browser binary...
-  call npx --prefix "%INSTALL_DIR%" puppeteer browsers install chrome >nul 2>&1
-  if not errorlevel 1 (
-    echo  Puppeteer Chrome browser ready.
-  ) else (
-    echo  Note: Puppeteer Chrome download skipped ^(will use system Chrome or Edge if available^).
-  )
 ) else (
   echo [2/3] WhatsApp engine verified.
 )

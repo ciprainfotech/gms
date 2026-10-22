@@ -145,4 +145,90 @@ const quickRestockItem = async (req, res) => {
     }
 };
 
-module.exports = { getMasterItems, createMasterItem, updateMasterItem, deleteMasterItem, quickRestockItem };
+// @desc    Adjust stock for a master item
+// @route   PATCH /api/master-items/:id/adjust
+const adjustStock = async (req, res) => {
+    const garageId = req.garageId;
+    const { id } = req.params;
+    const { adjustmentType, qtyChange, reason } = req.body;
+
+    const qty = parseFloat(qtyChange);
+    if (isNaN(qty) || qty <= 0) {
+        return res.status(400).json({ message: 'Invalid quantity change. Must be greater than 0.' });
+    }
+
+    const client = await db.getClient();
+    try {
+        await client.query('BEGIN');
+
+        const itemRes = await client.query('SELECT id, name, stock_qty FROM master_items WHERE id = $1 AND garage_id = $2 AND is_deleted = FALSE', [id, garageId]);
+        if (itemRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ message: 'Item not found.' });
+        }
+
+        const qtyBefore = parseFloat(itemRes.rows[0].stock_qty || 0);
+        let qtyAfter = qtyBefore;
+
+        if (adjustmentType === 'Add') {
+            qtyAfter = qtyBefore + qty;
+        } else if (adjustmentType === 'Remove') {
+            qtyAfter = Math.max(0, qtyBefore - qty);
+        } else if (adjustmentType === 'Set') {
+            qtyAfter = qty;
+        } else {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ message: 'Invalid adjustment type.' });
+        }
+
+        const updateRes = await client.query(`
+            UPDATE master_items SET stock_qty = $1, updated_at = NOW() WHERE id = $2 AND garage_id = $3
+            RETURNING id, name, type, part_no AS "partNo", unit_price AS "unitPrice", lube_charge AS "lubeCharge", labour_charge AS "labourCharge", stock_qty AS "stockQty"
+        `, [qtyAfter, id, garageId]);
+
+        await client.query(`
+            INSERT INTO stock_adjustments (garage_id, master_item_id, adjustment_type, qty_before, qty_change, qty_after, reason)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `, [garageId, id, adjustmentType, qtyBefore, qty, qtyAfter, reason || null]);
+
+        await client.query('COMMIT');
+        res.status(200).json({ success: true, item: updateRes.rows[0] });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error adjusting stock:', error);
+        res.status(500).json({ message: 'Server error while adjusting stock.' });
+    } finally {
+        client.release();
+    }
+};
+
+// @desc    Get stock adjustments for a garage or specific item
+// @route   GET /api/master-items/adjustments
+const getStockAdjustments = async (req, res) => {
+    const garageId = req.garageId;
+    const { itemId } = req.query;
+
+    let query = `
+        SELECT sa.id, sa.adjustment_type AS "type", sa.qty_before AS "qtyBefore", sa.qty_change AS "qtyChange", sa.qty_after AS "qtyAfter", sa.reason, sa.created_at AS "createdAt", mi.name AS "itemName", mi.part_no AS "partNo"
+        FROM stock_adjustments sa LEFT JOIN master_items mi ON sa.master_item_id = mi.id
+        WHERE sa.garage_id = $1
+    `;
+    const params = [garageId];
+
+    if (itemId) {
+        query += ` AND sa.master_item_id = $2`;
+        params.push(itemId);
+    }
+
+    query += ` ORDER BY sa.created_at DESC LIMIT 100`;
+
+    try {
+        const { rows } = await db.query(query, params);
+        res.status(200).json(rows);
+    } catch (error) {
+        console.error('Error fetching stock adjustments:', error);
+        res.status(500).json({ message: 'Server error while fetching stock adjustments.' });
+    }
+};
+
+module.exports = { getMasterItems, createMasterItem, updateMasterItem, deleteMasterItem, quickRestockItem, adjustStock, getStockAdjustments };

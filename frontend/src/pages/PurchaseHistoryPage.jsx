@@ -1,375 +1,432 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Container, Row, Col, Form, Button, Table, Alert, Spinner, Modal, Card, Badge } from 'react-bootstrap';
-import { FaFileInvoiceDollar, FaHistory, FaSearch, FaTimes, FaEye, FaSort, FaSortUp, FaSortDown, FaPlus } from 'react-icons/fa';
-import { Link } from 'react-router-dom';
-
+import { Row, Col, Modal, Tabs, Tab, Offcanvas, Form } from 'react-bootstrap';
+import { useNavigate } from 'react-router-dom';
+import Select from 'react-select';
+import { 
+  FaSearch, FaEye, FaEdit, FaTrashAlt, FaMoneyBillWave, FaPlus, 
+  FaPrint, FaFileInvoiceDollar, FaChartLine, FaExclamationCircle, 
+  FaUserTie, FaWallet, FaChevronLeft, FaChevronRight, FaBoxOpen
+} from 'react-icons/fa';
 import api from '../api/api';
-import SaaSDataPagination from '../components/ui/SaaSDataPagination';
-import '../PurchaseEntryPage.css';
+import CustomToast, { ToastContainer } from '../components/CustomToast';
+import ConfirmModal from '../components/ConfirmModal';
+import LoadingOverlay from '../components/LoadingOverlay';
+import { formatDateShort, getTodayString } from '../utils/dateUtils';
+import '../assets/SaaSPremium.css';
 
-const formatCurrency = (amount, minimumFractionDigits = 2) => {
-    if (amount == null || isNaN(Number(amount))) return 'N/A';
-    return Number(amount).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits, maximumFractionDigits: 2 });
-};
-
-import { formatDateShort } from '../utils/dateUtils';
-
-// Use shared timezone-safe date formatter (dd Mon yyyy — e.g. "15 Aug 2026")
-const formatDate = formatDateShort;
+const formatCurrency = (amount) => Number(amount || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 const PurchaseHistoryPage = () => {
-    const [purchaseBills, setPurchaseBills] = useState([]);
-    const [masterItems, setMasterItems] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState('');
-    const [searchTerm, setSearchTerm] = useState('');
-    const [dateFilter, setDateFilter] = useState('all');
-    const [viewingBill, setViewingBill] = useState(null); 
-    const [sortConfig, setSortConfig] = useState({ key: 'billDate', direction: 'descending' });
-    const [isModuleLocked, setIsModuleLocked] = useState(false);
-    
-    const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(10);
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState(null);
+  const showToast = (type, title, msg) => setToast({ type, title, msg });
 
-    // --- Load Data from Database ---
-    useEffect(() => {
-        const fetchHistoryData = async () => {
-            setIsLoading(true);
-            setError('');
-            try {
-                const [billsRes, itemsRes] = await Promise.all([
-                    api.get('/purchase-bills'),
-                    api.get('/master-items')
-                ]);
+  const [activeTab, setActiveTab] = useState('bills');
+  const [bills, setBills] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
 
-                if (billsRes.status === 403 || itemsRes.status === 403) {
-                    setIsModuleLocked(true);
-                } else if (billsRes.ok && itemsRes.ok) {
-                    const rawBills = await billsRes.json();
-                    const rawItems = await itemsRes.json();
-                    
-                    setIsModuleLocked(false);
-                    setMasterItems(rawItems);
-                    
-                    const formattedBills = rawBills.map(bill => ({
-                        ...bill,
-                        billDate: bill.bill_date || bill.billDate,
-                        supplierName: bill.supplier_name || bill.supplierName || 'Unknown Supplier',
-                        billNumber: bill.bill_number || bill.billNumber,
-                        totalAmount: bill.total_amount || bill.totalAmount,
-                        dateRecorded: bill.created_at || bill.dateRecorded,
-                        items: bill.items || bill.purchase_bill_items || []
-                    }));
+  // Modals & Offcanvas
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [billToDelete, setBillToDelete] = useState(null);
+  
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [billItems, setBillItems] = useState([]);
 
-                    setPurchaseBills(formattedBills);
-                } else {
-                    setError("Failed to fetch data from the server.");
-                }
-            } catch (err) {
-                console.error("Error loading purchase history:", err);
-                setError("Failed to load purchase history. Please check your connection.");
-            } finally {
-                setIsLoading(false);
-            }
-        };
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({ billId: null, supplierId: null, amount: '', paymentMode: 'Cash', referenceNo: '', notes: '', paymentDate: getTodayString() });
 
-        fetchHistoryData();
-    }, []);
+  const [showLedgerDrawer, setShowLedgerDrawer] = useState(false);
+  const [ledgerSupplier, setLedgerSupplier] = useState(null);
+  const [ledgerTransactions, setLedgerTransactions] = useState([]);
 
-    // --- Date Filtering & Search ---
-    const filteredBills = useMemo(() => {
-        return purchaseBills.filter(bill => {
-            const matchesSearch = !searchTerm || 
-                bill.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                bill.billNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                bill.id.toString().includes(searchTerm) ||
-                (bill.notes && bill.notes.toLowerCase().includes(searchTerm.toLowerCase()));
+  useEffect(() => {
+    fetchBills();
+    fetchSuppliers();
+  }, []);
 
-            if (!matchesSearch) return false;
+  const fetchBills = async () => {
+    try {
+      const res = await api.get('/purchase-bills');
+      if (res.data.success) setBills(res.data.data);
+    } catch (err) { showToast('error', 'Error', 'Failed to fetch purchase bills.'); }
+  };
 
-            if (dateFilter === 'all') return true;
+  const fetchSuppliers = async () => {
+    try {
+      const res = await api.get('/suppliers');
+      if (res.data.success) setSuppliers(res.data.data);
+      setLoading(false);
+    } catch (err) { showToast('error', 'Error', 'Failed to fetch vendors.'); setLoading(false); }
+  };
 
-            const billDate = new Date(bill.billDate);
-            const now = new Date();
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Bills List Logic
+  const handleViewBill = async (id) => {
+    try {
+      setLoading(true);
+      const res = await api.get(`/purchase-bills/${id}`);
+      if (res.data.success) {
+        setSelectedBill(res.data.data.bill);
+        setBillItems(res.data.data.items);
+        setShowViewModal(true);
+      }
+    } catch (err) { showToast('error', 'Error', 'Failed to fetch bill details.'); } finally { setLoading(false); }
+  };
 
-            if (dateFilter === 'today') {
-                return billDate >= today;
-            }
-            if (dateFilter === 'thisMonth') {
-                return billDate.getMonth() === now.getMonth() && billDate.getFullYear() === now.getFullYear();
-            }
-            if (dateFilter === 'lastMonth') {
-                const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                return billDate.getMonth() === lastMonth.getMonth() && billDate.getFullYear() === lastMonth.getFullYear();
-            }
-            if (dateFilter === 'thisYear') {
-                return billDate.getFullYear() === now.getFullYear();
-            }
+  const handleEditBill = (bill) => navigate('/inventory/purchases/new', { state: { bill } });
 
-            return true;
-        });
-    }, [searchTerm, dateFilter, purchaseBills]);
+  const initiateDeleteBill = (bill) => { setBillToDelete(bill); setShowConfirmModal(true); };
 
-    // --- Sorting ---
-    const sortedBills = useMemo(() => {
-        let sortableItems = [...filteredBills];
-        if (sortConfig.key !== null) {
-            sortableItems.sort((a, b) => {
-                let aValue = a[sortConfig.key];
-                let bValue = b[sortConfig.key];
+  const confirmDeleteBill = async () => {
+    try {
+      setLoading(true);
+      const res = await api.delete(`/purchase-bills/${billToDelete.id}`);
+      if (res.data.success) { showToast('success', 'Deleted', 'Bill deleted successfully.'); fetchBills(); fetchSuppliers(); }
+    } catch (err) { showToast('error', 'Error', 'Failed to delete bill.'); } finally { setLoading(false); setShowConfirmModal(false); setBillToDelete(null); }
+  };
 
-                if (sortConfig.key === 'billDate') {
-                    aValue = new Date(aValue).getTime();
-                    bValue = new Date(bValue).getTime();
-                }
+  // Payment Logic
+  const handleOpenPayment = (bill) => {
+    setPaymentForm({ billId: bill.id, supplierId: bill.supplierId, amount: bill.amountDue, paymentMode: 'Cash', referenceNo: '', notes: '', paymentDate: getTodayString() });
+    setShowPaymentModal(true);
+  };
 
-                if (aValue < bValue) {
-                    return sortConfig.direction === 'ascending' ? -1 : 1;
-                }
-                if (aValue > bValue) {
-                    return sortConfig.direction === 'ascending' ? 1 : -1;
-                }
-                return 0;
-            });
-        }
-        return sortableItems;
-    }, [filteredBills, sortConfig]);
+  const handleRecordPayment = async (e) => {
+    e.preventDefault();
+    if (!paymentForm.amount || Number(paymentForm.amount) <= 0) return showToast('error', 'Validation', 'Valid amount is required.');
+    try {
+      setLoading(true);
+      const res = await api.post('/supplier-payments', paymentForm);
+      if (res.data.success) {
+        showToast('success', 'Success', 'Payment recorded.');
+        setShowPaymentModal(false);
+        fetchBills();
+        fetchSuppliers();
+        if (showLedgerDrawer && ledgerSupplier) fetchLedger(ledgerSupplier.id);
+      }
+    } catch (err) { showToast('error', 'Error', 'Failed to record payment.'); } finally { setLoading(false); }
+  };
 
-    const paginatedBills = useMemo(() => {
-        const start = (currentPage - 1) * pageSize;
-        return sortedBills.slice(start, start + pageSize);
-    }, [sortedBills, currentPage, pageSize]);
+  // Ledger Logic
+  const handleViewLedger = async (supplier) => {
+    setLedgerSupplier(supplier);
+    setShowLedgerDrawer(true);
+    fetchLedger(supplier.id);
+  };
 
-    const requestSort = (key) => {
-        let direction = 'ascending';
-        if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-            direction = 'descending';
-        } else if (sortConfig.key === key && sortConfig.direction === 'descending') {
-             direction = 'ascending';
-        }
-        setSortConfig({ key, direction });
-    };
+  const fetchLedger = async (supplierId) => {
+    try {
+      setLoading(true);
+      const res = await api.get(`/suppliers/${supplierId}/ledger`);
+      if (res.data.success) setLedgerTransactions(res.data.data);
+    } catch (err) { showToast('error', 'Error', 'Failed to fetch ledger.'); } finally { setLoading(false); }
+  };
 
-    const handleViewDetails = (bill) => setViewingBill(bill);
-    const handleCloseDetails = () => setViewingBill(null);
+  const handleLedgerPayment = () => {
+    setPaymentForm({ billId: null, supplierId: ledgerSupplier.id, amount: '', paymentMode: 'Cash', referenceNo: '', notes: 'Advance/Global Payment', paymentDate: getTodayString() });
+    setShowPaymentModal(true);
+  };
 
-    const getSortIcon = (key) => {
-        if (sortConfig.key !== key) {
-            return <FaSort className="ms-1 text-muted" size="0.8em" />;
-        }
-        if (sortConfig.direction === 'ascending') {
-            return <FaSortUp className="ms-1" size="0.8em" />;
-        }
-        return <FaSortDown className="ms-1" size="0.8em" />;
-    };
+  // UI rendering components
+  return (
+    <div className="p-4" style={{ backgroundColor: '#F8FAFC', minHeight: '100vh' }}>
+      <LoadingOverlay show={loading} />
+      {toast && <ToastContainer toast={toast} onClose={() => setToast(null)} />}
 
-    return (
-        <Container fluid className="py-4 px-md-4 purchase-history-page">
-            {isModuleLocked && (
-                <Alert variant="warning" className="shadow-sm border-warning rounded-3 mb-4 d-flex align-items-center bg-warning bg-opacity-10">
-                    <FaHistory className="fs-3 me-3 text-warning" />
-                    <div>
-                        <strong className="d-block text-dark">ℹ️ Read-Only History Mode</strong>
-                        <span className="text-secondary small">Entry of new purchase bills is locked by Cipra Infotech Super Admin. You can browse past purchase records.</span>
-                    </div>
-                </Alert>
-            )}
-            
-            {/* Page Header */}
-            <div className="page-header-row mb-4 d-flex justify-content-between align-items-center">
-                <h2 className="page-title-active mb-0 d-flex align-items-center">
-                    <FaHistory className="me-2 text-primary" /> Purchase Bill History
-                </h2>
-                {!isModuleLocked && (
-                    <div className="actions">
-                        <Button as={Link} to="/purchase-entry" variant="primary" className="shadow-sm d-flex align-items-center px-3">
-                            <FaPlus className="me-2" /> Add Purchase
-                        </Button>
-                    </div>
-                )}
+      <div className="premium-page-header">
+        <div>
+          <h1 className="premium-page-title">Purchases & Vendors</h1>
+          <p className="premium-page-subtitle">Manage supplier invoices, purchase history, and vendor ledgers.</p>
+        </div>
+        <div>
+          <button className="premium-btn premium-btn-primary" onClick={() => navigate('/inventory/purchases/new')}>
+            <FaPlus /> Record New Purchase
+          </button>
+        </div>
+      </div>
+
+      <Row className="mb-4 g-4">
+        <Col md={4}>
+          <div className="premium-card d-flex align-items-center gap-4" style={{ padding: '24px' }}>
+            <div className="rounded-circle d-flex justify-content-center align-items-center" style={{ width: '60px', height: '60px', backgroundColor: '#EEF2FF', color: '#4F46E5', fontSize: '24px' }}>
+              <FaFileInvoiceDollar />
             </div>
+            <div>
+              <p className="text-muted text-uppercase fw-bold mb-1" style={{ fontSize: '0.75rem', letterSpacing: '0.05em' }}>Total Purchase Volume</p>
+              <h3 className="fw-bold mb-0 text-dark">{formatCurrency(bills.reduce((sum, b) => sum + Number(b.netAmount), 0))}</h3>
+            </div>
+          </div>
+        </Col>
+        <Col md={4}>
+          <div className="premium-card d-flex align-items-center gap-4" style={{ padding: '24px' }}>
+            <div className="rounded-circle d-flex justify-content-center align-items-center" style={{ width: '60px', height: '60px', backgroundColor: '#D1FAE5', color: '#10B981', fontSize: '24px' }}>
+              <FaMoneyBillWave />
+            </div>
+            <div>
+              <p className="text-muted text-uppercase fw-bold mb-1" style={{ fontSize: '0.75rem', letterSpacing: '0.05em' }}>Total Paid to Vendors</p>
+              <h3 className="fw-bold mb-0 text-dark">{formatCurrency(bills.reduce((sum, b) => sum + Number(b.amountPaid), 0))}</h3>
+            </div>
+          </div>
+        </Col>
+        <Col md={4}>
+          <div className="premium-card d-flex align-items-center gap-4" style={{ padding: '24px' }}>
+            <div className="rounded-circle d-flex justify-content-center align-items-center" style={{ width: '60px', height: '60px', backgroundColor: '#FEE2E2', color: '#EF4444', fontSize: '24px' }}>
+              <FaExclamationCircle />
+            </div>
+            <div>
+              <p className="text-muted text-uppercase fw-bold mb-1" style={{ fontSize: '0.75rem', letterSpacing: '0.05em' }}>Outstanding Payables</p>
+              <h3 className="fw-bold mb-0 text-dark">{formatCurrency(suppliers.reduce((sum, s) => sum + Number(s.outstandingBalance || 0), 0))}</h3>
+            </div>
+          </div>
+        </Col>
+      </Row>
 
-            {/* Alerts */}
-            {error && <Alert variant="danger" className="border-0 shadow-sm">{error}</Alert>}
+      <div className="premium-card p-0 overflow-hidden">
+        <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} className="border-bottom px-4 pt-3 mb-0 fw-semibold" style={{ gap: '20px' }}>
+          <Tab eventKey="bills" title={<span className="py-2 d-inline-block"><FaFileInvoiceDollar className="me-2"/> Purchase Bills</span>}>
+            <div className="premium-table-wrapper border-0 rounded-0 shadow-none">
+              <table className="premium-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Bill #</th>
+                    <th>Vendor</th>
+                    <th className="text-end">Net Amt</th>
+                    <th className="text-end">Paid</th>
+                    <th className="text-end">Balance</th>
+                    <th className="text-center">Status</th>
+                    <th className="text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bills.length === 0 ? (
+                    <tr><td colSpan="8"><div className="premium-empty-state"><FaBoxOpen className="premium-empty-icon"/><h4 className="premium-empty-title">No purchase bills</h4></div></td></tr>
+                  ) : (
+                    bills.map(b => (
+                      <tr key={b.id}>
+                        <td>{formatDateShort(b.billDate)}</td>
+                        <td className="fw-bold text-dark">{b.billNumber}</td>
+                        <td>{b.supplierName}</td>
+                        <td className="text-end fw-semibold">{formatCurrency(b.netAmount)}</td>
+                        <td className="text-end text-success fw-semibold">{formatCurrency(b.amountPaid)}</td>
+                        <td className="text-end text-danger fw-semibold">{formatCurrency(b.amountDue)}</td>
+                        <td className="text-center">
+                          <span className={`premium-badge premium-badge-${b.paymentStatus === 'Paid' ? 'success' : b.paymentStatus === 'Partial' ? 'warning' : 'danger'}`}>
+                            {b.paymentStatus}
+                          </span>
+                        </td>
+                        <td className="text-center">
+                          <button className="premium-action-btn" onClick={() => handleViewBill(b.id)}><FaEye /></button>
+                          <button className="premium-action-btn" onClick={() => handleOpenPayment(b)}><FaMoneyBillWave /></button>
+                          <button className="premium-action-btn" onClick={() => handleEditBill(b)}><FaEdit /></button>
+                          <button className="premium-action-btn delete" onClick={() => initiateDeleteBill(b)}><FaTrashAlt /></button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Tab>
+          
+          <Tab eventKey="vendors" title={<span className="py-2 d-inline-block"><FaUserTie className="me-2"/> Vendor Directory</span>}>
+            <div className="premium-table-wrapper border-0 rounded-0 shadow-none">
+              <table className="premium-table">
+                <thead>
+                  <tr>
+                    <th>Vendor Name</th>
+                    <th>Contact Info</th>
+                    <th className="text-center">Credit Days</th>
+                    <th className="text-end">Total Billed</th>
+                    <th className="text-end">Outstanding Balance</th>
+                    <th className="text-center">Ledger</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {suppliers.length === 0 ? (
+                    <tr><td colSpan="6"><div className="premium-empty-state"><FaUserTie className="premium-empty-icon"/><h4 className="premium-empty-title">No vendors found</h4></div></td></tr>
+                  ) : (
+                    suppliers.map(s => (
+                      <tr key={s.id}>
+                        <td className="fw-bold text-dark">{s.name}</td>
+                        <td>
+                          <div style={{ fontSize: '0.85rem' }}>{s.phone || 'No phone'}</div>
+                          <div className="text-muted" style={{ fontSize: '0.75rem' }}>{s.email || ''}</div>
+                        </td>
+                        <td className="text-center">
+                          <span className="premium-badge premium-badge-neutral">{s.creditDays} Days</span>
+                        </td>
+                        <td className="text-end">{formatCurrency(s.totalPurchases)}</td>
+                        <td className="text-end fw-bold text-danger">{formatCurrency(s.outstandingBalance)}</td>
+                        <td className="text-center">
+                          <button className="premium-btn premium-btn-primary" style={{ padding: '6px 12px', fontSize: '0.75rem' }} onClick={() => handleViewLedger(s)}>
+                            <FaChartLine /> View Ledger
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Tab>
+        </Tabs>
+      </div>
 
-            {/* Filters Row */}
-            <Card className="saas-card shadow-sm border-0 mb-4">
-                <Card.Body>
-                    <Row className="g-3">
-                        <Col md={8} lg={9}>
-                            <div className="saas-search-pill d-flex align-items-center bg-light rounded-pill px-3 py-2 border border-light">
-                                <FaSearch className="text-muted me-2" />
-                                <Form.Control
-                                    className="border-0 shadow-none bg-transparent p-0"
-                                    placeholder="Search by Supplier, Bill No, ID, or Notes..."
-                                    value={searchTerm}
-                                    onChange={e => setSearchTerm(e.target.value)}
-                                    disabled={isLoading}
-                                />
-                                {searchTerm && (
-                                    <Button variant="link" size="sm" onClick={() => setSearchTerm('')} title="Clear Search" className="p-0 text-muted hover-danger">
-                                        <FaTimes />
-                                    </Button>
-                                )}
-                            </div>
-                        </Col>
-                        <Col md={4} lg={3}>
-                            <Form.Select 
-                                value={dateFilter} 
-                                onChange={(e) => setDateFilter(e.target.value)} 
-                                disabled={isLoading} 
-                                className="bg-light border-light shadow-none rounded-pill"
-                            >
-                                <option value="all">All Time</option>
-                                <option value="today">Today</option>
-                                <option value="thisMonth">This Month</option>
-                                <option value="lastMonth">Last Month</option>
-                                <option value="thisYear">This Year</option>
-                            </Form.Select>
-                        </Col>
-                    </Row>
-                </Card.Body>
-            </Card>
+      {/* Bill Detail Modal */}
+      <Modal show={showViewModal} onHide={() => setShowViewModal(false)} size="lg" centered dialogClassName="premium-modal">
+        {selectedBill && (
+          <>
+            <Modal.Header closeButton>
+              <Modal.Title>Purchase Bill: {selectedBill.billNumber}</Modal.Title>
+            </Modal.Header>
+            <Modal.Body>
+              <Row className="mb-4">
+                <Col md={6}>
+                  <p className="mb-1 text-muted text-uppercase fw-bold" style={{ fontSize: '0.75rem' }}>Vendor</p>
+                  <p className="fw-bold text-dark fs-5">{selectedBill.supplierName}</p>
+                </Col>
+                <Col md={3}>
+                  <p className="mb-1 text-muted text-uppercase fw-bold" style={{ fontSize: '0.75rem' }}>Date</p>
+                  <p className="fw-semibold">{formatDateShort(selectedBill.billDate)}</p>
+                </Col>
+                <Col md={3}>
+                  <p className="mb-1 text-muted text-uppercase fw-bold" style={{ fontSize: '0.75rem' }}>Status</p>
+                  <span className={`premium-badge premium-badge-${selectedBill.paymentStatus === 'Paid' ? 'success' : selectedBill.paymentStatus === 'Partial' ? 'warning' : 'danger'}`}>
+                    {selectedBill.paymentStatus}
+                  </span>
+                </Col>
+              </Row>
+              <div className="premium-table-wrapper">
+                <table className="premium-table">
+                  <thead className="bg-light">
+                    <tr>
+                      <th>Item</th>
+                      <th className="text-center">Qty</th>
+                      <th className="text-end">Rate</th>
+                      <th className="text-end">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {billItems.map(item => (
+                      <tr key={item.id}>
+                        <td className="fw-bold">{item.itemName}</td>
+                        <td className="text-center">{item.qty}</td>
+                        <td className="text-end">{formatCurrency(item.rate)}</td>
+                        <td className="text-end fw-semibold">{formatCurrency(item.totalAmount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="d-flex justify-content-end mt-4">
+                <div style={{ width: '250px' }} className="p-3 bg-light rounded-3 border">
+                  <div className="d-flex justify-content-between mb-2 fw-bold fs-5">
+                    <span>Net Total:</span>
+                    <span className="text-primary">{formatCurrency(selectedBill.netAmount)}</span>
+                  </div>
+                  <div className="d-flex justify-content-between mb-2 text-success fw-semibold">
+                    <span>Paid:</span>
+                    <span>{formatCurrency(selectedBill.amountPaid)}</span>
+                  </div>
+                  <div className="d-flex justify-content-between text-danger fw-semibold">
+                    <span>Balance Due:</span>
+                    <span>{formatCurrency(selectedBill.amountDue)}</span>
+                  </div>
+                </div>
+              </div>
+            </Modal.Body>
+            <Modal.Footer>
+              <button className="premium-btn premium-btn-secondary" onClick={() => window.print()}><FaPrint /> Print Invoice</button>
+              <button className="premium-btn premium-btn-primary" onClick={() => { setShowViewModal(false); handleOpenPayment(selectedBill); }}><FaMoneyBillWave /> Record Payment</button>
+            </Modal.Footer>
+          </>
+        )}
+      </Modal>
 
-            {/* History Table */}
-            <Card className="saas-card shadow-sm border-0">
-                <div className="saas-table-wrapper">
-                     <Table hover responsive className="mb-0 align-middle">
-                         <thead className="bg-light">
-                            <tr>
-                                 <th onClick={() => requestSort('billDate')} style={{cursor: 'pointer'}} className="border-0">
-                                    Bill Date {getSortIcon('billDate')}
-                                 </th>
-                                 <th onClick={() => requestSort('supplierName')} style={{cursor: 'pointer'}} className="border-0">
-                                    Supplier {getSortIcon('supplierName')}
-                                 </th>
-                                 <th onClick={() => requestSort('billNumber')} style={{cursor: 'pointer'}} className="border-0">
-                                    Bill No {getSortIcon('billNumber')}
-                                </th>
-                                <th className="d-none d-lg-table-cell border-0" onClick={() => requestSort('notes')} style={{cursor: 'pointer'}}>
-                                    Notes {getSortIcon('notes')}
-                                </th>
-                                <th className="text-end border-0" onClick={() => requestSort('totalAmount')} style={{cursor: 'pointer'}}>
-                                    Total Amount {getSortIcon('totalAmount')}
-                                 </th>
-                                 <th className="text-center border-0">Actions</th>
-                             </tr>
-                         </thead>
-                         <tbody className="border-top-0">
-                            {isLoading ? (
-                                 <tr><td colSpan="6" className="text-center p-5"><Spinner animation="border" size="sm" variant="primary" /><span className="ms-2 text-muted">Loading History...</span></td></tr>
-                            ) : sortedBills.length === 0 ? (
-                                 <tr><td colSpan="6" className="text-center text-muted p-5 bg-light rounded-bottom-4">
-                                     <div className="mb-2"><FaHistory size="2em" className="text-secondary opacity-50" /></div>
-                                     <div>{purchaseBills.length === 0 ? "No purchase history recorded yet." : "No matching purchase bills found."}</div>
-                                 </td></tr>
-                            ) : (
-                                 paginatedBills.map(bill => (
-                                    <tr key={bill.id}>
-                                        <td className="fw-medium text-dark">{formatDate(bill.billDate)}</td>
-                                        <td className="fw-bold text-dark">{bill.supplierName}</td>
-                                        <td><Badge bg="light" text="dark" className="border shadow-sm">{bill.billNumber}</Badge></td>
-                                        <td className="d-none d-lg-table-cell text-muted">
-                                            {bill.notes && <span className='notes-preview text-truncate d-inline-block' style={{maxWidth: '150px'}} title={bill.notes}>{bill.notes}</span>}
-                                        </td>
-                                        <td className="text-end fw-bold text-primary">{formatCurrency(bill.totalAmount)}</td>
-                                        <td className="text-center">
-                                             <Button variant="light" size="sm" className="border shadow-sm text-primary hover-primary" onClick={() => handleViewDetails(bill)} title="View Details">
-                                                 <FaEye />
-                                             </Button>
-                                        </td>
-                                    </tr>
-                                 ))
-                            )}
-                         </tbody>
-                     </Table>
-                 </div>
-                 <SaaSDataPagination
-                   totalItems={sortedBills.length}
-                   currentPage={currentPage}
-                   pageSize={pageSize}
-                   onPageChange={setCurrentPage}
-                   onPageSizeChange={setPageSize}
-                 />
-            </Card>
+      {/* Record Payment Modal */}
+      <Modal show={showPaymentModal} onHide={() => setShowPaymentModal(false)} centered dialogClassName="premium-modal">
+        <Modal.Header closeButton>
+          <Modal.Title>Record Vendor Payment</Modal.Title>
+        </Modal.Header>
+        <Form onSubmit={handleRecordPayment}>
+          <Modal.Body>
+            <div className="premium-form-group">
+              <label className="premium-label">Payment Amount (₹) *</label>
+              <input type="number" step="0.01" required className="premium-input" style={{ fontSize: '1.25rem', fontWeight: 'bold' }} value={paymentForm.amount} onChange={e => setPaymentForm({...paymentForm, amount: e.target.value})} />
+            </div>
+            <Row>
+              <Col md={6}>
+                <div className="premium-form-group">
+                  <label className="premium-label">Payment Mode</label>
+                  <select className="premium-select" value={paymentForm.paymentMode} onChange={e => setPaymentForm({...paymentForm, paymentMode: e.target.value})}>
+                    <option value="Cash">Cash</option>
+                    <option value="UPI">UPI</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="Cheque">Cheque</option>
+                  </select>
+                </div>
+              </Col>
+              <Col md={6}>
+                <div className="premium-form-group">
+                  <label className="premium-label">Payment Date</label>
+                  <input type="date" className="premium-input" value={paymentForm.paymentDate} onChange={e => setPaymentForm({...paymentForm, paymentDate: e.target.value})} />
+                </div>
+              </Col>
+            </Row>
+            <div className="premium-form-group">
+              <label className="premium-label">Reference No (Optional)</label>
+              <input type="text" className="premium-input" placeholder="e.g. UPI Ref / Cheque No" value={paymentForm.referenceNo} onChange={e => setPaymentForm({...paymentForm, referenceNo: e.target.value})} />
+            </div>
+          </Modal.Body>
+          <Modal.Footer>
+            <button type="button" className="premium-btn premium-btn-secondary" onClick={() => setShowPaymentModal(false)}>Cancel</button>
+            <button type="submit" className="premium-btn premium-btn-primary">Save Payment</button>
+          </Modal.Footer>
+        </Form>
+      </Modal>
 
-             {/* View Bill Details Modal */}
-             <Modal show={!!viewingBill} onHide={handleCloseDetails} centered size="lg" backdrop="static" keyboard={false} className="saas-modal">
-                 <Modal.Header closeButton className="border-0 pb-0">
-                     <Modal.Title className="h5 fw-bold text-dark d-flex align-items-center"><FaFileInvoiceDollar className="me-2 text-primary" />Purchase Bill Details</Modal.Title>
-                 </Modal.Header>
-                 <Modal.Body className="py-4">
-                     {viewingBill && (
-                         <>
-                             <Row className="mb-4 g-3 p-4 bg-light rounded-4 border border-light">
-                                 <Col md={6} className="d-flex flex-column">
-                                     <span className="text-muted small text-uppercase fw-bold mb-1">Supplier</span>
-                                     <span className="fw-bold text-dark fs-5">{viewingBill.supplierName}</span>
-                                 </Col>
-                                 <Col md={6} className="d-flex flex-column">
-                                     <span className="text-muted small text-uppercase fw-bold mb-1">Bill No</span>
-                                     <span className="fw-bold text-dark fs-5">{viewingBill.billNumber}</span>
-                                 </Col>
-                                 <Col md={6} className="d-flex flex-column">
-                                     <span className="text-muted small text-uppercase fw-bold mb-1">Bill Date</span>
-                                     <span className="text-dark fw-medium">{formatDate(viewingBill.billDate)}</span>
-                                 </Col>
-                                 <Col md={6} className="d-flex flex-column">
-                                     <span className="text-muted small text-uppercase fw-bold mb-1">Recorded</span>
-                                     <span className="text-dark fw-medium">{formatDate(viewingBill.dateRecorded)}</span>
-                                 </Col>
-                                 {viewingBill.notes && <Col xs={12} className="mt-3 pt-3 border-top border-light"><span className="text-muted small fw-bold text-uppercase d-block mb-1">Notes:</span><span className="text-secondary">{viewingBill.notes}</span></Col>}
-                             </Row>
-                             <h6 className="fw-bold text-dark mb-3">Items Purchased</h6>
-                             <div className="border border-light rounded-4 overflow-hidden">
-                                 <Table hover responsive className="mb-0">
-                                     <thead className="bg-light">
-                                         <tr>
-                                             <th className="border-0">#</th>
-                                             <th className="border-0">Item Name</th>
-                                             <th className="border-0">Part No</th>
-                                             <th className="text-center border-0">Qty</th>
-                                             <th className="text-end border-0">Cost/Unit</th>
-                                             <th className="text-end border-0">Line Total</th>
-                                         </tr>
-                                     </thead>
-                                     <tbody className="border-top-0">
-                                         {viewingBill.items && viewingBill.items.map((item, index) => {
-                                             const masterId = item.masterItemId || item.master_item_id;
-                                             const master = masterItems.find(m => m.id === masterId); 
-                                             const qty = Number(item.quantity) || 0;
-                                             const price = Number(item.purchasePrice || item.purchase_price) || 0;
+      {/* Vendor Ledger Drawer */}
+      <Offcanvas show={showLedgerDrawer} onHide={() => setShowLedgerDrawer(false)} placement="end" style={{ width: '450px', borderLeft: '1px solid var(--premium-border)' }}>
+        <Offcanvas.Header closeButton className="border-bottom bg-light p-4">
+          <Offcanvas.Title className="fw-bold text-dark fs-4">Vendor Ledger</Offcanvas.Title>
+        </Offcanvas.Header>
+        <Offcanvas.Body className="p-0 d-flex flex-column bg-light">
+          {ledgerSupplier && (
+            <div className="p-4 bg-white border-bottom">
+              <h5 className="fw-bold mb-1">{ledgerSupplier.name}</h5>
+              <p className="text-danger fw-bold mb-0">Total Due: {formatCurrency(ledgerSupplier.outstandingBalance)}</p>
+            </div>
+          )}
+          <div className="flex-grow-1 overflow-auto p-4">
+            {ledgerTransactions.map((txn, idx) => (
+              <div key={idx} className="premium-card mb-3 p-3" style={{ borderLeft: `4px solid ${txn.type === 'BILL' ? 'var(--premium-danger)' : 'var(--premium-success)'}` }}>
+                <div className="d-flex justify-content-between mb-2">
+                  <span className="fw-bold text-dark">{txn.type === 'BILL' ? `Bill: ${txn.referenceId}` : `Payment: ${txn.paymentMode}`}</span>
+                  <span className="text-muted" style={{ fontSize: '0.75rem' }}>{formatDateShort(txn.date)}</span>
+                </div>
+                <div className="d-flex justify-content-between align-items-end">
+                  <span className="text-muted" style={{ fontSize: '0.8rem' }}>Bal: {formatCurrency(txn.runningBalance)}</span>
+                  <span className={`fw-bold fs-5 ${txn.type === 'BILL' ? 'text-danger' : 'text-success'}`}>
+                    {txn.type === 'BILL' ? '+' : '-'}{formatCurrency(txn.amount)}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {ledgerTransactions.length === 0 && <div className="text-center p-4 text-muted">No transactions found.</div>}
+          </div>
+          <div className="p-4 bg-white border-top shadow-lg">
+            <button className="premium-btn premium-btn-primary w-100" style={{ padding: '14px' }} onClick={handleLedgerPayment}>
+              Record Ledger Payment
+            </button>
+          </div>
+        </Offcanvas.Body>
+      </Offcanvas>
 
-                                             return (
-                                                 <tr key={index}>
-                                                     <td className="text-muted">{index + 1}</td>
-                                                     <td className="fw-medium text-dark">{master?.name || item.name || <span className='text-muted fst-italic'>Item ID: {masterId}</span>}</td>
-                                                     <td className="text-muted">{master?.partNo || item.partNo || item.part_no || '-'}</td>
-                                                     <td className="text-center fw-bold">{qty}</td>
-                                                     <td className="text-end">{formatCurrency(price)}</td>
-                                                     <td className="text-end fw-bold text-dark">{formatCurrency(qty * price)}</td>
-                                                 </tr>
-                                             );
-                                         })}
-                                     </tbody>
-                                 </Table>
-                             </div>
-                             <div className="d-flex justify-content-end mt-4 pt-3 border-top border-light">
-                                 <div className="text-end">
-                                     <span className="text-muted small fw-bold text-uppercase d-block mb-1">Grand Total</span>
-                                     <span className="fw-bold text-primary fs-4">{formatCurrency(viewingBill.totalAmount)}</span>
-                                 </div>
-                             </div>
-                         </>
-                     )}
-                 </Modal.Body>
-                 <Modal.Footer className="border-0 pt-0">
-                     <Button variant="outline-secondary" className="rounded-pill px-4" onClick={handleCloseDetails}>Close</Button>
-                 </Modal.Footer>
-             </Modal>
-        </Container>
-    );
+      <ConfirmModal show={showConfirmModal} onHide={() => setShowConfirmModal(false)} onConfirm={confirmDeleteBill} title="Delete Bill" message="Are you sure you want to delete this bill? This will adjust stock quantities." confirmText="Delete Bill" confirmVariant="danger" />
+    </div>
+  );
 };
 
 export default PurchaseHistoryPage;

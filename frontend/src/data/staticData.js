@@ -105,12 +105,14 @@ export const carMakes = [
     { id: 'make_bmw', name: 'BMW' },
     { id: 'make_mercedes', name: 'Mercedes-Benz' },
     { id: 'make_audi', name: 'Audi' },
+    { id: 'make_ford', name: 'Ford' },
     // Add many more makes...
 ];
 
 // Structured models (maps models to makes)
 // Use the make *name* for easier matching in the component for now
 export const carModels = [
+    { makeName: 'Ford', models: ['EcoSport', 'Figo', 'Aspire', 'Endeavour', 'Freestyle', 'Fiesta', 'Ikon', 'Mustang', 'Fusion', 'Mondeo'] },
     { makeName: 'Honda', models: ['Civic', 'City', 'Accord', 'CR-V', 'Amaze', 'Jazz', 'WR-V'] },
     { makeName: 'Maruti Suzuki', models: ['Swift', 'Baleno', 'Dzire', 'Wagon R', 'Alto 800', 'Alto K10', 'Ertiga', 'Brezza', 'S-Presso', 'Celerio', 'Ignis', 'XL6'] },
     { makeName: 'Toyota', models: ['Corolla', 'Camry', 'Fortuner', 'Innova Crysta', 'Glanza', 'Urban Cruiser', 'Yaris'] },

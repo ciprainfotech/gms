@@ -40,5 +40,6 @@ router.post('/password', authorizeGarage, profileController.changePassword);
 router.put('/garage', authorizeGarage, profileController.updateGarageDetails);
 router.post('/logo', authorizeGarage, upload.single('logo'), profileController.uploadGarageLogo);
 router.post('/garage-logo', authorizeGarage, upload.single('logo'), profileController.uploadGarageLogo);
+router.patch('/stock-validation', authorizeGarage, profileController.updateStockValidation);
 
 module.exports = router;

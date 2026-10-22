@@ -30,6 +30,7 @@ const superAdminRoutes = require('./routes/superAdminRoutes');
 const whatsappRoutes = require('./routes/whatsappRoutes');
 const staffRoutes = require('./routes/staffRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const supplierPaymentRoutes = require('./routes/supplierPaymentRoutes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -70,6 +71,7 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/purchase-bills', purchaseBillRoutes);
+app.use('/api/supplier-payments', supplierPaymentRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/admin', superAdminRoutes);
 // --- Public Meta Webhook Verification Route ---
@@ -343,6 +345,108 @@ server.listen(PORT, '0.0.0.0', async () => {
       -- Payments table schema integrity
       ALTER TABLE payments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
       ALTER TABLE payments ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+      -- Invoices table schema integrity
+      ALTER TABLE invoices ADD COLUMN IF NOT EXISTS is_gst_invoice BOOLEAN DEFAULT TRUE;
+
+      -- Suppliers table schema integrity
+      CREATE TABLE IF NOT EXISTS suppliers (
+          id SERIAL PRIMARY KEY,
+          garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+          name VARCHAR(100) NOT NULL,
+          contact_person VARCHAR(100),
+          phone VARCHAR(20),
+          email VARCHAR(100),
+          address TEXT,
+          gst_number VARCHAR(50),
+          city VARCHAR(100),
+          credit_days INTEGER DEFAULT 0,
+          opening_balance DECIMAL(10,2) DEFAULT 0,
+          notes TEXT,
+          is_deleted BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS contact_person VARCHAR(100);
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS email VARCHAR(100);
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS address TEXT;
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS gst_number VARCHAR(50);
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS city VARCHAR(100);
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS credit_days INTEGER DEFAULT 0;
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS opening_balance DECIMAL(10,2) DEFAULT 0;
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS notes TEXT;
+      ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
+
+      -- Purchase Bills table schema integrity
+      CREATE TABLE IF NOT EXISTS purchase_bills (
+          id BIGSERIAL PRIMARY KEY,
+          garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+          supplier_id INTEGER REFERENCES suppliers(id),
+          bill_number VARCHAR(100) NOT NULL,
+          bill_date DATE NOT NULL,
+          due_date DATE,
+          total_amount DECIMAL(10,2),
+          discount_amount DECIMAL(10,2) DEFAULT 0,
+          tax_amount DECIMAL(10,2) DEFAULT 0,
+          net_amount DECIMAL(10,2) DEFAULT 0,
+          payment_status VARCHAR(20) DEFAULT 'Unpaid',
+          notes TEXT,
+          is_deleted BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS total_amount DECIMAL(10,2);
+      ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(10,2) DEFAULT 0;
+      ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS tax_amount DECIMAL(10,2) DEFAULT 0;
+      ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS net_amount DECIMAL(10,2) DEFAULT 0;
+      ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS due_date DATE;
+      ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) DEFAULT 'Unpaid';
+      ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS notes TEXT;
+      ALTER TABLE purchase_bills ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
+
+      -- Purchase Bill Items table schema integrity
+      CREATE TABLE IF NOT EXISTS purchase_bill_items (
+          id BIGSERIAL PRIMARY KEY,
+          purchase_bill_id BIGINT NOT NULL REFERENCES purchase_bills(id) ON DELETE CASCADE,
+          master_item_id INTEGER NOT NULL REFERENCES master_items(id),
+          item_name VARCHAR(150),
+          item_part_no VARCHAR(50),
+          quantity DECIMAL(10,2) NOT NULL DEFAULT 1.00,
+          purchase_price DECIMAL(10,2) NOT NULL,
+          line_total DECIMAL(10,2)
+      );
+      ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS item_name VARCHAR(150);
+      ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS item_part_no VARCHAR(50);
+      ALTER TABLE purchase_bill_items ADD COLUMN IF NOT EXISTS line_total DECIMAL(10,2);
+
+      -- Supplier Payments table schema integrity
+      CREATE TABLE IF NOT EXISTS supplier_payments (
+          id BIGSERIAL PRIMARY KEY,
+          garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+          supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+          purchase_bill_id BIGINT REFERENCES purchase_bills(id) ON DELETE SET NULL,
+          amount DECIMAL(10,2) NOT NULL,
+          payment_date DATE NOT NULL,
+          payment_method VARCHAR(50),
+          reference_no VARCHAR(100),
+          notes TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      -- Stock Adjustments table schema integrity
+      CREATE TABLE IF NOT EXISTS stock_adjustments (
+          id BIGSERIAL PRIMARY KEY,
+          garage_id INTEGER NOT NULL REFERENCES garages(id) ON DELETE CASCADE,
+          master_item_id INTEGER NOT NULL REFERENCES master_items(id) ON DELETE CASCADE,
+          adjustment_type VARCHAR(20) NOT NULL,
+          qty_before DECIMAL(10,2) NOT NULL,
+          qty_change DECIMAL(10,2) NOT NULL,
+          qty_after DECIMAL(10,2) NOT NULL,
+          reason TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
       -- WhatsApp logs table & columns schema integrity
       CREATE TABLE IF NOT EXISTS whatsapp_logs (
           id SERIAL PRIMARY KEY,
@@ -369,12 +473,13 @@ server.listen(PORT, '0.0.0.0', async () => {
       ALTER TABLE whatsapp_logs ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'sent';
       ALTER TABLE whatsapp_logs ADD COLUMN IF NOT EXISTS error_message TEXT;
     `);
-    console.log('[DB Schema] Staff lifecycle, 3-tier SaaS fees, Vehicles, Meta & Local WhatsApp logs columns verified.');
+    console.log('[DB Schema] All tables, columns, and indexes verified.');
 
-    // Auto-seed Indian Vehicle Makes and Models if empty or incomplete
+    // Auto-seed Indian Vehicle Makes and Models if empty, incomplete, or missing Ford
     const makeCheck = await db.query('SELECT COUNT(*) FROM makes');
-    if (parseInt(makeCheck.rows[0].count, 10) < 15) {
-      console.log('[DB Seed] Seeding complete Indian vehicle makes and models...');
+    const fordCheck = await db.query("SELECT id FROM makes WHERE LOWER(name) = 'ford'");
+    if (parseInt(makeCheck.rows[0].count, 10) < 20 || fordCheck.rows.length === 0) {
+      console.log('[DB Seed] Seeding complete Indian vehicle makes and models (including Ford)...');
       const seedScript = require('./scripts/seedIndianVehiclesHelper');
       await seedScript.runAutoSeed();
     }

@@ -215,13 +215,32 @@ exports.uploadGarageLogo = async (req, res) => {
 
     await db.query('UPDATE garages SET logo_url = $1, updated_at = NOW() WHERE id = $2', [logoUrl, garageId]);
 
-    res.json({
-      success: true,
-      message: 'Logo uploaded successfully to Cloud CDN',
-      logo_url: logoUrl
-    });
+    res.json({ success: true, message: 'Logo uploaded successfully', logo_url: logoUrl });
   } catch (error) {
-    console.error('Error uploading logo to Cloudinary:', error);
-    res.status(500).json({ success: false, message: 'Failed to upload logo to cloud' });
+    console.error('Error uploading logo:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload logo' });
   }
 };
+
+// Toggle Enforce Stock Validation for Job Sheets & Invoices
+exports.updateStockValidation = async (req, res) => {
+  try {
+    const garageId = req.garageId;
+    const { enforce_stock_validation } = req.body;
+
+    await db.query(
+      'UPDATE garages SET enforce_stock_validation = $1, updated_at = NOW() WHERE id = $2',
+      [enforce_stock_validation === true, garageId]
+    );
+
+    res.json({
+      success: true,
+      message: `Stock constraint validation ${enforce_stock_validation ? 'enabled' : 'bypassed (disabled)'}`,
+      enforce_stock_validation: enforce_stock_validation === true
+    });
+  } catch (error) {
+    console.error('Error updating stock validation:', error);
+    res.status(500).json({ success: false, message: 'Failed to update stock validation' });
+  }
+};
+

@@ -99,9 +99,14 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
     }
 
     // 3. Calculate tax, round off, and final grand total
+    const isGst = invoice.is_gst_invoice !== false;
     const amountBeforeTax = Math.max(0, subTotal - discountAmount);
-    const taxRate = Number(invoice.tax_rate) || 0;
-    const taxAmount = (amountBeforeTax * taxRate) / 100;
+    const taxRate = isGst ? (Number(invoice.tax_rate) || 0) : 0;
+    const cgstRate = isGst ? (taxRate / 2) : 0;
+    const sgstRate = isGst ? (taxRate / 2) : 0;
+    const taxAmount = isGst ? ((amountBeforeTax * taxRate) / 100) : 0;
+    const cgstAmount = isGst ? parseFloat(((amountBeforeTax * cgstRate) / 100).toFixed(2)) : 0;
+    const sgstAmount = isGst ? parseFloat((taxAmount - cgstAmount).toFixed(2)) : 0;
     const unroundedGrandTotal = amountBeforeTax + taxAmount;
     const grandTotal = Math.round(unroundedGrandTotal);
     const roundOffAmount = grandTotal - unroundedGrandTotal;
@@ -366,12 +371,12 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
                         ${garage?.tagline && garage.tagline.trim() ? `<div class="company-sub">${garage.tagline.trim()}</div>` : ''}
                         <div class="company-info">${garage?.address || 'Service Station Address'}</div>
                         <div class="company-info">
-                            <strong>GSTIN:</strong> ${garage?.gst_number || invoice.gstinNo || '24BBDPK3507P1ZK'} &nbsp;|&nbsp; 
+                            ${invoice.is_gst_invoice !== false && (garage?.gst_number || invoice.gstinNo) ? `<strong>GSTIN:</strong> ${garage?.gst_number || invoice.gstinNo} &nbsp;|&nbsp; ` : ''}
                             <strong>Phone:</strong> ${garage?.phone || 'N/A'}
                         </div>
                     </td>
                     <td style="width: 35%; text-align: right;">
-                        <div class="invoice-title">TAX INVOICE</div>
+                        <div class="invoice-title">${invoice.is_gst_invoice !== false ? 'TAX INVOICE' : 'INVOICE'}</div>
                         <div style="font-size: 8.5px; color: #555; margin-top: 2px;">(Original for Recipient)</div>
                     </td>
                 </tr>
@@ -390,7 +395,7 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
                         <div style="color: #444; font-size: 9px; line-height: 1.35;">
                             ${invoice.customer_address && invoice.customer_address !== 'N/A' ? `${invoice.customer_address}<br/>` : ''}
                             ${invoice.customer_phone && invoice.customer_phone !== 'N/A' ? `<strong>Mob:</strong> ${invoice.customer_phone}` : ''}
-                            ${invoice.customer_gstin && invoice.customer_gstin !== 'N/A' ? `<br/><strong>GSTIN:</strong> ${invoice.customer_gstin}` : ''}
+                            ${invoice.is_gst_invoice !== false && invoice.customer_gstin && invoice.customer_gstin !== 'N/A' ? `<br/><strong>GSTIN:</strong> ${invoice.customer_gstin}` : ''}
                         </div>
                     </td>
                     <td style="width: 50%;">
@@ -499,14 +504,20 @@ exports.generateInvoicePDF = async (invoice, garage, items) => {
                                         ${discountAmount > 0 ? `(-) ${formatCurrency(discountAmount)}` : formatCurrency(0)}
                                     </td>
                                 </tr>
+                                ${invoice.is_gst_invoice !== false ? `
                                 <tr>
                                     <td style="border: none; border-bottom: 1px solid #eee; border-right: 1px solid #eee; padding: 3.5px 6px; text-align: right; color: #475569; font-weight: 600;">Taxable Amt:</td>
                                     <td style="border: none; border-bottom: 1px solid #eee; padding: 3.5px 6px; text-align: right; font-weight: 600;">${formatCurrency(amountBeforeTax)}</td>
                                 </tr>
                                 <tr>
-                                    <td style="border: none; border-bottom: 1px solid #eee; border-right: 1px solid #eee; padding: 3.5px 6px; text-align: right; color: #475569;">GST (${taxRate}%):</td>
-                                    <td style="border: none; border-bottom: 1px solid #eee; padding: 3.5px 6px; text-align: right;">${taxAmount > 0 ? `(+) ${formatCurrency(taxAmount)}` : formatCurrency(0)}</td>
+                                    <td style="border: none; border-bottom: 1px solid #eee; border-right: 1px solid #eee; padding: 3.5px 6px; text-align: right; color: #475569;">CGST (${cgstRate}%):</td>
+                                    <td style="border: none; border-bottom: 1px solid #eee; padding: 3.5px 6px; text-align: right;">${cgstAmount > 0 ? `(+) ${formatCurrency(cgstAmount)}` : formatCurrency(0)}</td>
                                 </tr>
+                                <tr>
+                                    <td style="border: none; border-bottom: 1px solid #eee; border-right: 1px solid #eee; padding: 3.5px 6px; text-align: right; color: #475569;">SGST (${sgstRate}%):</td>
+                                    <td style="border: none; border-bottom: 1px solid #eee; padding: 3.5px 6px; text-align: right;">${sgstAmount > 0 ? `(+) ${formatCurrency(sgstAmount)}` : formatCurrency(0)}</td>
+                                </tr>
+                                ` : ''}
                                 <tr>
                                     <td style="border: none; border-bottom: 1px solid #333; border-right: 1px solid #eee; padding: 3.5px 6px; text-align: right; color: #475569;">Round Off:</td>
                                     <td style="border: none; border-bottom: 1px solid #333; padding: 3.5px 6px; text-align: right;">${Math.abs(roundOffAmount) < 0.001 ? formatCurrency(0) : (roundOffAmount < 0 ? `(-) ${formatCurrency(Math.abs(roundOffAmount))}` : `(+) ${formatCurrency(roundOffAmount)}`)}</td>

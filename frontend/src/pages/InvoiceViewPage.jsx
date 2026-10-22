@@ -173,9 +173,14 @@ const InvoiceViewPage = () => {
         }
 
         // 3. Calculate tax, round off, and final grand total
+        const isGst = invoice.is_gst_invoice !== false;
         const amountBeforeTax = subTotal - discountAmount;
-        const taxRate = Number(invoice.tax_rate) || 0;
-        const taxAmount = (amountBeforeTax * taxRate) / 100;
+        const taxRate = isGst ? (Number(invoice.tax_rate) || 0) : 0;
+        const cgstRate = isGst ? (taxRate / 2) : 0;
+        const sgstRate = isGst ? (taxRate / 2) : 0;
+        const taxAmount = isGst ? ((amountBeforeTax * taxRate) / 100) : 0;
+        const cgstAmount = isGst ? parseFloat(((amountBeforeTax * cgstRate) / 100).toFixed(2)) : 0;
+        const sgstAmount = isGst ? parseFloat((taxAmount - cgstAmount).toFixed(2)) : 0;
         const unroundedGrandTotal = amountBeforeTax + taxAmount;
         const grandTotal = Math.round(unroundedGrandTotal);
         const roundOff = grandTotal - unroundedGrandTotal;
@@ -187,6 +192,11 @@ const InvoiceViewPage = () => {
             subTotal,
             discountAmount,
             amountBeforeTax,
+            taxRate,
+            cgstRate,
+            sgstRate,
+            cgstAmount,
+            sgstAmount,
             taxAmount,
             unroundedGrandTotal,
             roundOff,
@@ -317,10 +327,17 @@ const InvoiceViewPage = () => {
                                         <p className="mb-0 text-dark small" style={{ fontSize: '8.5pt', fontWeight: 600 }}>{garage.tagline.trim()}</p>
                                     )}
                                     <p className="mb-0 text-muted small" style={{ fontSize: '8pt', lineHeight: 1.3 }}>{garage?.address || 'Opp. Geeta Hume Pipe, Vasad Road, Vaghwala, Borsad - 388540'}</p>
-                                    <p className="mb-0 text-muted small" style={{ fontSize: '8pt' }}>GSTIN: <strong>{garage?.gst_number || invoice.gstinNo || '24BBDPK3507P1ZK'}</strong> | Phone: {garage?.phone || '9428434436'}</p>
+                                    <p className="mb-0 text-muted small" style={{ fontSize: '8pt' }}>
+                                        {invoice.is_gst_invoice !== false && (garage?.gst_number || invoice.gstinNo) ? (
+                                            <>GSTIN: <strong>{garage?.gst_number || invoice.gstinNo}</strong> | </>
+                                        ) : null}
+                                        Phone: {garage?.phone || '9428434436'}
+                                    </p>
                                 </td>
                                 <td style={{ width: '35%', textAlign: 'right', verticalAlign: 'top' }}>
-                                    <h4 className="fw-bold mb-0 text-uppercase text-dark" style={{ fontSize: '16pt', letterSpacing: '0.5px' }}>Tax Invoice</h4>
+                                    <h4 className="fw-bold mb-0 text-uppercase text-dark" style={{ fontSize: '16pt', letterSpacing: '0.5px' }}>
+                                        {invoice.is_gst_invoice !== false ? 'Tax Invoice' : 'Invoice'}
+                                    </h4>
                                     <span className="text-muted small" style={{ fontSize: '8.5pt' }}>(Original for Recipient)</span>
                                 </td>
                             </tr>
@@ -343,7 +360,7 @@ const InvoiceViewPage = () => {
                                         {invoice.customer_phone && invoice.customer_phone !== 'N/A' && (
                                             <><strong>Mob:</strong> {invoice.customer_phone}</>
                                         )}
-                                        {invoice.customer_gstin && invoice.customer_gstin !== 'N/A' && (
+                                        {invoice.is_gst_invoice !== false && invoice.customer_gstin && invoice.customer_gstin !== 'N/A' && (
                                             <><br/><strong>GSTIN:</strong> {invoice.customer_gstin}</>
                                         )}
                                     </div>
@@ -467,14 +484,22 @@ const InvoiceViewPage = () => {
                                                         {invoiceTotals.discountAmount > 0 ? `(-) ${formatCurrency(invoiceTotals.discountAmount)}` : formatCurrency(0)}
                                                     </td>
                                                 </tr>
-                                                <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                                    <td style={{ padding: '3.5px 6px', textAlign: 'right', color: '#475569', fontWeight: 600, borderRight: '1px solid #e2e8f0' }}>Taxable Amount:</td>
-                                                    <td style={{ padding: '3.5px 8px', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(invoiceTotals.amountBeforeTax)}</td>
-                                                </tr>
-                                                <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                                    <td style={{ padding: '3.5px 6px', textAlign: 'right', color: '#475569', borderRight: '1px solid #e2e8f0' }}>{getTaxLabel()}:</td>
-                                                    <td style={{ padding: '3.5px 8px', textAlign: 'right' }}>{invoiceTotals.taxAmount > 0 ? `(+) ${formatCurrency(invoiceTotals.taxAmount)}` : formatCurrency(0)}</td>
-                                                </tr>
+                                                {invoice.is_gst_invoice !== false && (
+                                                    <>
+                                                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                            <td style={{ padding: '3.5px 6px', textAlign: 'right', color: '#475569', fontWeight: 600, borderRight: '1px solid #e2e8f0' }}>Taxable Amount:</td>
+                                                            <td style={{ padding: '3.5px 8px', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(invoiceTotals.amountBeforeTax)}</td>
+                                                        </tr>
+                                                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                            <td style={{ padding: '3.5px 6px', textAlign: 'right', color: '#475569', borderRight: '1px solid #e2e8f0' }}>CGST ({invoiceTotals?.cgstRate ?? 0}%):</td>
+                                                            <td style={{ padding: '3.5px 8px', textAlign: 'right' }}>{(invoiceTotals?.cgstAmount ?? 0) > 0 ? `(+) ${formatCurrency(invoiceTotals?.cgstAmount)}` : formatCurrency(0)}</td>
+                                                        </tr>
+                                                        <tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                                            <td style={{ padding: '3.5px 6px', textAlign: 'right', color: '#475569', borderRight: '1px solid #e2e8f0' }}>SGST ({invoiceTotals?.sgstRate ?? 0}%):</td>
+                                                            <td style={{ padding: '3.5px 8px', textAlign: 'right' }}>{(invoiceTotals?.sgstAmount ?? 0) > 0 ? `(+) ${formatCurrency(invoiceTotals?.sgstAmount)}` : formatCurrency(0)}</td>
+                                                        </tr>
+                                                    </>
+                                                )}
                                                 <tr style={{ borderBottom: '1px solid #334155' }}>
                                                     <td style={{ padding: '3.5px 6px', textAlign: 'right', color: '#475569', borderRight: '1px solid #e2e8f0' }}>Round Off:</td>
                                                     <td style={{ padding: '3.5px 8px', textAlign: 'right' }}>

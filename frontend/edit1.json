@@ -1,0 +1,25 @@
+{
+  "step_index": 13849,
+  "source": "MODEL",
+  "type": "PLANNER_RESPONSE",
+  "status": "DONE",
+  "created_at": "2026-08-21T06:39:26Z",
+  "content": "Now fix **PurchaseHistoryPage** formatDate and **JobSheets.jsx** and **InvoicesPage**:",
+  "tool_calls": [
+    {
+      "name": "replace_file_content",
+      "args": {
+        "AllowMultiple": false,
+        "Description": "Replace PurchaseHistoryPage local formatDate with timezone-safe shared dateUtils.formatDateShort",
+        "EndLine": 22,
+        "Instruction": "Replace local formatDate with dateUtils import in PurchaseHistoryPage",
+        "ReplacementContent": "import { formatDateShort } from '../utils/dateUtils';\n\n// Use shared timezone-safe date formatter (dd Mon yyyy — e.g. \"15 Aug 2026\")\nconst formatDate = formatDateShort;\n\n",
+        "StartLine": 15,
+        "TargetContent": "const formatDate = (dateString) => {\n    if (!dateString) return 'N/A';\n    try {\n        return new Date(dateString).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });\n    } catch (e) { return 'Invalid Date'; }\n};\n\n",
+        "TargetFile": "E:\\Saman Motors\\garage-new\\frontend\\src\\pages\\PurchaseHistoryPage.jsx",
+        "toolAction": "Fixing PurchaseHistoryPage formatDate to timezone-safe",
+        "toolSummary": "Fix PurchaseHistoryPage formatDate"
+      }
+    }
+  ]
+}

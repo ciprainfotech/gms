@@ -1,7 +1,7 @@
 // src/pages/CreateInvoicePage.jsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Container, Row, Col, Card, Button, Table, Form, InputGroup, Alert, Badge, Spinner, ListGroup, Modal } from 'react-bootstrap';
+import { Container, Row, Col, Card, Button, Table, Form, InputGroup, Alert, Badge, Spinner, ListGroup, Modal, ButtonGroup } from 'react-bootstrap';
 import { FaFileInvoiceDollar, FaCheck, FaTimes, FaUser, FaCar, FaPlus, FaInfoCircle, FaWhatsapp } from 'react-icons/fa';
 import api from '../api/api';
 import CustomToast from '../components/CustomToast';
@@ -46,6 +46,7 @@ const CreateInvoicePage = () => {
     const [discountType, setDiscountType] = useState('Percent');
     const [discountValue, setDiscountValue] = useState(0);
     const [taxRate, setTaxRate] = useState(18);
+    const [isGstInvoice, setIsGstInvoice] = useState(true);
     const [toast, setToast] = useState(null);
     const [error, setError] = useState('');
     const [isFinalizing, setIsFinalizing] = useState(false);
@@ -147,6 +148,7 @@ const CreateInvoicePage = () => {
         setInvoiceDraft(draft);
         setDiscountType('Percent');
         setDiscountValue(0);
+        setIsGstInvoice(true);
         setTaxRate(18);
         setError('');
         window.scrollTo(0, 0);
@@ -157,7 +159,7 @@ const CreateInvoicePage = () => {
         const subtotal = parseFloat(invoiceDraft.subTotal) || 0;
         let calculatedDiscountAmount = 0;
         const currentDiscountValue = parseFloat(discountValue) || 0;
-        const currentTaxRatePercent = parseFloat(taxRate) || 0;
+        const currentTaxRatePercent = isGstInvoice ? (parseFloat(taxRate) || 0) : 0;
         
         if (discountType === 'Percent' && currentDiscountValue > 0) {
             calculatedDiscountAmount = subtotal * (currentDiscountValue / 100);
@@ -166,7 +168,11 @@ const CreateInvoicePage = () => {
         }
         
         const amountBeforeTax = subtotal - Math.max(0, calculatedDiscountAmount);
-        const calculatedTaxAmount = amountBeforeTax * (currentTaxRatePercent / 100);
+        const calculatedTaxAmount = isGstInvoice ? (amountBeforeTax * (currentTaxRatePercent / 100)) : 0;
+        const cgstRate = isGstInvoice ? (currentTaxRatePercent / 2) : 0;
+        const sgstRate = isGstInvoice ? (currentTaxRatePercent / 2) : 0;
+        const cgstAmount = isGstInvoice ? parseFloat(((amountBeforeTax * (cgstRate / 100))).toFixed(2)) : 0;
+        const sgstAmount = isGstInvoice ? parseFloat((calculatedTaxAmount - cgstAmount).toFixed(2)) : 0;
         const rawGrandTotal = amountBeforeTax + calculatedTaxAmount;
         const roundedGrandTotal = Math.round(rawGrandTotal);
         const roundOffAmount = roundedGrandTotal - rawGrandTotal;
@@ -175,11 +181,15 @@ const CreateInvoicePage = () => {
             discountAmount: Math.max(0, calculatedDiscountAmount),
             taxableAmount: amountBeforeTax,
             taxAmount: calculatedTaxAmount,
+            cgstRate,
+            sgstRate,
+            cgstAmount,
+            sgstAmount,
             rawGrandTotal,
             roundOffAmount,
             grandTotal: roundedGrandTotal
         };
-    }, [invoiceDraft, discountType, discountValue, taxRate]);
+    }, [invoiceDraft, discountType, discountValue, taxRate, isGstInvoice]);
 
     // 1. Opens the Confirmation Modal with Pre-Validation
     const promptFinalize = () => {
@@ -203,10 +213,12 @@ const CreateInvoicePage = () => {
             return;
         }
 
-        const tVal = parseFloat(taxRate) || 0;
-        if (tVal < 0 || tVal > 100) {
-            setError("Tax rate must be between 0% and 100%.");
-            return;
+        if (isGstInvoice) {
+            const tVal = parseFloat(taxRate) || 0;
+            if (tVal < 0 || tVal > 100) {
+                setError("Tax rate must be between 0% and 100%.");
+                return;
+            }
         }
 
         setShowConfirmModal(true);
@@ -224,7 +236,8 @@ const CreateInvoicePage = () => {
             dateIssued: workingDate || invoiceDraft.dateIssued || new Date().toISOString().split('T')[0],
             discountType,
             discountValue: Math.max(0, parseFloat(discountValue) || 0),
-            taxRate: Math.max(0, parseFloat(taxRate) || 0),
+            taxRate: isGstInvoice ? Math.max(0, parseFloat(taxRate) || 0) : 0,
+            isGstInvoice: isGstInvoice,
             notes: "",
         };
         
@@ -337,8 +350,28 @@ const CreateInvoicePage = () => {
                 
                 {invoiceDraft && invoiceTotals && (
                     <Card className="shadow-sm border-primary">
-                        <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center">
-                            <span className="fw-semibold">Invoice Draft (Based on Job Sheet: {invoiceDraft.jobSheetNumber})</span>
+                        <Card.Header className="bg-primary text-white d-flex justify-content-between align-items-center py-3">
+                            <span className="fw-semibold">Invoice Draft (Job Sheet: {invoiceDraft.jobSheetNumber})</span>
+                            <div className="d-flex align-items-center gap-2 bg-white bg-opacity-25 p-1 rounded-pill px-2">
+                                <Button 
+                                    size="sm" 
+                                    variant={isGstInvoice ? "light" : "outline-light"}
+                                    className={`rounded-pill px-3 py-1 fw-bold ${isGstInvoice ? 'text-primary shadow-sm' : 'text-white'}`}
+                                    onClick={() => { setIsGstInvoice(true); setTaxRate(18); }}
+                                    disabled={isFinalizing}
+                                >
+                                    GST Invoice
+                                </Button>
+                                <Button 
+                                    size="sm" 
+                                    variant={!isGstInvoice ? "light" : "outline-light"}
+                                    className={`rounded-pill px-3 py-1 fw-bold ${!isGstInvoice ? 'text-dark shadow-sm' : 'text-white'}`}
+                                    onClick={() => { setIsGstInvoice(false); setTaxRate(0); }}
+                                    disabled={isFinalizing}
+                                >
+                                    Non-GST Invoice
+                                </Button>
+                            </div>
                         </Card.Header>
                         <Card.Body className="p-4">
                             {invoiceCustomer && invoiceVehicle && (
@@ -394,7 +427,9 @@ const CreateInvoicePage = () => {
                             <Row className="justify-content-end">
                                 <Col md={7} lg={6} xl={5}>
                                     <Card body className="bg-light-subtle border-dashed invoice-totals-card">
-                                        <h5 className="h6 text-muted mb-3">Summary & Totals</h5>
+                                        <div className="d-flex justify-content-between align-items-center mb-3">
+                                            <h5 className="h6 text-muted mb-0">Summary & Totals</h5>
+                                        </div>
                                         <ListGroup variant="flush">
                                             <ListGroup.Item className="d-flex justify-content-between small text-muted py-1">
                                                 <span>Total Parts Amt:</span>
@@ -426,21 +461,58 @@ const CreateInvoicePage = () => {
                                                 <span></span>
                                                 <span>- {formatCurrency(invoiceTotals.discountAmount)}</span>
                                             </ListGroup.Item>
-                                            <ListGroup.Item className="d-flex justify-content-between fw-semibold pt-2 pb-1 border-top">
-                                                <span>Amount Before Tax:</span>
-                                                <span>{formatCurrency(invoiceTotals.taxableAmount)}</span>
-                                            </ListGroup.Item>
-                                            <ListGroup.Item className="d-flex justify-content-between align-items-center py-2">
-                                                <span>Tax (%):</span>
-                                                <InputGroup size="sm" style={{ maxWidth: '120px' }}>
-                                                    <Form.Control type="number" className="text-end" min="0" step="any" value={taxRate} onChange={e => setTaxRate(e.target.value)} disabled={isFinalizing}/>
-                                                    <InputGroup.Text>%</InputGroup.Text>
-                                                </InputGroup>
-                                            </ListGroup.Item>
-                                            <ListGroup.Item className="d-flex justify-content-between small text-muted py-1">
-                                                <span>Tax Amount:</span>
-                                                <span>+ {formatCurrency(invoiceTotals.taxAmount)}</span>
-                                            </ListGroup.Item>
+                                            {isGstInvoice && (
+                                                <>
+                                                    <ListGroup.Item className="d-flex justify-content-between fw-semibold pt-2 pb-1 border-top">
+                                                        <span>Taxable Amount:</span>
+                                                        <span>{formatCurrency(invoiceTotals.taxableAmount)}</span>
+                                                    </ListGroup.Item>
+                                                    <ListGroup.Item className="d-flex justify-content-between align-items-center py-2">
+                                                        <div>
+                                                            <span className="d-block fw-medium">GST Rate (%):</span>
+                                                            <div className="d-flex gap-1 mt-1">
+                                                                {[5, 12, 18, 28].map((pct) => (
+                                                                    <button
+                                                                        key={pct}
+                                                                        type="button"
+                                                                        className={`btn btn-xs py-0 px-1 ${Number(taxRate) === pct ? 'btn-primary' : 'btn-outline-secondary'}`}
+                                                                        style={{ fontSize: '0.72rem', borderRadius: '4px' }}
+                                                                        onClick={() => setTaxRate(pct.toString())}
+                                                                        disabled={isFinalizing}
+                                                                    >
+                                                                        {pct}%
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <InputGroup size="sm" style={{ maxWidth: '110px' }}>
+                                                            <Form.Control 
+                                                                type="number" 
+                                                                className="text-end" 
+                                                                min="0" 
+                                                                step="any" 
+                                                                value={taxRate} 
+                                                                onChange={e => setTaxRate(e.target.value)} 
+                                                                disabled={isFinalizing}
+                                                                placeholder="18"
+                                                            />
+                                                            <InputGroup.Text>%</InputGroup.Text>
+                                                        </InputGroup>
+                                                    </ListGroup.Item>
+                                                    <ListGroup.Item className="d-flex justify-content-between small text-muted py-1 ps-3 border-0 bg-light-subtle">
+                                                        <span>├─ CGST ({invoiceTotals?.cgstRate ?? 0}%):</span>
+                                                        <span>+ {formatCurrency(invoiceTotals?.cgstAmount ?? 0)}</span>
+                                                    </ListGroup.Item>
+                                                    <ListGroup.Item className="d-flex justify-content-between small text-muted py-1 ps-3 border-0 bg-light-subtle">
+                                                        <span>└─ SGST ({invoiceTotals?.sgstRate ?? 0}%):</span>
+                                                        <span>+ {formatCurrency(invoiceTotals?.sgstAmount ?? 0)}</span>
+                                                    </ListGroup.Item>
+                                                    <ListGroup.Item className="d-flex justify-content-between small fw-semibold text-dark py-1 border-top border-light">
+                                                        <span>Total GST ({taxRate || 0}%):</span>
+                                                        <span>+ {formatCurrency(invoiceTotals.taxAmount)}</span>
+                                                    </ListGroup.Item>
+                                                </>
+                                            )}
                                             {invoiceTotals.roundOffAmount !== 0 && (
                                                 <ListGroup.Item className="d-flex justify-content-between small text-muted py-1">
                                                     <span>Round Off Adjustment:</span>
@@ -477,8 +549,17 @@ const CreateInvoicePage = () => {
                     <Modal.Title className="h5 text-primary"><FaInfoCircle className="me-2"/> Confirm Invoice</Modal.Title>
                 </Modal.Header>
                 <Modal.Body className="py-4">
-                    <p className="mb-0 fs-6">Are you sure you want to finalize this invoice?</p>
-                    <p className="text-muted small mt-2 mb-3">It will be saved permanently and assigned an official Invoice Number.</p>
+                    <p className="mb-1 fs-6">Are you sure you want to finalize this invoice?</p>
+                    <div className="mb-2 d-flex align-items-center gap-2">
+                        <span className="small text-muted">Applicable Tax:</span>
+                        <Badge bg={isGstInvoice ? "primary" : "secondary"} className="fw-bold">
+                            {isGstInvoice 
+                                ? `${taxRate}% GST (${invoiceTotals?.cgstRate ?? ((parseFloat(taxRate) || 0) / 2)}% CGST + ${invoiceTotals?.sgstRate ?? ((parseFloat(taxRate) || 0) / 2)}% SGST)` 
+                                : 'Zero Tax (Non-GST)'
+                            }
+                        </Badge>
+                    </div>
+                    <p className="text-muted small mb-3">It will be saved permanently and assigned an official Invoice Number.</p>
                     
                     <div className="p-3 bg-light rounded border">
                         <Form.Check 
